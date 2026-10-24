@@ -73,7 +73,7 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let path = cli.config.unwrap_or_else(Store::default_path);
-    let mut store = Store::load(&path)?;
+    let mut store = Store::load_waiting(&path, || eprintln!("Waiting for another forager process to finish..."))?;
 
     match cli.command {
         Command::Add {

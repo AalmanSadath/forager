@@ -32,7 +32,14 @@ from a tarball, relative to its top directory.
 
 Tracked apps live in `~/.config/forager/apps.toml` (override with `--config`
 or `FORAGER_CONFIG`). Set `GITHUB_TOKEN` to raise the GitHub API limit from
-60 to 5000 requests per hour.
+60 to 5000 requests per hour. Release lists are cached in
+`~/.cache/forager/github` and fetched conditionally; with a token, checking
+an app whose releases have not changed does not use up the limit.
+
+Only one Forager process works on a config at a time; a second one waits.
+Installs removed outside Forager (`dnf remove`, a deleted AppImage) show as
+`missing` in `check` and are reinstalled by `update`. Switching an app to
+another format removes the old install once the new one is in place.
 
 ## How an asset is chosen
 
@@ -69,8 +76,7 @@ corrupted downloads, not a compromised release.
 - Flatpak bundles, Arch packages (`pacman -U`)
 - GitLab, Codeberg/Forgejo and generic HTML sources
 - PackageKit over D-Bus instead of `pkexec` + native tools
-- Read the installed version from the package manager, detect conflicts
-  with distro repositories
+- Detect conflicts with distro repositories
 - Signature verification (GPG, minisign, GitHub attestations)
 - systemd user timer for background checks, desktop notifications
 - GTK4 / libadwaita GUI
