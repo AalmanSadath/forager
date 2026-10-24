@@ -92,10 +92,12 @@ impl Store {
     }
 }
 
+/// Forager's cache directory: `$XDG_CACHE_HOME/forager`.
+pub fn cache_dir() -> PathBuf {
+    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("forager")
+}
+
 /// Directory for downloaded assets: `$XDG_CACHE_HOME/forager/downloads`.
 pub fn download_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("forager")
-        .join("downloads")
+    cache_dir().join("downloads")
 }

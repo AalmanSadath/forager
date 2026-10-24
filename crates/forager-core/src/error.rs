@@ -6,6 +6,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("http: {0}")]
     Http(#[from] ureq::Error),
+    #[error("invalid response: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid config {path}: {source}")]
@@ -16,6 +18,11 @@ pub enum Error {
     Regex(#[from] regex::Error),
     #[error("unsupported source URL: {0}")]
     UnsupportedSource(String),
+    #[error("GitHub API rate limit reached{}; set GITHUB_TOKEN to raise the limit", reset_hint(*.reset))]
+    RateLimited {
+        /// Unix time at which the limit resets.
+        reset: Option<u64>,
+    },
     #[error("no release found")]
     NoRelease,
     #[error("no asset in release {tag} matches this system")]
@@ -45,4 +52,14 @@ pub enum Error {
     AppNotFound(String),
     #[error("app already tracked: {0}")]
     AlreadyTracked(String),
+}
+
+fn reset_hint(reset: Option<u64>) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    match reset {
+        Some(reset) if reset > now => format!(" (resets in {} min)", (reset - now).div_ceil(60)),
+        _ => String::new(),
+    }
 }

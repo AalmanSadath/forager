@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
+use crate::http;
 use crate::model::{Asset, Release};
 
 /// Expected SHA-256 of `asset`, from the forge's digest or from a checksum
@@ -19,7 +20,9 @@ pub fn expected_sha256(asset: &Asset, release: &Release) -> Result<Option<String
         let lower = a.name.to_ascii_lowercase();
         lower == own_file || is_checksum_list(&lower)
     }) {
-        let text = ureq::get(&candidate.url).call()?.body_mut().read_to_string()?;
+        let text = http::check(http::get(&candidate.url).call()?)?
+            .body_mut()
+            .read_to_string()?;
         let single_file = candidate.name.eq_ignore_ascii_case(&own_file);
         if let Some(hex) = find_in_checksums(&text, &asset.name, single_file) {
             return Ok(Some(hex));
@@ -51,16 +54,35 @@ fn find_in_checksums(text: &str, name: &str, single_file: bool) -> Option<String
 }
 
 /// Downloads `asset` into `dir`, returning the file path and its SHA-256.
+/// Data goes to `<name>.part` first, so an interrupted download never
+/// leaves a file that looks complete.
 pub fn download(asset: &Asset, dir: &Path) -> Result<(PathBuf, String)> {
     fs::create_dir_all(dir)?;
     let file_name = Path::new(&asset.name)
         .file_name()
         .ok_or_else(|| Error::CommandFailed(format!("bad asset name {}", asset.name)))?;
     let path = dir.join(file_name);
+    let mut part = path.clone().into_os_string();
+    part.push(".part");
+    let part = PathBuf::from(part);
 
-    let mut response = ureq::get(&asset.url).call()?;
+    match fetch(&asset.url, &part) {
+        Ok(hash) => {
+            fs::rename(&part, &path)?;
+            Ok((path, hash))
+        }
+        Err(e) => {
+            fs::remove_file(&part).ok();
+            Err(e)
+        }
+    }
+}
+
+/// Streams `url` into `path`, returning its SHA-256.
+fn fetch(url: &str, path: &Path) -> Result<String> {
+    let mut response = http::check(http::get(url).call()?)?;
     let mut reader = response.body_mut().as_reader();
-    let mut file = File::create(&path)?;
+    let mut file = File::create(path)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0; 64 * 1024];
     loop {
@@ -74,7 +96,7 @@ pub fn download(asset: &Asset, dir: &Path) -> Result<(PathBuf, String)> {
         file.write_all(&buf[..n])?;
     }
     file.sync_all()?;
-    Ok((path, hex::encode(hasher.finalize())))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 //! the system package manager.
 
 pub mod error;
+pub mod http;
 pub mod install;
 pub mod matcher;
 pub mod model;
