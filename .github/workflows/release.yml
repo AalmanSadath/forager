@@ -1,0 +1,140 @@
+name: Release
+
+# A v* tag builds every package and publishes a GitHub release with them and
+# their SHA256SUMS. Running it by hand builds the packages without
+# publishing, as a dry run.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Version agrees
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          version=$(packaging/version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match version $version in Cargo.toml"
+            exit 1
+          fi
+
+  packages:
+    name: deb, rpm, AppImage, tarball
+    needs: version
+    # The oldest supported base, so the binaries run on Ubuntu 24.04,
+    # Debian 13 and anything newer: glibc only works forwards.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev \
+            librsvg2-dev libsoup-3.0-dev libxdo-dev build-essential file rpm
+      - name: Build
+        run: |
+          cd gui
+          npm ci
+          npx tauri build --bundles deb,rpm,appimage
+      - name: Name the packages and build the tarball
+        run: |
+          v=${{ needs.version.outputs.version }}
+          b=target/release/bundle
+          mkdir -p dist
+          cp "$b/deb/Forager_${v}_amd64.deb" "dist/forager_${v}_amd64.deb"
+          cp "$b/rpm/Forager-${v}-1.x86_64.rpm" "dist/forager-${v}-1.x86_64.rpm"
+          cp "$b/appimage/Forager_${v}_amd64.AppImage" "dist/Forager-${v}-x86_64.AppImage"
+          packaging/tarball.sh dist
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: dist/*
+          if-no-files-found: error
+
+  arch:
+    name: Arch package
+    needs: [version, packages]
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed base-devel git
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+      - name: Build
+        run: |
+          v=${{ needs.version.outputs.version }}
+          mkdir -p arch
+          packaging/arch/build.sh "dist/forager-$v-x86_64-linux.tar.gz" arch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: arch/*.pkg.tar.zst
+          if-no-files-found: error
+
+  flatpak:
+    name: Flatpak bundle
+    needs: version
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          packaging/flatpak/build.sh flatpak-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: flatpak-out/*.flatpak
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    needs: [version, packages, arch, flatpak]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Forager ${{ needs.version.outputs.version }}
+          files: artifacts/*
+          fail_on_unmatched_files: true

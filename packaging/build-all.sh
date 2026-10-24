@@ -11,8 +11,7 @@
 # The names are what Forager's own asset matcher expects, so Forager can
 # track and update itself in whichever format it was installed.
 #
-# SKIP_FLATPAK=1 leaves the Flatpak out (it builds from the committed tree
-# and takes longest).
+# SKIP_FLATPAK=1 leaves the Flatpak out (it takes longest).
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)

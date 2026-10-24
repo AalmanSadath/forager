@@ -49,10 +49,16 @@ modules:
   - name: forager
     buildsystem: simple
     sources:
-      # The committed tree, not the working directory: a `dir` source would
-      # copy target/ and node_modules/, gigabytes the build does not use.
-      - type: git
+      # The working tree, minus the build output and installed packages
+      # (gigabytes the build does not use and would only go stale).
+      - type: dir
         path: ../..
+        skip:
+          - .git
+          - target
+          - gui/node_modules
+          - gui/dist
+          - gui/src-tauri/gen
       - cargo-sources.json
       - node-sources.json
 

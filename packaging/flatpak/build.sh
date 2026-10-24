@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Flatpak from the committed tree and exports
+# Builds the Flatpak from the working tree and exports
 # forager-<version>-<arch>.flatpak, a single-file bundle that installs with
 #   flatpak install --user forager-<version>-<arch>.flatpak
 # and fetches the GNOME runtime from Flathub if it is missing.

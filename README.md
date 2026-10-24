@@ -11,13 +11,43 @@ and Codeberg releases, using the system package manager. Think
 Early, but usable: a desktop app and a CLI over the same core.
 
 - Sources: GitHub, GitLab (gitlab.com, GNOME, freedesktop, KDE, Debian Salsa,
-  Framagit, or self-hosted) and Forgejo/Gitea (Codeberg or self-hosted) releases
+  Framagit, or self-hosted) and Forgejo/Gitea (Codeberg or self-hosted)
+  releases, or any web page that links to the downloads
 - Formats: `.rpm` (dnf, zypper), `.deb` (apt), Arch packages
   (`.pkg.tar.*`, `.pacman`; pacman), AppImage (`~/Applications`),
   tarballs (`~/.local/opt/<id>`, executables linked into `~/.local/bin`),
   Flatpak bundles (`flatpak install --user`)
 - Verification: SHA-256 from GitHub's asset digest or a published
   `SHA256SUMS` / `checksums.txt` / `<asset>.sha256` file
+
+## Install
+
+Each [release](https://github.com/AalmanSadath/forager/releases) has:
+
+| File | For | Install |
+| --- | --- | --- |
+| `forager_<v>_amd64.deb` | Debian 13, Ubuntu 24.04 and newer | `sudo apt install ./forager_<v>_amd64.deb` |
+| `forager-<v>-1.x86_64.rpm` | Fedora, openSUSE | `sudo dnf install ./forager-<v>-1.x86_64.rpm` |
+| `forager-<v>-1-x86_64.pkg.tar.zst` | Arch | `sudo pacman -U forager-<v>-1-x86_64.pkg.tar.zst` |
+| `forager-<v>-x86_64.flatpak` | any distribution with Flatpak | `flatpak install --user forager-<v>-x86_64.flatpak` |
+| `Forager-<v>-x86_64.AppImage` | any distribution | `chmod +x` it and run it |
+| `forager-<v>-x86_64-linux.tar.gz` | any distribution | unpack, then `./install.sh` (into `~/.local`) |
+
+`SHA256SUMS` lists every file's checksum. All of them except the AppImage
+contain both the app (`forager-gui`) and the CLI (`forager`).
+
+The Flatpak is a convenience, not a sandbox: Forager installs software for
+the host, so it runs the host's package tools through `flatpak-spawn
+--host`, reads and writes your home directory, and talks to PackageKit.
+Its permissions are listed, with reasons, in
+`packaging/flatpak/io.github.aalmansadath.Forager.yml`.
+
+Forager can keep itself up to date like any other app:
+
+```sh
+forager add https://github.com/AalmanSadath/forager
+forager edit forager --format flatpak   # only if you installed the Flatpak
+```
 
 ## The app
 
@@ -64,7 +94,10 @@ npx tauri build      # deb, rpm and AppImage under target/release/bundle
 ```
 
 The packages install both `forager-gui` and the `forager` CLI, which the
-background check runs.
+background check runs. `packaging/build-all.sh` builds every release file
+into `target/dist`; see the comments in `packaging/` for each format. The
+release workflow builds them on Ubuntu 24.04, so the binaries also run on
+older systems than the one building them.
 
 ## Usage
 
@@ -73,6 +106,8 @@ cargo build --release
 forager add https://github.com/jgraph/drawio-desktop
 forager add https://gitlab.com/gitlab-org/cli --id glab
 forager add https://git.example.org/team/tool --forge forgejo   # self-hosted
+forager add https://nodejs.org/dist/latest/ --forge html \
+    --pattern 'node-v[0-9.]+-linux-x64\.tar\.xz$' --bin bin/node     # a download page
 forager check            # show installed vs latest and the asset that would be used
 forager update           # install or upgrade every tracked app (asks first)
 forager update drawio-desktop --yes
@@ -101,7 +136,10 @@ never asks for a password.
 install removed) on the next `update`.
 
 `add` options: `--id`, `--forge gitlab|forgejo` for hosts Forager does not
-recognise, `--filter <regex>` to restrict asset names,
+recognise, `--forge html --pattern <regex>` for a web page of download links
+(links whose full address matches are the downloads; the version is a
+`(?P<version>...)` group, or else the first dotted number in the file name),
+`--filter <regex>` to restrict asset names,
 `--format deb|rpm|pacman|appimage|tarball|flatpak` to override format selection,
 `--prerelease`, `--bin <path>` (repeatable) to name the executables to link
 from a tarball, relative to its top directory.
@@ -187,7 +225,6 @@ check its fingerprint there, not from the release being verified.
   [BifroSSH](https://github.com/AalmanSadath/BifroSSH), whose colour
   tokens it shares.
 
-## Roadmap
+## Licence
 
-- Generic HTML sources
-- Release packages of Forager itself, so it can update itself
+GPL-3.0-or-later; see `LICENSE`.
