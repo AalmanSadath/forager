@@ -130,6 +130,8 @@ export interface ReleaseView {
   name: string | null;
   published_at: string | null;
   prerelease: boolean;
+  /** Release notes, usually markdown. */
+  notes: string | null;
 }
 
 export interface Preview {
@@ -160,6 +162,7 @@ export interface PlanView {
   lines: SummaryLine[];
   unverified: boolean;
   needs_root: boolean;
+  notes: string | null;
 }
 
 /** One planned update of an app, or why it cannot be made. */

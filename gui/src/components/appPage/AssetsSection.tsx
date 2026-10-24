@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { sortCandidates, verdictText, formatSize } from '../../assetsView';
 import type { Preview } from '../../types';
 import { FORMAT_NAMES } from '../shared/icons';
+import Markdown from '../shared/Markdown';
 
 /** Every asset of the latest release, and what the matcher made of it. */
 export default function AssetsSection({
@@ -42,6 +43,12 @@ export default function AssetsSection({
             {preview.release.published_at && <span> · {new Date(preview.release.published_at).toLocaleDateString()}</span>}
             {preview.release.prerelease && <span className="tag tag-warn">prerelease</span>}
           </p>
+          {preview.release.notes && (
+            <details className="release-notes">
+              <summary>Release notes</summary>
+              <Markdown text={preview.release.notes} />
+            </details>
+          )}
           {preview.candidates.length === 0 ? (
             <p className="list-empty">This release has no assets.</p>
           ) : packages.length === 0 && !showOthers ? (

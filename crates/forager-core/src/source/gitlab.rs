@@ -12,6 +12,7 @@ struct ApiRelease {
     #[serde(default)]
     upcoming_release: bool,
     released_at: Option<String>,
+    description: Option<String>,
     assets: ApiAssets,
 }
 
@@ -50,6 +51,7 @@ fn parse_releases(body: &str) -> Result<Vec<Release>> {
             name: r.name,
             prerelease: r.upcoming_release,
             published_at: r.released_at,
+            notes: r.description.filter(|d| !d.trim().is_empty()),
             assets: r
                 .assets
                 .links
@@ -83,7 +85,7 @@ mod tests {
     #[test]
     fn parses_release_links() {
         let body = r#"[{"name": "v1.2", "tag_name": "v1.2", "upcoming_release": false,
-            "released_at": "2026-01-01T00:00:00Z",
+            "released_at": "2026-01-01T00:00:00Z", "description": "Fixes",
             "assets": {"count": 3, "sources": [{"format": "zip", "url": "https://x/src.zip"}],
                        "links": [{"id": 1, "name": "tool_1.2_linux_amd64.deb", "url": "https://x/l/1",
                                   "direct_asset_url": "https://x/-/releases/v1.2/downloads/tool.deb",
@@ -91,6 +93,7 @@ mod tests {
                                  {"id": 2, "name": "tool.AppImage", "url": "https://x/l/2"}]}}]"#;
         let releases = parse_releases(body).unwrap();
         assert_eq!(releases[0].tag, "v1.2");
+        assert_eq!(releases[0].notes.as_deref(), Some("Fixes"));
         let assets = &releases[0].assets;
         assert_eq!(assets.len(), 2);
         assert_eq!(assets[0].url, "https://x/-/releases/v1.2/downloads/tool.deb");

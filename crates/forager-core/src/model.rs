@@ -95,6 +95,8 @@ pub struct Release {
     pub name: Option<String>,
     pub prerelease: bool,
     pub published_at: Option<String>,
+    /// Release notes as the forge has them, usually markdown.
+    pub notes: Option<String>,
     pub assets: Vec<Asset>,
 }
 

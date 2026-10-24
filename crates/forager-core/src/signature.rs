@@ -273,6 +273,7 @@ mod tests {
             name: None,
             prerelease: false,
             published_at: None,
+            notes: None,
             assets: names.iter().map(|n| asset(n)).collect(),
         }
     }

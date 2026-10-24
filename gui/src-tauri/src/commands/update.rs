@@ -41,6 +41,8 @@ pub struct PlanView {
     pub lines: Vec<SummaryLine>,
     pub unverified: bool,
     pub needs_root: bool,
+    /// Release notes of the version to install.
+    pub notes: Option<String>,
 }
 
 /// One planned update of an app, or why it cannot be made.
@@ -99,6 +101,7 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<V
                         lines: update::summary(app, &plan),
                         unverified: plan.unverified(),
                         needs_root: plan.format.needs_root(),
+                        notes: plan.release.notes.clone(),
                     };
                     (plan, view)
                 })

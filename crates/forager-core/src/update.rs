@@ -568,6 +568,7 @@ mod tests {
                 name: None,
                 prerelease: false,
                 published_at: None,
+                notes: None,
                 assets: Vec::new(),
             },
             asset: Asset {
@@ -669,6 +670,7 @@ mod tests {
             name: None,
             prerelease,
             published_at: None,
+            notes: None,
             assets: assets
                 .iter()
                 .map(|name| Asset {

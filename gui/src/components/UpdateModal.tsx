@@ -4,6 +4,7 @@ import { useAppStore } from '../store/appStore';
 import type { Format, PlanView } from '../types';
 import Modal from './shared/Modal';
 import { FORMAT_NAMES } from './shared/icons';
+import Markdown from './shared/Markdown';
 
 type Phase =
   | { kind: 'planning' }
@@ -161,6 +162,12 @@ export default function UpdateModal({ ids }: { ids: string[] }) {
                         </div>
                       ))}
                   </dl>
+                  {plan.notes && (
+                    <details className="release-notes" open={single && plans.length === 1}>
+                      <summary>What's new in {plan.to}</summary>
+                      <Markdown text={plan.notes} />
+                    </details>
+                  )}
                 </>
               )}
             </div>

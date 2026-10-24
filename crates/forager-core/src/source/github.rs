@@ -17,6 +17,7 @@ pub(super) struct ApiRelease {
     #[serde(default)]
     prerelease: bool,
     published_at: Option<String>,
+    body: Option<String>,
     #[serde(default)]
     assets: Vec<ApiAsset>,
 }
@@ -57,6 +58,7 @@ pub(super) fn parse_releases(body: &str) -> Result<Vec<Release>> {
             name: r.name,
             prerelease: r.prerelease,
             published_at: r.published_at,
+            notes: r.body.filter(|b| !b.trim().is_empty()),
             assets: r
                 .assets
                 .into_iter()
@@ -77,15 +79,17 @@ mod tests {
 
     #[test]
     fn parses_releases_and_skips_drafts() {
-        let body = r#"[
+        let body = r###"[
             {"tag_name": "v2", "name": null, "draft": true, "prerelease": false, "published_at": null, "assets": []},
             {"tag_name": "v1", "name": "One", "draft": false, "prerelease": false, "published_at": null,
+             "body": "## Fixed\n- a bug",
              "assets": [{"name": "tool.rpm", "browser_download_url": "https://x/tool.rpm", "size": 3,
                          "digest": "sha256:ab"}]}
-        ]"#;
+        ]"###;
         let releases = parse_releases(body).unwrap();
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].tag, "v1");
         assert_eq!(releases[0].assets[0].digest.as_deref(), Some("sha256:ab"));
+        assert_eq!(releases[0].notes.as_deref(), Some("## Fixed\n- a bug"));
     }
 }

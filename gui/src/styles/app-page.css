@@ -199,3 +199,16 @@
 .lookup-row + .form-hint, .lookup-row ~ .form-error { margin-bottom: 12px; }
 .lookup-row ~ .page-columns { margin-top: 16px; }
 .pattern-field { margin: 0 0 8px; }
+
+/* Release notes: collapsed under the release line, scrolled when long. */
+.release-notes { margin: 4px 0 12px; }
+.release-notes summary { cursor: pointer; color: var(--text-muted); font-size: 13px; }
+.release-notes .markdown { max-height: 320px; overflow-y: auto; margin-top: 8px; padding-right: 6px; }
+.markdown { font-size: 13px; line-height: 1.5; color: var(--text-primary); overflow-wrap: anywhere; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 14px; margin: 12px 0 6px; }
+.markdown p, .markdown ul, .markdown ol, .markdown pre { margin: 6px 0; }
+.markdown ul, .markdown ol { padding-left: 20px; }
+.markdown code { font-family: monospace; font-size: 12px; }
+.markdown pre { background: var(--bg-mid); padding: 8px; border-radius: 6px; overflow-x: auto; }
+.markdown a { color: var(--accent); }
+.markdown-img { color: var(--text-muted); }

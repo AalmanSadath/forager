@@ -105,6 +105,12 @@ enum Command {
         #[arg(long, conflicts_with_all = ["minisign_key", "gpg_key", "attestation"])]
         no_signature: bool,
     },
+    /// Show the release notes of an app's latest release, or of `--tag`.
+    Notes {
+        id: String,
+        #[arg(long)]
+        tag: Option<String>,
+    },
     /// List tracked apps.
     List,
     /// Check tracked apps for new releases.
@@ -337,6 +343,21 @@ fn main() -> Result<()> {
             store.save()?;
             println!("{id}:\n{settings}");
             println!("Changes apply on the next `forager update {id}`.");
+        }
+        Command::Notes { id, tag } => {
+            let app = store.get(&id)?;
+            let releases = app.source.releases()?;
+            let release = match &tag {
+                Some(tag) => releases
+                    .into_iter()
+                    .find(|r| r.tag == *tag)
+                    .with_context(|| format!("{id} has no release {tag}"))?,
+                None => update::latest(app, releases, &Platform::detect())?,
+            };
+            let name = release.name.as_deref().filter(|n| *n != release.tag);
+            println!("{}{}", release.tag, name.map_or(String::new(), |n| format!(" ({n})")));
+            println!();
+            println!("{}", release.notes.as_deref().unwrap_or("No release notes."));
         }
         Command::List => {
             if store.apps.is_empty() {

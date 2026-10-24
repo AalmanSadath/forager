@@ -116,6 +116,7 @@ pub struct ReleaseView {
     pub name: Option<String>,
     pub published_at: Option<String>,
     pub prerelease: bool,
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +195,7 @@ pub async fn preview(
             name: release.name.clone(),
             published_at: release.published_at.clone(),
             prerelease: release.prerelease,
+            notes: release.notes.clone(),
         },
         candidates,
         filter_error,

@@ -87,6 +87,7 @@ pub(super) fn parse(page: &str, html: &str, pattern: &str) -> Result<Vec<Release
                     tag: tag.clone(),
                     name: None,
                     published_at: None,
+                    notes: None,
                     assets: lists.clone(),
                 });
                 releases.last_mut().unwrap()
