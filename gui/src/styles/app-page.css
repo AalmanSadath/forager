@@ -1,1 +1,200 @@
 /* An app's own page, and the page for adding one. */
+
+.app-page { padding-top: 16px; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.page-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--bg-chip);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.page-header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.page-header-title h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.page-header-sub { font-size: 12px; color: var(--text-muted); }
+
+.page-header-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-dark);
+}
+
+.page-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+}
+.link-btn:hover { color: var(--accent); }
+
+/* Two columns on a wide window, one on a narrow one. */
+.page-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .page-columns { grid-template-columns: minmax(0, 1fr); }
+}
+.page-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* A block of the page, framed like a card in the grid. */
+.page-card {
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+.page-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+.page-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.page-card-header h3 { margin-bottom: 0; }
+.page-card .checkbox-row:last-child { margin-bottom: 0; }
+
+.facts {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 7px 12px;
+  font-size: 13px;
+}
+.facts dt { color: var(--text-muted); font-size: 12px; padding-top: 1px; }
+.facts dd {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.facts dd.mono { font-size: 12px; }
+.text-danger { color: var(--danger); }
+
+.release-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.release-line .mono { color: var(--text-primary); }
+.release-line .tag { margin-left: 6px; }
+
+.asset-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+/* Two lines: the full name, then format, size and verdict under it. */
+.asset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.asset-row:last-child { border-bottom: none; }
+/* Wrapped, not cut short: the end of a name (CPU, OS) is what decides. */
+.asset-name {
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.asset-size { font-size: 11px; }
+.asset-verdict { margin-left: auto; text-align: right; font-size: 11px; }
+.asset-toggle { margin-top: 8px; }
+.asset-chosen {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.asset-chosen .asset-verdict { color: var(--accent); font-weight: 600; }
+.asset-usable { color: var(--text-muted); }
+
+.signature-field { margin-top: 12px; margin-bottom: 0; }
+.page-card .toggle-row + .form-hint { margin-top: 10px; }
+.key-file-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.key-file {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.danger-zone h3 { margin-bottom: 2px; }
+
+.lookup-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.lookup-row select { width: 180px; flex-shrink: 0; }
+.lookup-row + .form-hint, .lookup-row ~ .form-error { margin-bottom: 12px; }
+.lookup-row ~ .page-columns { margin-top: 16px; }

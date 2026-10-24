@@ -9,6 +9,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(commands::edit::ReleaseCache::default())
         .setup(|app| {
             appearance::watch(app.handle().clone());
             Ok(())
@@ -16,7 +17,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::apps::list_apps,
             commands::check::check_apps,
+            commands::edit::parse_source,
+            commands::edit::preview,
+            commands::edit::add_app,
+            commands::edit::save_app,
+            commands::edit::remove_app,
             commands::system::system_appearance,
+            commands::system::start_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Forager");

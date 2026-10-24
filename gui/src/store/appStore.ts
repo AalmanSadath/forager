@@ -8,7 +8,7 @@ import { NO_APPEARANCE } from './theme';
 export type Page =
   | { kind: 'apps' }
   | { kind: 'app'; id: string }
-  | { kind: 'add' }
+  | { kind: 'add'; url?: string }
   | { kind: 'activity' }
   | { kind: 'settings' };
 
@@ -32,6 +32,8 @@ interface AppStore {
   /** Checks the named apps, or all; results arrive through `applyStatus`. */
   checkApps: (ids?: string[]) => Promise<void>;
   applyStatus: (event: StatusEvent) => void;
+  /** Checks apps whose last check is missing or older than half an hour. */
+  checkStale: () => void;
 
   settings: GuiSettings;
   systemAppearance: SystemAppearance;
@@ -43,6 +45,34 @@ interface AppStore {
 }
 
 let nextToast = 1;
+
+/** Seconds after which a check is redone on start or when the window regains focus. */
+const STALE_AFTER = 30 * 60;
+const CHECKS_KEY = 'forager_checks';
+
+/**
+ * Successful checks survive a restart, so opening the window does not spend
+ * a forge request per app each time; GitHub allows only 60 an hour without a
+ * token. Errors are not kept: they should be retried.
+ */
+function loadSavedChecks(): Record<string, CheckEntry> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHECKS_KEY) ?? '{}') as Record<string, CheckEntry>;
+    for (const entry of Object.values(saved)) entry.checking = false;
+    return saved;
+  } catch {
+    return {};
+  }
+}
+
+function saveChecks(checks: Record<string, CheckEntry>) {
+  const ok = Object.fromEntries(Object.entries(checks).filter(([, e]) => e.status && !e.error));
+  try {
+    localStorage.setItem(CHECKS_KEY, JSON.stringify(ok));
+  } catch {
+    // Storage full or unavailable: checks are only a cache.
+  }
+}
 
 export const useAppStore = create<AppStore>()((set, get) => ({
   page: { kind: 'apps' },
@@ -58,7 +88,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
-  checks: {},
+  checks: loadSavedChecks(),
   checkingAll: false,
   checkApps: async (ids) => {
     const targets = ids ?? get().apps.map((a) => a.id);
@@ -83,9 +113,21 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
   applyStatus: (event) =>
-    set((s) => ({
-      checks: { ...s.checks, [event.id]: { checking: false, status: event.status, error: event.error } },
-    })),
+    set((s) => {
+      const checks = { ...s.checks, [event.id]: { checking: false, status: event.status, error: event.error } };
+      saveChecks(checks);
+      return { checks };
+    }),
+  checkStale: () => {
+    const now = Date.now() / 1000;
+    const stale = get()
+      .apps.filter((a) => {
+        const at = get().checks[a.id]?.status?.checked_at;
+        return at === undefined || now - at > STALE_AFTER;
+      })
+      .map((a) => a.id);
+    if (stale.length > 0) get().checkApps(stale);
+  },
 
   settings: { app_theme: 'system', accent_color: null },
   systemAppearance: NO_APPEARANCE,

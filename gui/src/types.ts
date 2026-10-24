@@ -12,8 +12,12 @@ export interface InstalledView {
   links: string[];
 }
 
+/** A source as the backend stores it; opaque here, passed back as is. */
+export type SourceSpec = { kind: Forge } & Record<string, string>;
+
 export interface AppView {
   id: string;
+  spec: SourceSpec;
   source: string;
   web_url: string;
   forge: Forge;
@@ -22,6 +26,8 @@ export interface AppView {
   prerelease: boolean;
   bins: string[];
   signature: 'minisign' | 'gpg' | 'attestation' | null;
+  minisign_key: string | null;
+  gpg_keyring: string | null;
   installed: InstalledView | null;
 }
 
@@ -59,3 +65,64 @@ export interface StatusEvent {
   status: StatusView | null;
   error: string | null;
 }
+
+export type StartRequest = { kind: 'add'; url: string } | { kind: 'open'; id: string };
+
+export interface SourceInfo {
+  spec: SourceSpec;
+  display: string;
+  web_url: string;
+  forge: Forge;
+  default_id: string;
+}
+
+export interface ParsedSource {
+  info: SourceInfo | null;
+  /** Set when the host's forge kind has to be chosen. */
+  unknown_host: string | null;
+}
+
+export interface SettingsInput {
+  format: Format | null;
+  asset_filter: string | null;
+  prerelease: boolean;
+  bins: string[];
+}
+
+export type Reason =
+  | 'not_package'
+  | 'filter'
+  | 'debug'
+  | 'other_os'
+  | 'format_not_wanted'
+  | 'other_arch'
+  | 'source_archive';
+
+export type Verdict = { kind: 'chosen' } | { kind: 'usable' } | { kind: 'rejected'; reason: Reason };
+
+export interface CandidateView {
+  name: string;
+  size: number;
+  format: Format | null;
+  verdict: Verdict;
+}
+
+export interface ReleaseView {
+  tag: string;
+  name: string | null;
+  published_at: string | null;
+  prerelease: boolean;
+}
+
+export interface Preview {
+  release: ReleaseView;
+  candidates: CandidateView[];
+  filter_error: string | null;
+}
+
+export type SignatureForm =
+  | { kind: 'keep' }
+  | { kind: 'none' }
+  | { kind: 'minisign'; key: string }
+  | { kind: 'gpg'; key_file: string }
+  | { kind: 'attestation' };

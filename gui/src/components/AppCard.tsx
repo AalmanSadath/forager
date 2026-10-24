@@ -35,13 +35,15 @@ export default function AppCard({
         }
       }}
       title={model.label}
+      // Name first, so a screen reader says which app before its state.
+      aria-label={`${app.id}, ${model.label}, ${model.versions}`}
     >
       <div className="app-card-icon">
         <FormatIcon format={model.format} />
       </div>
       <div className="app-card-info">
         <div className="app-card-name-row">
-          <span className={`dot dot-${model.dot}`} aria-label={model.label} />
+          <span className={`dot dot-${model.dot}`} />
           <span className="card-title">{app.id}</span>
           <span className="app-card-tags">
             {model.format && <span className="tag">{FORMAT_NAMES[model.format]}</span>}

@@ -2,4 +2,5 @@
 
 pub mod apps;
 pub mod check;
+pub mod edit;
 pub mod system;

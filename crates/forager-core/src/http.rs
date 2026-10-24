@@ -67,7 +67,13 @@ pub fn get_cached(mut request: RequestBuilder<WithoutBody>, cache_key: &str) -> 
     if let Some(cached) = &cached {
         request = request.header("If-None-Match", &cached.etag);
     }
-    let mut response = check(request.call()?)?;
+    let mut response = match check(request.call()?) {
+        Ok(response) => response,
+        // Rate limited: an older answer beats none. It is at most as stale as
+        // the last successful check.
+        Err(Error::RateLimited { .. }) if cached.is_some() => return Ok(cached.map(|c| c.body).unwrap_or_default()),
+        Err(e) => return Err(e),
+    };
 
     if let Some(cached) = cached
         && response.status() == 304

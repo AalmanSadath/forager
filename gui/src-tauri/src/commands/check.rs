@@ -9,7 +9,9 @@ use forager_core::model::{App, Format};
 use forager_core::platform::Platform;
 use forager_core::update::{self, State};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+
+use super::edit::ReleaseCache;
 
 use crate::state::{CmdResult, blocking, load_store};
 
@@ -43,8 +45,9 @@ pub struct StatusEvent {
 
 pub const STATUS_EVENT: &str = "app-status";
 
-pub fn status_of(app: &App, platform: &Platform) -> StatusEvent {
+pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> StatusEvent {
     let result = update::status(app).map(|status| {
+        cache.put(&app.source, app.prerelease, status.latest.clone());
         let (asset, asset_format, asset_error) = match select_asset(app, &status.latest, platform) {
             Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
             Err(e) => (None, None, Some(e.to_string())),
@@ -89,14 +92,16 @@ pub async fn check_apps(app: AppHandle, ids: Option<Vec<String>>) -> CmdResult<(
             .filter(|a| ids.as_ref().is_none_or(|ids| ids.contains(&a.id)))
             .collect();
         let platform = Platform::detect();
+        let cache = app.state::<ReleaseCache>();
         let (tx, rx) = mpsc::channel();
         std::thread::scope(|scope| {
             for chunk in apps.chunks(apps.len().div_ceil(PARALLEL).max(1)) {
                 let tx = tx.clone();
                 let platform = &platform;
+                let cache = &cache;
                 scope.spawn(move || {
                     for app in chunk {
-                        tx.send(status_of(app, platform)).ok();
+                        tx.send(status_of(app, platform, cache)).ok();
                     }
                 });
             }

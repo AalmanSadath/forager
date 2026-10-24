@@ -5,6 +5,7 @@ import type { AppView, StatusView } from './types';
 function app(id: string, extra: Partial<AppView> = {}): AppView {
   return {
     id,
+    spec: { kind: 'github', owner: 'o', repo: id },
     source: `github.com/o/${id}`,
     web_url: `https://github.com/o/${id}`,
     forge: 'github',
@@ -13,6 +14,8 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     prerelease: false,
     bins: [],
     signature: null,
+    minisign_key: null,
+    gpg_keyring: null,
     installed: null,
     ...extra,
   };
