@@ -10,7 +10,8 @@ Early prototype. CLI only.
 
 - Sources: GitHub releases
 - Formats: `.rpm` (dnf, zypper), `.deb` (apt), AppImage (`~/Applications`),
-  tarballs (`~/.local/opt/<id>`, executables linked into `~/.local/bin`)
+  tarballs (`~/.local/opt/<id>`, executables linked into `~/.local/bin`),
+  Flatpak bundles (`flatpak install --user`)
 - Verification: SHA-256 from GitHub's asset digest or a published
   `SHA256SUMS` / `checksums.txt` / `<asset>.sha256` file
 
@@ -30,7 +31,7 @@ forager remove drawio-desktop
 install removed) on the next `update`.
 
 `add` options: `--id`, `--filter <regex>` to restrict asset names,
-`--format deb|rpm|appimage|tarball` to override format selection,
+`--format deb|rpm|appimage|tarball|flatpak` to override format selection,
 `--prerelease`, `--bin <path>` (repeatable) to name the executables to link
 from a tarball, relative to its top directory.
 
@@ -48,8 +49,8 @@ another format removes the old install once the new one is in place.
 ## How an asset is chosen
 
 1. Formats the system can install, in order: native package format first
-   (rpm on dnf/zypper systems, deb on apt systems), then AppImage, then
-   tarball.
+   (rpm on dnf/zypper systems, deb on apt systems), then Flatpak if
+   `flatpak` is installed, then AppImage, then tarball.
 2. Assets naming this CPU architecture beat assets naming none; assets
    naming another architecture or operating system are skipped.
 3. Debug and source packages are skipped, as are tarballs naming neither
@@ -77,7 +78,7 @@ corrupted downloads, not a compromised release.
 
 ## Roadmap
 
-- Flatpak bundles, Arch packages (`pacman -U`)
+- Arch packages (`pacman -U`)
 - GitLab, Codeberg/Forgejo and generic HTML sources
 - PackageKit over D-Bus instead of `pkexec` + native tools
 - Detect conflicts with distro repositories

@@ -15,6 +15,8 @@ pub struct Platform {
     /// Architecture as reported by Rust, e.g. `x86_64` or `aarch64`.
     pub arch: &'static str,
     pub package_manager: Option<PackageManager>,
+    /// Whether `flatpak` is installed.
+    pub flatpak: bool,
 }
 
 impl Platform {
@@ -31,16 +33,24 @@ impl Platform {
         Platform {
             arch: std::env::consts::ARCH,
             package_manager,
+            flatpak: has_command("flatpak"),
         }
     }
 
-    /// Formats this system can install, most preferred first.
+    /// Formats this system can install, most preferred first: the native
+    /// package format, then Flatpak (sandboxed), AppImage and tarball.
     pub fn formats(&self) -> Vec<Format> {
-        match self.package_manager {
-            Some(PackageManager::Dnf | PackageManager::Zypper) => vec![Format::Rpm, Format::AppImage, Format::Tarball],
-            Some(PackageManager::Apt) => vec![Format::Deb, Format::AppImage, Format::Tarball],
-            None => vec![Format::AppImage, Format::Tarball],
-        }
+        let native = match self.package_manager {
+            Some(PackageManager::Dnf | PackageManager::Zypper) => Some(Format::Rpm),
+            Some(PackageManager::Apt) => Some(Format::Deb),
+            None => None,
+        };
+        let flatpak = self.flatpak.then_some(Format::Flatpak);
+        native
+            .into_iter()
+            .chain(flatpak)
+            .chain([Format::AppImage, Format::Tarball])
+            .collect()
     }
 
     /// Names releases use for this architecture.
@@ -84,4 +94,30 @@ pub fn opt_dir() -> Option<PathBuf> {
 /// `~/.local/bin`, where executables from tarballs are linked.
 pub fn bin_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".local").join("bin"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ranks_native_then_flatpak() {
+        let platform = |package_manager, flatpak| Platform {
+            arch: "x86_64",
+            package_manager,
+            flatpak,
+        };
+        assert_eq!(
+            platform(Some(PackageManager::Dnf), true).formats(),
+            [Format::Rpm, Format::Flatpak, Format::AppImage, Format::Tarball]
+        );
+        assert_eq!(
+            platform(Some(PackageManager::Apt), false).formats(),
+            [Format::Deb, Format::AppImage, Format::Tarball]
+        );
+        assert_eq!(
+            platform(None, true).formats(),
+            [Format::Flatpak, Format::AppImage, Format::Tarball]
+        );
+    }
 }

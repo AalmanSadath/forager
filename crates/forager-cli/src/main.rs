@@ -291,6 +291,9 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
     if matches!(plan.format, Format::Deb | Format::Rpm) {
         println!("  note:   package scripts run as root");
     }
+    if plan.format == Format::Flatpak {
+        println!("  note:   a missing runtime is fetched from the bundle's runtime repo (usually Flathub)");
+    }
     if let Some(previous) = &app.installed
         && previous.format != plan.format
     {

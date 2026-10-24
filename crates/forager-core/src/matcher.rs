@@ -122,6 +122,7 @@ mod tests {
         Platform {
             arch: "x86_64",
             package_manager: pm,
+            flatpak: false,
         }
     }
 
@@ -196,5 +197,14 @@ mod tests {
         let release = release(&["tool-linux-x86_64.tar.gz", "Tool-x86_64.AppImage"]);
         let (asset, _) = select_asset(&app(), &release, &platform(None)).unwrap();
         assert_eq!(asset.name, "Tool-x86_64.AppImage");
+    }
+
+    #[test]
+    fn prefers_flatpak_over_appimage_when_available() {
+        let release = release(&["tool-x86_64.flatpak", "Tool-x86_64.AppImage"]);
+        let mut platform = platform(Some(PackageManager::Dnf));
+        assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::AppImage);
+        platform.flatpak = true;
+        assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::Flatpak);
     }
 }

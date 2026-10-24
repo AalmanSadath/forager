@@ -3,8 +3,10 @@
 //! deb and rpm installs run through `pkexec`, so polkit asks the user for
 //! authorisation. AppImages and tarballs need no root: AppImages are placed in
 //! `~/Applications`, tarballs are unpacked into `~/.local/opt` with their
-//! executables linked into `~/.local/bin`.
+//! executables linked into `~/.local/bin`, and Flatpak bundles go into the
+//! user's Flatpak installation.
 
+mod flatpak;
 mod tarball;
 
 use std::fs;
@@ -59,6 +61,14 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
             fs::set_permissions(&target, fs::Permissions::from_mode(0o755))?;
             installed.path = Some(target);
         }
+        Format::Flatpak => {
+            if !platform.flatpak {
+                return Err(Error::NoPackageManager("flatpak"));
+            }
+            let id = flatpak::app_id(&file)?;
+            flatpak::install(&file)?;
+            installed.package = Some(id);
+        }
         Format::Tarball => {
             let opt_dir = platform::opt_dir().ok_or(Error::NoHome)?;
             let bin_dir = platform::bin_dir().ok_or(Error::NoHome)?;
@@ -90,6 +100,7 @@ pub fn is_present(installed: &Installed) -> bool {
             output(Command::new("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
                 .is_ok_and(|status| status == "installed")
         }
+        (Format::Flatpak, Some(id), _) => flatpak::is_present(id),
         (Format::AppImage | Format::Tarball, _, Some(path)) => path.exists(),
         _ => false,
     }
@@ -114,6 +125,7 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
         },
+        (Format::Flatpak, Some(id), _) => flatpak::uninstall(id),
         (Format::Tarball, _, Some(dir)) => {
             // The path comes from the config file; never delete outside ~/.local/opt.
             let opt_dir = platform::opt_dir().ok_or(Error::NoHome)?;

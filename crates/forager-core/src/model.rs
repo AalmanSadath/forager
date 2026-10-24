@@ -14,10 +14,18 @@ pub enum Format {
     AppImage,
     /// A tar archive, optionally compressed (gzip, bzip2, xz or zstd).
     Tarball,
+    /// A single-file Flatpak bundle.
+    Flatpak,
 }
 
 impl Format {
-    pub const ALL: [Format; 4] = [Format::Deb, Format::Rpm, Format::AppImage, Format::Tarball];
+    pub const ALL: [Format; 5] = [
+        Format::Deb,
+        Format::Rpm,
+        Format::AppImage,
+        Format::Tarball,
+        Format::Flatpak,
+    ];
 
     pub fn from_file_name(name: &str) -> Option<Format> {
         let lower = name.to_ascii_lowercase();
@@ -27,6 +35,8 @@ impl Format {
             Some(Format::Rpm)
         } else if lower.ends_with(".appimage") {
             Some(Format::AppImage)
+        } else if lower.ends_with(".flatpak") {
+            Some(Format::Flatpak)
         } else if TARBALL_SUFFIXES.iter().any(|suffix| lower.ends_with(suffix)) {
             Some(Format::Tarball)
         } else {
@@ -46,6 +56,7 @@ impl fmt::Display for Format {
             Format::Rpm => "rpm",
             Format::AppImage => "appimage",
             Format::Tarball => "tarball",
+            Format::Flatpak => "flatpak",
         })
     }
 }
@@ -57,7 +68,7 @@ impl std::str::FromStr for Format {
         Format::ALL
             .into_iter()
             .find(|f| f.to_string().eq_ignore_ascii_case(s))
-            .ok_or_else(|| format!("unknown format '{s}' (expected deb, rpm, appimage or tarball)"))
+            .ok_or_else(|| format!("unknown format '{s}' (expected deb, rpm, appimage, tarball or flatpak)"))
     }
 }
 
