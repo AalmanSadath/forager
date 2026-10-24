@@ -392,7 +392,7 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
                 continue;
             }
         };
-        // Installed without Forager: from now on it is tracked as installed.
+        // Installed or changed outside Forager: keep what the system reports.
         if let Some(installed) = status.found.clone() {
             store.apps[index].installed = Some(installed);
             found = true;
@@ -586,10 +586,10 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         via,
     } = *options;
     let app = store.get_mut(id)?;
-    let recorded = app.installed.is_some();
+    let recorded = app.installed.clone();
     let planned = update::plan(app, platform)?;
-    // A package installed without Forager was found: keep it as the install.
-    if !recorded && app.installed.is_some() {
+    // Installed or changed outside Forager: keep what the system reports.
+    if app.installed != recorded {
         store.save()?;
     }
     let app = store.get(id)?;

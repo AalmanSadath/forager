@@ -33,8 +33,8 @@ pub struct StatusView {
     pub repo_version: Option<String>,
     /// Seconds since the Unix epoch.
     pub checked_at: u64,
-    /// A system package installed without Forager was found and recorded as
-    /// the app's install, so the app list is out of date.
+    /// The install was found on the system, or at another version than
+    /// recorded, and saved, so the app list is out of date.
     pub found: bool,
 }
 
@@ -59,9 +59,9 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
             let found = status
                 .found
                 .clone()
-                .is_some_and(|installed| record_found(&app.id, installed));
+                .is_some_and(|installed| record_found(&app.id, app.installed.as_ref(), installed));
             let app = &App {
-                installed: app.installed.clone().or(status.found),
+                installed: status.found.or(app.installed.clone()),
                 ..app.clone()
             };
             let (asset, asset_format, asset_error) = match select_asset(app, &status.latest, platform) {
@@ -98,14 +98,14 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
     }
 }
 
-/// Saves an install found on the system as the app's own, unless one was
-/// recorded meanwhile.
-fn record_found(id: &str, installed: Installed) -> bool {
+/// Saves the install found on the system as the app's own, unless the
+/// record changed since the check read it (another process installed).
+fn record_found(id: &str, checked: Option<&Installed>, found: Installed) -> bool {
     let Ok(mut store) = load_store() else {
         return false;
     };
     match store.get_mut(id) {
-        Ok(app) if app.installed.is_none() => app.installed = Some(installed),
+        Ok(app) if app.installed.as_ref() == checked => app.installed = Some(found),
         _ => return false,
     }
     store.save().is_ok()

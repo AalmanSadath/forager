@@ -57,7 +57,7 @@ export interface StatusView {
   asset_error: string | null;
   repo_version: string | null;
   checked_at: number;
-  /** A system package installed without Forager was recorded as the install. */
+  /** The install was found on the system, or at a new version, and saved. */
   found: boolean;
 }
 

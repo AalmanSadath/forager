@@ -194,7 +194,7 @@ impl fmt::Display for Signature {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Installed {
     pub tag: String,
     pub format: Format,

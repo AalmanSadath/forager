@@ -134,10 +134,11 @@ impl State {
 pub struct Status {
     pub state: State,
     pub latest: Release,
-    /// A system package of the app that Forager did not install, e.g. one
-    /// installed by hand before the app was tracked. Found only while no
-    /// install is recorded, and already counted in `state`; callers save it
-    /// as the app's install.
+    /// The install as the package manager reports it, when that differs from
+    /// the record: a system package or Flatpak installed without Forager,
+    /// e.g. by hand before the app was tracked, or the recorded one since
+    /// upgraded or downgraded outside Forager. Already counted in `state`;
+    /// callers save it as the app's install.
     pub found: Option<Installed>,
 }
 
@@ -150,11 +151,8 @@ pub fn status(app: &App) -> Result<Status> {
 pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
     let platform = Platform::detect();
     let latest = latest(app, releases, &platform)?;
-    let found = match app.installed {
-        Some(_) => None,
-        None => find_existing(app, &latest, &platform),
-    };
-    let state = match app.installed.as_ref().or(found.as_ref()) {
+    let found = observe(app, &latest, &platform);
+    let state = match found.as_ref().or(app.installed.as_ref()) {
         None => State::NotInstalled,
         Some(installed) if !install::is_present(installed) => State::Missing,
         Some(installed) if app.format.is_some_and(|f| f != installed.format) => State::WrongFormat,
@@ -178,6 +176,53 @@ pub fn latest(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<
     Ok(eligible
         .find(|r| select_asset(app, r, platform).is_ok())
         .unwrap_or(newest))
+}
+
+/// See `Status::found`.
+fn observe(app: &App, release: &Release, platform: &Platform) -> Option<Installed> {
+    let Some(recorded) = &app.installed else {
+        return find_existing(app, release, platform);
+    };
+    let package = recorded.package.as_deref()?;
+    let actual = match recorded.format {
+        Format::Flatpak => install::flatpak_version(package)?,
+        format if format.needs_root() => install::installed_version(package, format)?,
+        // Forager placed AppImages and tarballs itself; nothing else reports their version.
+        _ => return None,
+    };
+    let asset = select_asset(app, release, platform).ok().map(|(asset, _)| asset);
+    refreshed(recorded, actual, release, asset)
+}
+
+/// The recorded install at the version actually installed, if that is
+/// another one.
+fn refreshed(recorded: &Installed, actual: String, release: &Release, asset: Option<&Asset>) -> Option<Installed> {
+    if same_version(&actual, &recorded.tag) {
+        return None;
+    }
+    let (tag, asset) = as_release(actual, release, asset);
+    Some(Installed {
+        tag,
+        asset,
+        ..recorded.clone()
+    })
+}
+
+fn same_version(a: &str, b: &str) -> bool {
+    match (version::parse_tag(a), version::parse_tag(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// A version reported by a package manager as tag and asset: the release's
+/// own when it is that release, so it reads like an install Forager made.
+fn as_release(version: String, release: &Release, asset: Option<&Asset>) -> (String, String) {
+    if same_version(&version, &release.tag) {
+        (release.tag.clone(), asset.map_or_else(String::new, |a| a.name.clone()))
+    } else {
+        (version, String::new())
+    }
 }
 
 /// A system package or Flatpak of the app installed without Forager, looked
@@ -210,15 +255,8 @@ fn find_existing(app: &App, release: &Release, platform: &Platform) -> Option<In
     })
 }
 
-/// Records the found version as the release's own tag and asset when they
-/// match, so it reads like an install Forager made.
 fn existing_install(version: String, package: String, format: Format, asset: &Asset, release: &Release) -> Installed {
-    let current = version::parse_tag(&version).is_some_and(|v| version::parse_tag(&release.tag) == Some(v));
-    let (tag, asset) = if current {
-        (release.tag.clone(), asset.name.clone())
-    } else {
-        (version, String::new())
-    };
+    let (tag, asset) = as_release(version, release, Some(asset));
     Installed {
         tag,
         format,
@@ -231,9 +269,9 @@ fn existing_install(version: String, package: String, format: Format, asset: &As
 
 /// The update for `app`, or `None` if it is up to date. An install that is
 /// missing, or in another format than the one the app is pinned to, counts
-/// as out of date. A system package found for an app with no recorded
-/// install becomes its install (see `Status::found`), so the caller should
-/// save `app`.
+/// as out of date. An install found on the system or at another version
+/// than recorded becomes the app's install (see `Status::found`), so the
+/// caller should save `app` when its install changed.
 pub fn plan(app: &mut App, platform: &Platform) -> Result<Option<Plan>> {
     let Status {
         state,
@@ -400,6 +438,33 @@ mod tests {
             missing: false,
             signature: None,
         }
+    }
+
+    #[test]
+    fn refreshes_a_version_changed_outside_forager() {
+        let plan = plan(Format::Rpm, None);
+        let release = Release {
+            tag: "v0.1.1".into(),
+            ..plan.release
+        };
+        let recorded = Installed {
+            tag: "v0.1.0".into(),
+            format: Format::Rpm,
+            asset: "tool-0.1.0-1.x86_64.rpm".into(),
+            package: Some("tool".into()),
+            path: None,
+            links: Vec::new(),
+        };
+        assert!(refreshed(&recorded, "0.1.0".into(), &release, Some(&plan.asset)).is_none());
+        let upgraded = refreshed(&recorded, "0.1.1".into(), &release, Some(&plan.asset)).unwrap();
+        assert_eq!(
+            (upgraded.tag.as_str(), upgraded.asset.as_str()),
+            ("v0.1.1", "tool.tar.gz")
+        );
+        assert_eq!(upgraded.package.as_deref(), Some("tool"));
+        assert_eq!(upgraded.format, Format::Rpm);
+        let other = refreshed(&recorded, "0.0.9".into(), &release, Some(&plan.asset)).unwrap();
+        assert_eq!((other.tag.as_str(), other.asset.as_str()), ("0.0.9", ""));
     }
 
     #[test]

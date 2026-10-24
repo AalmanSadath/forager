@@ -238,6 +238,17 @@ pub fn package_guesses(asset: &str, format: Format, id: &str) -> Vec<String> {
     names
 }
 
+/// Version of the installed Flatpak app `id`, if it declares one.
+pub fn flatpak_version(id: &str) -> Option<String> {
+    version_of(&flatpak::installed_apps(), id)
+}
+
+fn version_of(apps: &[(String, String)], id: &str) -> Option<String> {
+    apps.iter()
+        .find(|(app, version)| app == id && !version.is_empty())
+        .map(|(_, version)| version.clone())
+}
+
 /// The installed Flatpak app named like one of `names`: its id, or the last
 /// part of it (`org.example.Tool` for `tool`), compared without case. Gives
 /// `(id, version)`.
@@ -404,6 +415,17 @@ mod tests {
             package_guesses("bifrossh.flatpak", Format::Flatpak, "BifroSSH"),
             ["bifrossh"]
         );
+    }
+
+    #[test]
+    fn finds_a_flatpaks_version() {
+        let apps = [
+            ("org.example.Tool".to_string(), "1.2.0".to_string()),
+            ("org.example.Bare".into(), String::new()),
+        ];
+        assert_eq!(version_of(&apps, "org.example.Tool").as_deref(), Some("1.2.0"));
+        assert_eq!(version_of(&apps, "org.example.Bare"), None);
+        assert_eq!(version_of(&apps, "org.example.tool"), None);
     }
 
     #[test]

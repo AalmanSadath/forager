@@ -66,10 +66,10 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<O
     let planned = blocking(move || {
         let mut store = load_store()?;
         let app = store.get_mut(&id).map_err(|e| e.to_string())?;
-        let recorded = app.installed.is_some();
+        let recorded = app.installed.clone();
         let planned = update::plan(app, &Platform::detect()).map_err(|e| e.to_string())?;
-        // A package installed without Forager was found: keep it as the install.
-        if !recorded && app.installed.is_some() {
+        // Installed or changed outside Forager: keep what the system reports.
+        if app.installed != recorded {
             store.save().map_err(|e| e.to_string())?;
         }
         let app = store.get(&id).map_err(|e| e.to_string())?;
