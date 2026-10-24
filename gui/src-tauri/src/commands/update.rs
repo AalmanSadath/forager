@@ -150,7 +150,12 @@ pub async fn start_update(app: AppHandle, updates: State<'_, Updates>, id: Strin
 /// Installs the downloaded asset and records it.
 #[tauri::command]
 pub async fn finish_update(app: AppHandle, updates: State<'_, Updates>, id: String) -> CmdResult<AppView> {
-    let session = updates.0.lock().unwrap().remove(&id).ok_or("no update downloaded for this app")?;
+    let session = updates
+        .0
+        .lock()
+        .unwrap()
+        .remove(&id)
+        .ok_or("no update downloaded for this app")?;
     let download = session.download.ok_or("the download has not finished")?;
     let plan = session.plan;
     let (handle, key) = (app.clone(), id.clone());
@@ -161,7 +166,15 @@ pub async fn finish_update(app: AppHandle, updates: State<'_, Updates>, id: Stri
             ControlFlow::Continue(())
         })
         .map_err(|e| e.to_string())?;
-        let mut event = Event::new(&key, if plan.from.is_some() { Kind::Updated } else { Kind::Installed }, Via::Gui);
+        let mut event = Event::new(
+            &key,
+            if plan.from.is_some() {
+                Kind::Updated
+            } else {
+                Kind::Installed
+            },
+            Via::Gui,
+        );
         event.from = plan.from.clone();
         event.to = Some(plan.release.tag.clone());
         event.format = Some(plan.format);
