@@ -248,6 +248,9 @@ pub struct Installed {
     /// Symlinks Forager created for a tarball's executables.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<PathBuf>,
+    /// Menu entry and icon Forager wrote for an AppImage or tarball.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub desktop: Vec<PathBuf>,
 }
 
 #[cfg(test)]
@@ -285,6 +288,7 @@ package = "tool"
             package: None,
             path: None,
             links: Vec::new(),
+            desktop: Vec::new(),
         };
         let mut app = App::new(
             crate::source::Source::GitHub {

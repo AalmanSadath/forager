@@ -135,6 +135,12 @@ The latest release is the newest one with a file for this system, so a
 project that also tags, say, Android builds in the same repository still
 finds its Linux release.
 
+AppImages and tarballs get a menu entry: an AppImage's own `.desktop` file
+and icon, read from the image without running it, or the entry a tarball
+ships in `share/applications` (command-line tools without one get none).
+They are written as `forager-<id>` in `~/.local/share/applications` and
+`~/.local/share/icons`, and removed with the app.
+
 Background checks run from a systemd user timer:
 
 ```sh

@@ -17,9 +17,9 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::error::{Error, Result};
-use crate::host;
 use crate::model::{App, Format, Installed};
 use crate::platform::{self, PackageManager, Platform};
+use crate::{desktop, host};
 
 /// Installs `file` for `app` and returns what is needed to update or remove
 /// it later. `downgrade` lets the package manager replace a newer version. The app's install in the same format is taken to be the
@@ -46,6 +46,7 @@ pub fn install(
         package: None,
         path: None,
         links: Vec::new(),
+        desktop: Vec::new(),
     };
 
     installed.package = package_name(&file, format)?;
@@ -85,6 +86,10 @@ pub fn install(
             let target = dir.join(format!("{}.AppImage", app.id));
             fs::copy(&file, &target)?;
             fs::set_permissions(&target, fs::Permissions::from_mode(0o755))?;
+            // A menu entry is a convenience: an AppImage it cannot be made
+            // for still installs.
+            replace_menu_entry(app);
+            installed.desktop = desktop::for_appimage(&app.id, &target).unwrap_or_default();
             installed.path = Some(target);
         }
         Format::Flatpak => {
@@ -102,6 +107,8 @@ pub fn install(
                 .install_of(Format::Tarball)
                 .map_or(&[][..], |previous| previous.links.as_slice());
             let placed = tarball::install(&file, &app.id, &app.bins, &opt_dir, &bin_dir, old_links)?;
+            replace_menu_entry(app);
+            installed.desktop = desktop::for_tarball(&app.id, &placed.dir, &placed.links).unwrap_or_default();
             installed.path = Some(placed.dir);
             installed.links = placed.links;
         }
@@ -305,7 +312,18 @@ pub fn is_present(installed: &Installed) -> bool {
     }
 }
 
+/// Removes the menu entry of the AppImage or tarball being replaced.
+fn replace_menu_entry(app: &App) {
+    for previous in app
+        .installs()
+        .filter(|i| matches!(i.format, Format::AppImage | Format::Tarball))
+    {
+        desktop::remove(&previous.desktop);
+    }
+}
+
 pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
+    desktop::remove(&installed.desktop);
     match (
         installed.format,
         installed.package.as_deref(),
@@ -481,6 +499,7 @@ mod tests {
             package: None,
             path: Some(path.clone()),
             links: Vec::new(),
+            desktop: Vec::new(),
         };
         assert!(!is_present(&installed));
         fs::write(&path, "").unwrap();

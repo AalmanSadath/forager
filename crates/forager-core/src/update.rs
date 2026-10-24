@@ -385,6 +385,7 @@ fn existing_install(version: String, package: String, format: Format, asset: &As
         package: Some(package),
         path: None,
         links: Vec::new(),
+        desktop: Vec::new(),
     }
 }
 
@@ -647,6 +648,7 @@ mod tests {
             package: Some("tool".into()),
             path: None,
             links: Vec::new(),
+            desktop: Vec::new(),
         }
     }
 
@@ -758,6 +760,7 @@ mod tests {
             package: Some("tool".into()),
             path: None,
             links: Vec::new(),
+            desktop: Vec::new(),
         };
         assert!(refreshed(&recorded, "0.1.0".into(), &release, Some(&plan.asset)).is_none());
         let upgraded = refreshed(&recorded, "0.1.1".into(), &release, Some(&plan.asset)).unwrap();
@@ -874,6 +877,7 @@ mod tests {
             package: None,
             path: None,
             links: Vec::new(),
+            desktop: Vec::new(),
         }];
         assert!(plan.unverified());
         let lines = summary(&app, &plan);
