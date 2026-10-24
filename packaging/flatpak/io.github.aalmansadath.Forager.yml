@@ -1,0 +1,85 @@
+id: io.github.aalmansadath.Forager
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
+
+command: forager-gui
+
+# Forager installs software for the host, so this Flatpak is not sandboxed
+# in any useful sense; every permission below says why it is needed.
+finish-args:
+  # Displays: Wayland, X11 where there is no Wayland, and GPU for WebKitGTK
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # Forge APIs and downloads
+  - --share=network
+  # AppImages go to ~/Applications, tarballs to ~/.local/opt with links in
+  # ~/.local/bin, and the config, cache, history and keys are shared with
+  # the host's forager CLI and the background check in ~/.config,
+  # ~/.cache, ~/.local/state and ~/.local/share
+  - --filesystem=home
+  # dnf, apt, pacman, rpm, flatpak, tar, gpgv and systemctl run on the host
+  # through flatpak-spawn --host: the packages belong to the host
+  - --talk-name=org.freedesktop.Flatpak
+  # Installing system packages with one password prompt and progress
+  - --system-talk-name=org.freedesktop.PackageKit
+  # "Updates available" from the background check
+  - --talk-name=org.freedesktop.Notifications
+  # WebKitGTK inside Flatpak, as BifroSSH runs it: its own sandbox cannot
+  # nest in this one, and the DMA-BUF renderer fails on some GPUs
+  - --env=WEBKIT_DISABLE_SANDBOX=1
+  - --env=WEBKIT_DISABLE_COMPOSITING_MODE=1
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+  env:
+    CARGO_HOME: /run/build/forager/cargo-home
+    CARGO_NET_OFFLINE: 'true'
+    # esbuild's install script fetches a platform binary unless told where
+    # one is; node-sources.json stages it here.
+    ESBUILD_BINARY_PATH: /run/build/forager/flatpak-node/cache/esbuild/bin/esbuild-current
+
+modules:
+  - name: forager
+    buildsystem: simple
+    sources:
+      # The committed tree, not the working directory: a `dir` source would
+      # copy target/ and node_modules/, gigabytes the build does not use.
+      - type: git
+        path: ../..
+      - cargo-sources.json
+      - node-sources.json
+
+    build-commands:
+      - mkdir -p .cargo
+      - |
+        cat >> .cargo/config.toml << 'CARGO_EOF'
+        [source.crates-io]
+        replace-with = "vendored-sources"
+
+        [source.vendored-sources]
+        directory = "cargo/vendor"
+        CARGO_EOF
+
+      # Frontend, from the offline npm cache. `ci` checks package-lock.json
+      # against node-sources.json rather than quietly using what is there.
+      - cd gui && npm ci --cache=$PWD/../flatpak-node/npm-cache --offline
+      - cd gui && npm run build
+
+      # Both programs; custom-protocol embeds gui/dist in the app.
+      - cargo build --release --offline -p forager-cli
+      - cargo build --release --offline -p forager-gui --features tauri/custom-protocol
+
+      - install -Dm755 target/release/forager target/release/forager-gui -t /app/bin/
+      - install -Dm644 packaging/io.github.aalmansadath.Forager.desktop -t /app/share/applications/
+      - install -Dm644 packaging/io.github.aalmansadath.Forager.metainfo.xml -t /app/share/metainfo/
+      - install -Dm644 gui/src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.aalmansadath.Forager.png
+      - install -Dm644 gui/src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.aalmansadath.Forager.png
+      - install -Dm644 gui/src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/io.github.aalmansadath.Forager.png
+      - install -Dm644 gui/src-tauri/icons/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.aalmansadath.Forager.svg

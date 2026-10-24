@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.aalmansadath.Forager</id>
+  <name>Forager</name>
+  <summary>Install and update apps from their forge releases</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.aalmansadath">
+    <name>Aalman Sadath</name>
+  </developer>
+
+  <description>
+    <p>
+      Forager tracks apps published on GitHub, GitLab, Codeberg and other Forgejo or Gitea
+      instances, or on any web page that links to its downloads. For each release it picks the
+      file that fits this computer, verifies it, and installs it the way the system expects: deb,
+      rpm and Arch packages through the package manager, Flatpak bundles, AppImages, or tarballs.
+    </p>
+    <ul>
+      <li>See every tracked app, what is installed and what is new</li>
+      <li>See why each file in a release was or was not chosen, and change the choice</li>
+      <li>Checksums are checked when published; minisign, GPG and GitHub attestations when you give a key</li>
+      <li>A daily background check with notifications, and automatic updates that need no password</li>
+      <li>A log of everything installed, updated, removed or failed</li>
+    </ul>
+    <p>
+      The Flatpak runs the host's package tools through flatpak-spawn and reads and writes your
+      home directory, since installing software for the host is what it is for. It is not
+      sandboxed in any meaningful way.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.aalmansadath.Forager.desktop</launchable>
+  <provides>
+    <binary>forager</binary>
+    <binary>forager-gui</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/AalmanSadath/forager</url>
+  <url type="bugtracker">https://github.com/AalmanSadath/forager/issues</url>
+  <url type="vcs-browser">https://github.com/AalmanSadath/forager</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Tracked apps, grouped by what needs attention</caption>
+      <image>https://raw.githubusercontent.com/AalmanSadath/forager/main/docs/screenshots/apps.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>An app's page, with every file in the latest release explained</caption>
+      <image>https://raw.githubusercontent.com/AalmanSadath/forager/main/docs/screenshots/app-page.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>What an update will install, and how it is verified</caption>
+      <image>https://raw.githubusercontent.com/AalmanSadath/forager/main/docs/screenshots/update.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.2.0" date="2026-10-25">
+      <description>
+        <p>First release with packages: deb, rpm, Arch, Flatpak, AppImage and a tarball.</p>
+      </description>
+    </release>
+  </releases>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+</component>

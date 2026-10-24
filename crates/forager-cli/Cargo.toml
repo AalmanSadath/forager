@@ -2,6 +2,8 @@
 name = "forager-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Install and update Linux apps from their GitHub releases"
 
 [[bin]]
@@ -11,6 +13,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }
-forager-core = { version = "0.1.0", path = "../forager-core" }
+forager-core = { version = "0.2.0", path = "../forager-core" }
 notify-rust = "4.18.2"
 regex = "1.13.1"

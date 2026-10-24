@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Forager
+GenericName=App Updater
+Comment=Install and update apps from their GitHub, GitLab and Codeberg releases
+Exec=forager-gui
+Icon=io.github.aalmansadath.Forager
+Terminal=false
+Categories=System;PackageManager;
+Keywords=update;install;release;github;gitlab;codeberg;appimage;flatpak;package;
+StartupWMClass=forager-gui

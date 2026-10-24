@@ -1,0 +1,29 @@
+# Maintainer: Aalman Sadath
+#
+# Repackages the release tarball, so the Arch package and the other formats
+# ship the same binaries. packaging/arch/build.sh fills in the checksum.
+pkgname=forager
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Install and update apps from their GitHub, GitLab and Codeberg releases'
+arch=('x86_64')
+url='https://github.com/AalmanSadath/forager'
+license=('GPL-3.0-or-later')
+depends=('webkit2gtk-4.1' 'gtk3' 'tar' 'xz' 'zstd' 'gzip' 'bzip2')
+optdepends=(
+  'packagekit: install system packages with one password prompt and progress'
+  'polkit: install system packages without PackageKit, through pkexec'
+  'flatpak: install Flatpak bundles'
+  'gnupg: check GPG signatures'
+  'github-cli: check GitHub artifact attestations'
+)
+options=('!debug' '!strip')
+source=("https://github.com/AalmanSadath/forager/releases/download/v$pkgver/forager-$pkgver-x86_64-linux.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  cd "forager-$pkgver-x86_64-linux"
+  install -Dm755 bin/forager bin/forager-gui -t "$pkgdir/usr/bin/"
+  cp -r share "$pkgdir/usr/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
