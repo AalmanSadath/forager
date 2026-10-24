@@ -131,6 +131,47 @@ pub struct App {
     pub installed: Option<Installed>,
 }
 
+impl App {
+    /// An app with default settings, not yet installed.
+    pub fn new(source: Source, id: String) -> App {
+        App {
+            id,
+            source,
+            asset_filter: None,
+            format: None,
+            prerelease: false,
+            bins: Vec::new(),
+            signature: None,
+            installed: None,
+        }
+    }
+
+    /// Checks settings that come from the user: the id, which becomes part
+    /// of file paths, and the asset filter regex.
+    pub fn validate(&self) -> crate::Result<()> {
+        validate_id(&self.id)?;
+        if let Some(filter) = &self.asset_filter {
+            regex::Regex::new(filter)?;
+        }
+        Ok(())
+    }
+}
+
+/// App ids name files and directories (`~/.local/opt/<id>`,
+/// `~/Applications/<id>.AppImage`), so they are limited to letters, digits,
+/// `.`, `_` and `-`, and may not start with a dot.
+pub fn validate_id(id: &str) -> crate::Result<()> {
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && !id.starts_with('.')
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if ok {
+        Ok(())
+    } else {
+        Err(crate::Error::InvalidId(id.to_string()))
+    }
+}
+
 /// How an app's assets are signed, with the key the user trusts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -172,6 +213,16 @@ pub struct Installed {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_ids() {
+        for id in ["ripgrep", "gear-lever", "org.example.Tool_2"] {
+            assert!(validate_id(id).is_ok(), "{id}");
+        }
+        for id in ["", "../x", "a/b", ".hidden", "with space", &"x".repeat(65)] {
+            assert!(validate_id(id).is_err(), "{id}");
+        }
+    }
 
     #[test]
     fn classifies_file_names() {

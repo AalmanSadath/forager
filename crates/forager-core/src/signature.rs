@@ -170,6 +170,32 @@ fn attestation(source: &Source, file: &Path) -> Result<()> {
     }
 }
 
+/// A signature requirement as the user gives it, before keys are stored.
+#[derive(Debug, Clone)]
+pub enum SignatureInput {
+    /// A base64 minisign key, or a path to a `minisign.pub` file.
+    Minisign(String),
+    /// An OpenPGP public key file, armored or binary.
+    GpgKeyFile(PathBuf),
+    Attestation,
+}
+
+/// Validates `input` and stores what it needs (a GPG keyring for app `id`).
+pub fn resolve(input: &SignatureInput, id: &str, source: &Source) -> Result<Signature> {
+    match input {
+        SignatureInput::Minisign(key) => Ok(Signature::Minisign {
+            public_key: parse_minisign_key(key)?,
+        }),
+        SignatureInput::GpgKeyFile(file) => Ok(Signature::Gpg {
+            keyring: store_gpg_key(id, file)?,
+        }),
+        SignatureInput::Attestation if matches!(source, Source::GitHub { .. }) => Ok(Signature::Attestation),
+        SignatureInput::Attestation => Err(Error::SignatureInvalid(
+            "attestations are only available for GitHub projects".into(),
+        )),
+    }
+}
+
 /// Reads a minisign public key given either as the base64 key itself or as
 /// a path to a `minisign.pub` file, and returns the base64 key.
 pub fn parse_minisign_key(key_or_path: &str) -> Result<String> {

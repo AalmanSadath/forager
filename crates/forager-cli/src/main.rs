@@ -6,10 +6,11 @@ use clap::{Parser, Subcommand};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format, Signature};
 use forager_core::platform::{self, Platform};
+use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, State};
-use forager_core::{install, signature, timer};
+use forager_core::{install, timer};
 
 #[derive(Parser)]
 #[command(
@@ -141,21 +142,16 @@ impl SignatureArgs {
     }
 
     fn resolve(&self, id: &str, source: &Source) -> Result<Option<Signature>> {
-        if let Some(key) = &self.minisign_key {
-            let public_key = signature::parse_minisign_key(key)?;
-            return Ok(Some(Signature::Minisign { public_key }));
-        }
-        if let Some(file) = &self.gpg_key {
-            let keyring = signature::store_gpg_key(id, file)?;
-            return Ok(Some(Signature::Gpg { keyring }));
-        }
-        if self.attestation {
-            if !matches!(source, Source::GitHub { .. }) {
-                bail!("attestations are only available for GitHub projects");
-            }
-            return Ok(Some(Signature::Attestation));
-        }
-        Ok(None)
+        let input = if let Some(key) = &self.minisign_key {
+            SignatureInput::Minisign(key.clone())
+        } else if let Some(file) = &self.gpg_key {
+            SignatureInput::GpgKeyFile(file.clone())
+        } else if self.attestation {
+            SignatureInput::Attestation
+        } else {
+            return Ok(None);
+        };
+        Ok(Some(signature::resolve(&input, id, source)?))
     }
 }
 
@@ -215,23 +211,18 @@ fn main() -> Result<()> {
         } => {
             let source = Source::from_url(&url, forge)?;
             let id = id.unwrap_or_else(|| source.default_id());
-            if let Some(filter) = &filter {
-                regex::Regex::new(filter).context("invalid --filter")?;
-            }
+            let mut app = App::new(source, id.clone());
+            app.asset_filter = filter;
+            app.format = format;
+            app.prerelease = prerelease;
+            app.bins = bins;
+            app.validate()?;
             if store.get(&id).is_ok() {
                 bail!("app already tracked: {id}");
             }
-            let signature = signature.resolve(&id, &source)?;
-            store.add(App {
-                id: id.clone(),
-                source,
-                asset_filter: filter,
-                format,
-                prerelease,
-                bins,
-                signature,
-                installed: None,
-            })?;
+            // Last, since a GPG key is stored on disk under the app's id.
+            app.signature = signature.resolve(&id, &app.source)?;
+            store.add(app)?;
             store.save()?;
             println!("Tracking {id}. Run `forager update {id}` to install it.");
         }
@@ -478,43 +469,11 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         (None, _) => "not installed".into(),
     };
     println!("{id}: {from} -> {}", plan.release.tag);
-    // GitLab does not report asset sizes.
-    let size = match plan.asset.size {
-        0 => String::new(),
-        bytes => format!("{:.1} MiB, ", bytes as f64 / 1048576.0),
-    };
-    println!("  asset:  {} ({size}{})", plan.asset.name, plan.format);
-    println!("  source: {}", app.source);
-    match (&plan.expected_sha256, &plan.signature) {
-        (Some(_), _) => println!("  sha256: published, will verify"),
-        (None, Some(_)) => println!("  sha256: not published"),
-        (None, None) => {
-            println!("  sha256: NOT PUBLISHED, download cannot be verified");
-            if yes && !allow_unverified {
-                bail!("refusing unverified asset without --allow-unverified");
-            }
-        }
+    for line in update::summary(app, &plan) {
+        println!("  {:<8}{}", format!("{}:", line.label), line.value);
     }
-    if let Some(check) = &plan.signature {
-        println!(
-            "  signed: {} ({}), will verify",
-            check.signature,
-            check.signed.describe()
-        );
-    }
-    if plan.format.needs_root() {
-        println!("  note:   package scripts run as root");
-    }
-    if plan.format == Format::Flatpak {
-        println!("  note:   a missing runtime is fetched from the bundle's runtime repo (usually Flathub)");
-    }
-    if let Some(previous) = &app.installed
-        && previous.format != plan.format
-    {
-        println!(
-            "  note:   replaces the {} install, which will be removed",
-            previous.format
-        );
+    if plan.unverified() && yes && !allow_unverified {
+        bail!("refusing unverified asset without --allow-unverified");
     }
     if !yes && !confirm("Install?")? {
         println!("{id}: skipped");

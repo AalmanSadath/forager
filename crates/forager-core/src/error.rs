@@ -58,6 +58,8 @@ pub enum Error {
     DBus(#[from] zbus::Error),
     #[error("command failed: {0}")]
     CommandFailed(String),
+    #[error("invalid app id '{0}': use letters, digits, '.', '_' and '-'")]
+    InvalidId(String),
     #[error("app not tracked: {0}")]
     AppNotFound(String),
     #[error("app already tracked: {0}")]

@@ -1,39 +1,120 @@
 use regex::Regex;
+use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::model::{App, Asset, Format, Release};
 use crate::platform::{KNOWN_ARCHES, Platform, arch_aliases};
 
-/// Picks the release asset that best fits the app's settings and the platform.
+/// Why an asset was not picked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reason {
+    /// Not a package format Forager installs (checksums, signatures, zips...).
+    NotPackage,
+    /// Does not match the app's asset filter.
+    Filter,
+    Debug,
+    OtherOs,
+    /// A format this system cannot install, or not the one the app is pinned to.
+    FormatNotWanted,
+    OtherArch,
+    /// A tarball naming neither Linux nor this architecture, usually source code.
+    SourceArchive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "reason", rename_all = "snake_case")]
+pub enum Verdict {
+    Chosen,
+    /// Installable, but a better match was chosen.
+    Usable,
+    Rejected(Reason),
+}
+
+/// One release asset and what the matcher made of it.
+#[derive(Debug, Clone)]
+pub struct Candidate<'a> {
+    pub asset: &'a Asset,
+    pub format: Option<Format>,
+    pub verdict: Verdict,
+}
+
+/// Every asset of `release` with its verdict, in release order. At most one
+/// is `Chosen`.
 ///
 /// Preference order: format (as ranked by the platform), then an asset naming
 /// this architecture over one naming none. Assets naming another architecture
 /// or operating system, debug packages and source packages are never picked.
 /// A tarball must name Linux or this architecture, since one naming neither is
 /// usually a source archive.
-pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<(&'a Asset, Format)> {
+pub fn candidates<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<Vec<Candidate<'a>>> {
     let filter = app.asset_filter.as_deref().map(Regex::new).transpose()?;
     let formats = match app.format {
         Some(format) => vec![format],
         None => platform.formats(),
     };
 
-    release
+    let mut best: Option<(usize, (usize, bool))> = None;
+    let mut list: Vec<Candidate> = release
         .assets
         .iter()
-        .filter(|a| filter.as_ref().is_none_or(|re| re.is_match(&a.name)))
-        .filter(|a| !is_debug(&a.name) && !names_other_os(&a.name))
-        .filter_map(|a| {
-            let format = Format::from_file_name(&a.name)?;
-            let rank = formats.iter().position(|f| *f == format)?;
-            let arch = arch_match(&a.name, platform.arch)?;
-            if format == Format::Tarball && !arch && !a.name.to_ascii_lowercase().contains("linux") {
-                return None;
-            }
-            Some((a, format, (rank, !arch)))
+        .enumerate()
+        .map(|(index, asset)| {
+            let format = Format::from_file_name(&asset.name);
+            let verdict = match judge(asset, format, filter.as_ref(), &formats, platform) {
+                Ok(score) => {
+                    if best.is_none_or(|(_, best_score)| score < best_score) {
+                        best = Some((index, score));
+                    }
+                    Verdict::Usable
+                }
+                Err(reason) => Verdict::Rejected(reason),
+            };
+            Candidate { asset, format, verdict }
         })
-        .min_by_key(|(_, _, score)| *score)
-        .map(|(a, format, _)| (a, format))
+        .collect();
+    if let Some((index, _)) = best {
+        list[index].verdict = Verdict::Chosen;
+    }
+    Ok(list)
+}
+
+/// Score of an installable asset (lower is better), or why it is not one.
+fn judge(
+    asset: &Asset,
+    format: Option<Format>,
+    filter: Option<&Regex>,
+    formats: &[Format],
+    platform: &Platform,
+) -> std::result::Result<(usize, bool), Reason> {
+    let format = format.ok_or(Reason::NotPackage)?;
+    if filter.is_some_and(|re| !re.is_match(&asset.name)) {
+        return Err(Reason::Filter);
+    }
+    if is_debug(&asset.name) {
+        return Err(Reason::Debug);
+    }
+    if names_other_os(&asset.name) {
+        return Err(Reason::OtherOs);
+    }
+    let rank = formats
+        .iter()
+        .position(|f| *f == format)
+        .ok_or(Reason::FormatNotWanted)?;
+    let arch = arch_match(&asset.name, platform.arch).ok_or(Reason::OtherArch)?;
+    if format == Format::Tarball && !arch && !asset.name.to_ascii_lowercase().contains("linux") {
+        return Err(Reason::SourceArchive);
+    }
+    Ok((rank, !arch))
+}
+
+/// Picks the release asset that best fits the app's settings and the
+/// platform; see `candidates` for the rules.
+pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<(&'a Asset, Format)> {
+    candidates(app, release, platform)?
+        .into_iter()
+        .find(|c| c.verdict == Verdict::Chosen)
+        .and_then(|c| Some((c.asset, c.format?)))
         .ok_or_else(|| Error::NoMatchingAsset {
             tag: release.tag.clone(),
         })
@@ -213,5 +294,44 @@ mod tests {
     fn rejects_32_bit_builds_named_386() {
         let release = release(&["glab_1.0_linux_386.tar.gz", "glab_1.0_linux_armv6.tar.gz"]);
         assert!(select_asset(&app(), &release, &platform(None)).is_err());
+    }
+
+    #[test]
+    fn explains_each_verdict() {
+        let release = release(&[
+            "SHA256SUMS",
+            "tool-debuginfo-1.0.0-1.x86_64.rpm",
+            "tool-1.0.0-x86_64-apple-darwin.tar.gz",
+            "tool_1.0.0_amd64.deb",
+            "tool-1.0.0-1.aarch64.rpm",
+            "tool-1.0.0.tar.gz",
+            "tool-1.0.0-1.x86_64.rpm",
+            "Tool-1.0.0-x86_64.AppImage",
+        ]);
+        let verdicts: Vec<Verdict> = candidates(&app(), &release, &platform(Some(PackageManager::Dnf)))
+            .unwrap()
+            .into_iter()
+            .map(|c| c.verdict)
+            .collect();
+        use Reason::*;
+        assert_eq!(
+            verdicts,
+            [
+                Verdict::Rejected(NotPackage),
+                Verdict::Rejected(Debug),
+                Verdict::Rejected(OtherOs),
+                Verdict::Rejected(FormatNotWanted),
+                Verdict::Rejected(OtherArch),
+                Verdict::Rejected(SourceArchive),
+                Verdict::Chosen,
+                Verdict::Usable,
+            ]
+        );
+
+        let mut filtered = app();
+        filtered.asset_filter = Some("AppImage".into());
+        let first = candidates(&filtered, &release, &platform(None)).unwrap();
+        assert_eq!(first[6].verdict, Verdict::Rejected(Filter));
+        assert_eq!(first[7].verdict, Verdict::Chosen);
     }
 }

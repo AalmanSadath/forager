@@ -65,6 +65,10 @@ impl Store {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),
         };
+        // Ids become file paths, and the file may have been edited by hand.
+        for app in &apps {
+            crate::model::validate_id(&app.id)?;
+        }
         Ok(Store {
             path: path.to_path_buf(),
             apps,

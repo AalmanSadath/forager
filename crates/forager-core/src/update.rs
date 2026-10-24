@@ -4,6 +4,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::error::{Error, Result};
 use crate::matcher::select_asset;
 use crate::model::{App, Asset, Format, Installed, Release, Signature};
@@ -27,6 +29,76 @@ pub struct Plan {
     pub missing: bool,
     /// Signature check required by the app.
     pub signature: Option<SignatureCheck>,
+}
+
+impl Plan {
+    /// Neither a checksum nor a signature can vouch for the download.
+    pub fn unverified(&self) -> bool {
+        self.expected_sha256.is_none() && self.signature.is_none()
+    }
+}
+
+/// How much attention a summary line needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tone {
+    Normal,
+    Warn,
+    Danger,
+}
+
+/// One line of what an update will do, for confirmation prompts.
+#[derive(Debug, Clone, Serialize)]
+pub struct SummaryLine {
+    pub label: &'static str,
+    pub value: String,
+    pub tone: Tone,
+}
+
+/// What installing `plan` for `app` involves: the asset, how it is verified,
+/// and anything the user should know before agreeing.
+pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
+    let line = |label, value: String, tone| SummaryLine { label, value, tone };
+    // GitLab does not report asset sizes.
+    let size = match plan.asset.size {
+        0 => String::new(),
+        bytes => format!("{:.1} MiB, ", bytes as f64 / 1048576.0),
+    };
+    let mut lines = vec![
+        line(
+            "asset",
+            format!("{} ({size}{})", plan.asset.name, plan.format),
+            Tone::Normal,
+        ),
+        line("source", app.source.to_string(), Tone::Normal),
+    ];
+    lines.push(match (&plan.expected_sha256, &plan.signature) {
+        (Some(_), _) => line("sha256", "published, will verify".into(), Tone::Normal),
+        (None, Some(_)) => line("sha256", "not published".into(), Tone::Normal),
+        (None, None) => line(
+            "sha256",
+            "NOT PUBLISHED, download cannot be verified".into(),
+            Tone::Danger,
+        ),
+    });
+    if let Some(check) = &plan.signature {
+        let value = format!("{} ({}), will verify", check.signature, check.signed.describe());
+        lines.push(line("signed", value, Tone::Normal));
+    }
+    if plan.format.needs_root() {
+        lines.push(line("note", "package scripts run as root".into(), Tone::Warn));
+    }
+    if plan.format == Format::Flatpak {
+        let value = "a missing runtime is fetched from the bundle's runtime repo (usually Flathub)".into();
+        lines.push(line("note", value, Tone::Normal));
+    }
+    if let Some(previous) = &app.installed
+        && previous.format != plan.format
+    {
+        let value = format!("replaces the {} install, which will be removed", previous.format);
+        lines.push(line("note", value, Tone::Warn));
+    }
+    lines
 }
 
 #[derive(Debug, Clone)]
@@ -208,9 +280,8 @@ pub fn install(
 mod tests {
     use super::*;
 
-    #[test]
-    fn checksum_mismatch_is_an_error() {
-        let plan = Plan {
+    fn plan(format: Format, expected_sha256: Option<String>) -> Plan {
+        Plan {
             release: Release {
                 tag: "v1".into(),
                 name: None,
@@ -224,12 +295,17 @@ mod tests {
                 size: 0,
                 digest: None,
             },
-            format: Format::Tarball,
-            expected_sha256: Some("a".repeat(64)),
+            format,
+            expected_sha256,
             from: None,
             missing: false,
             signature: None,
-        };
+        }
+    }
+
+    #[test]
+    fn checksum_mismatch_is_an_error() {
+        let plan = plan(Format::Tarball, Some("a".repeat(64)));
         assert!(matches!(
             check_sha256(&plan, &"b".repeat(64)),
             Err(Error::ChecksumMismatch { .. })
@@ -240,5 +316,37 @@ mod tests {
             ..plan
         };
         assert!(check_sha256(&unverified, &"b".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn summary_flags_unverified_root_installs() {
+        let mut app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        app.installed = Some(Installed {
+            tag: "v0".into(),
+            format: Format::AppImage,
+            asset: "tool.AppImage".into(),
+            package: None,
+            path: None,
+            links: Vec::new(),
+        });
+        let plan = plan(Format::Rpm, None);
+        assert!(plan.unverified());
+        let lines = summary(&app, &plan);
+        let tone = |label: &str, needle: &str| {
+            lines
+                .iter()
+                .find(|l| l.label == label && l.value.contains(needle))
+                .map(|l| l.tone)
+        };
+        assert_eq!(tone("sha256", "NOT PUBLISHED"), Some(Tone::Danger));
+        assert_eq!(tone("note", "as root"), Some(Tone::Warn));
+        assert_eq!(tone("note", "replaces the appimage"), Some(Tone::Warn));
+        assert_eq!(tone("source", "github.com/o/tool"), Some(Tone::Normal));
     }
 }
