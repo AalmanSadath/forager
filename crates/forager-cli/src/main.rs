@@ -328,7 +328,7 @@ fn main() -> Result<()> {
                 println!("{:<20} {:<20} {}", app.id, state, app.source);
             }
         }
-        Command::Check { notify, quiet } => check(&store, notify, quiet, via)?,
+        Command::Check { notify, quiet } => check(&mut store, notify, quiet, via)?,
         Command::History { limit } => {
             for event in history::read(limit)?.iter().rev() {
                 println!("{}", describe_event(event));
@@ -376,23 +376,30 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
+fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
     let platform = Platform::detect();
     let mut pending = Vec::new();
-    for app in &store.apps {
-        let status = match update::status(app) {
+    let mut found = false;
+    for index in 0..store.apps.len() {
+        let status = match update::status(&store.apps[index]) {
             Ok(status) => status,
             Err(e) if quiet => {
-                eprintln!("{}: {e}", app.id);
+                eprintln!("{}: {e}", store.apps[index].id);
                 continue;
             }
             Err(e) => {
-                println!("{:<20} error: {e}", app.id);
+                println!("{:<20} error: {e}", store.apps[index].id);
                 continue;
             }
         };
+        // Installed without Forager: from now on it is tracked as installed.
+        if let Some(installed) = status.found.clone() {
+            store.apps[index].installed = Some(installed);
+            found = true;
+        }
+        let app = &store.apps[index];
         if status.state.needs_update() {
-            pending.push((app.id.as_str(), status.latest.tag.clone()));
+            pending.push((app.id.clone(), status.latest.tag.clone()));
         }
         if quiet {
             continue;
@@ -426,6 +433,9 @@ fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
         println!("{:<20} {:<30} {}", app.id, text, asset);
     }
 
+    if found {
+        store.save()?;
+    }
     if notify {
         record_updates_found(store, &pending, via);
     }
@@ -439,7 +449,7 @@ fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
             .summary(&summary)
             .body(&format!(
                 "{}\nRun `forager update` to install.",
-                pending.iter().map(|(id, _)| *id).collect::<Vec<_>>().join(", ")
+                pending.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>().join(", ")
             ))
             .icon("system-software-update")
             // Clicking the notification opens the app: Forager.desktop from
@@ -452,7 +462,7 @@ fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
 }
 
 /// Records each newly found update once, not again on every daily check.
-fn record_updates_found(store: &Store, pending: &[(&str, String)], via: Via) {
+fn record_updates_found(store: &Store, pending: &[(String, String)], via: Via) {
     let recent = history::read(500).unwrap_or_default();
     for (id, tag) in pending {
         let seen = recent
@@ -575,8 +585,15 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         unprivileged_only,
         via,
     } = *options;
+    let app = store.get_mut(id)?;
+    let recorded = app.installed.is_some();
+    let planned = update::plan(app, platform)?;
+    // A package installed without Forager was found: keep it as the install.
+    if !recorded && app.installed.is_some() {
+        store.save()?;
+    }
     let app = store.get(id)?;
-    let Some(plan) = update::plan(app, platform)? else {
+    let Some(plan) = planned else {
         let tag = app.installed.as_ref().map_or("", |i| i.tag.as_str());
         println!("{id}: {tag} is up to date");
         return Ok(());

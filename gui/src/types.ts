@@ -57,6 +57,8 @@ export interface StatusView {
   asset_error: string | null;
   repo_version: string | null;
   checked_at: number;
+  /** A system package installed without Forager was recorded as the install. */
+  found: boolean;
 }
 
 /** Payload of the `app-status` event. */

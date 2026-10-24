@@ -160,6 +160,61 @@ fn madison_version(text: &str) -> Option<String> {
         .map(|v| v.trim().to_string())
 }
 
+/// Version of `package` installed by the system package manager, without
+/// epoch or packaging revision: `rpm` gives the upstream version, `dpkg`
+/// and `pacman` append `-<revision>` and may prefix `<epoch>:`.
+pub fn installed_version(package: &str, format: Format) -> Option<String> {
+    let text = match format {
+        Format::Rpm => output(host::command("rpm").args(["-q", "--qf", "%{VERSION}", package])).ok()?,
+        Format::Deb => {
+            let line =
+                output(host::command("dpkg-query").args(["-W", "-f=${db:Status-Status} ${Version}", package])).ok()?;
+            line.strip_prefix("installed ")?.to_string()
+        }
+        Format::Pacman => output(host::command("pacman").args(["-Q", package]))
+            .ok()?
+            .split_whitespace()
+            .nth(1)?
+            .to_string(),
+        _ => return None,
+    };
+    upstream_version(&text, format)
+}
+
+fn upstream_version(text: &str, format: Format) -> Option<String> {
+    let text = text.trim();
+    let text = text.split_once(':').map_or(text, |(_, v)| v);
+    let text = match format {
+        Format::Deb | Format::Pacman => text.rsplit_once('-').map_or(text, |(v, _)| v),
+        _ => text,
+    };
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// Package names an asset is likely to install: the start of its file name
+/// (`tool-1.2.0-1.x86_64.rpm`, `tool_1.2.0_amd64.deb`,
+/// `tool-1.2.0-1-x86_64.pkg.tar.zst`), then the app's id.
+pub fn package_guesses(asset: &str, format: Format, id: &str) -> Vec<String> {
+    let from_file = match format {
+        Format::Deb => asset.split('_').next(),
+        _ => asset
+            .char_indices()
+            .find(|&(i, c)| c == '-' && asset[i + 1..].starts_with(|d: char| d.is_ascii_digit()))
+            .map(|(i, _)| &asset[..i]),
+    };
+    let mut names = Vec::new();
+    for name in from_file.into_iter().chain([id]) {
+        let name = name.to_ascii_lowercase();
+        let valid = !name.is_empty()
+            && !name.starts_with('-')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || "+-._".contains(c));
+        if valid && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
 /// Whether the install is still on the system, i.e. was not removed outside
 /// Forager.
 pub fn is_present(installed: &Installed) -> bool {
@@ -287,6 +342,33 @@ fn output(command: &mut Command) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guesses_package_names_from_asset_names() {
+        assert_eq!(
+            package_guesses("forager-0.1.0-1.x86_64.rpm", Format::Rpm, "forager"),
+            ["forager"]
+        );
+        assert_eq!(
+            package_guesses("Tool_1.2.0_amd64.deb", Format::Deb, "my-tool"),
+            ["tool", "my-tool"]
+        );
+        assert_eq!(
+            package_guesses("foo-bar-2.0-1-x86_64.pkg.tar.zst", Format::Pacman, "foo"),
+            ["foo-bar", "foo"]
+        );
+        assert_eq!(package_guesses("1.0.rpm", Format::Rpm, "x"), ["x"]);
+    }
+
+    #[test]
+    fn strips_epoch_and_revision() {
+        assert_eq!(
+            upstream_version("1:2.3.4-1ubuntu2", Format::Deb).as_deref(),
+            Some("2.3.4")
+        );
+        assert_eq!(upstream_version("0.1.0-1", Format::Pacman).as_deref(), Some("0.1.0"));
+        assert_eq!(upstream_version("0.1.0", Format::Rpm).as_deref(), Some("0.1.0"));
+    }
 
     #[test]
     fn placed_install_is_present_while_its_path_exists() {

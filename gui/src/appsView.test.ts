@@ -38,6 +38,7 @@ function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
       asset_error: null,
       repo_version: null,
       checked_at: 0,
+      found: false,
     },
   };
 }

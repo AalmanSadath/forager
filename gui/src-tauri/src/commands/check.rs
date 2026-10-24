@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use forager_core::install;
 use forager_core::matcher::select_asset;
-use forager_core::model::{App, Format};
+use forager_core::model::{App, Format, Installed};
 use forager_core::platform::Platform;
 use forager_core::update::{self, State};
 use serde::Serialize;
@@ -33,6 +33,9 @@ pub struct StatusView {
     pub repo_version: Option<String>,
     /// Seconds since the Unix epoch.
     pub checked_at: u64,
+    /// A system package installed without Forager was found and recorded as
+    /// the app's install, so the app list is out of date.
+    pub found: bool,
 }
 
 /// Payload of the `app-status` event: one app's result.
@@ -48,6 +51,14 @@ pub const STATUS_EVENT: &str = "app-status";
 pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> StatusEvent {
     let result = update::status(app).map(|status| {
         cache.put(&app.source, app.prerelease, status.latest.clone());
+        let found = status
+            .found
+            .clone()
+            .is_some_and(|installed| record_found(&app.id, installed));
+        let app = &App {
+            installed: app.installed.clone().or(status.found),
+            ..app.clone()
+        };
         let (asset, asset_format, asset_error) = match select_asset(app, &status.latest, platform) {
             Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
             Err(e) => (None, None, Some(e.to_string())),
@@ -68,6 +79,7 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
             asset_error,
             repo_version,
             checked_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+            found,
         }
     });
     let (status, error) = match result {
@@ -79,6 +91,19 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
         status,
         error,
     }
+}
+
+/// Saves an install found on the system as the app's own, unless one was
+/// recorded meanwhile.
+fn record_found(id: &str, installed: Installed) -> bool {
+    let Ok(mut store) = load_store() else {
+        return false;
+    };
+    match store.get_mut(id) {
+        Ok(app) if app.installed.is_none() => app.installed = Some(installed),
+        _ => return false,
+    }
+    store.save().is_ok()
 }
 
 /// Checks every app (or the ones named), emitting `app-status` for each as

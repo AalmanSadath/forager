@@ -123,12 +123,15 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       });
     }
   },
-  applyStatus: (event) =>
+  applyStatus: (event) => {
     set((s) => {
       const checks = { ...s.checks, [event.id]: { checking: false, status: event.status, error: event.error } };
       saveChecks(checks);
       return { checks };
-    }),
+    });
+    // The check recorded an install made outside Forager.
+    if (event.status?.found) get().loadApps();
+  },
   checkStale: () => {
     const now = Date.now() / 1000;
     const stale = get()

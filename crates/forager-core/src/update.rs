@@ -134,26 +134,78 @@ impl State {
 pub struct Status {
     pub state: State,
     pub latest: Release,
+    /// A system package of the app that Forager did not install, e.g. one
+    /// installed by hand before the app was tracked. Found only while no
+    /// install is recorded, and already counted in `state`; callers save it
+    /// as the app's install.
+    pub found: Option<Installed>,
 }
 
 /// Fetches the latest release and compares it with the install.
 pub fn status(app: &App) -> Result<Status> {
     let latest = app.source.latest_release(app.prerelease)?;
-    let state = match &app.installed {
+    let found = match app.installed {
+        Some(_) => None,
+        None => find_existing(app, &latest, &Platform::detect()),
+    };
+    let state = match app.installed.as_ref().or(found.as_ref()) {
         None => State::NotInstalled,
         Some(installed) if !install::is_present(installed) => State::Missing,
         Some(installed) if app.format.is_some_and(|f| f != installed.format) => State::WrongFormat,
         Some(installed) if version::is_newer(&installed.tag, &latest.tag) => State::Outdated,
         Some(_) => State::UpToDate,
     };
-    Ok(Status { state, latest })
+    Ok(Status { state, latest, found })
+}
+
+/// The deb, rpm or Arch package an update would install, if a package of
+/// that name is already on the system.
+fn find_existing(app: &App, release: &Release, platform: &Platform) -> Option<Installed> {
+    let (asset, format) = select_asset(app, release, platform).ok()?;
+    if !format.needs_root() {
+        return None;
+    }
+    install::package_guesses(&asset.name, format, &app.id)
+        .into_iter()
+        .find_map(|package| {
+            let version = install::installed_version(&package, format)?;
+            Some(existing_install(version, package, format, asset, release))
+        })
+}
+
+/// Records the found version as the release's own tag and asset when they
+/// match, so it reads like an install Forager made.
+fn existing_install(version: String, package: String, format: Format, asset: &Asset, release: &Release) -> Installed {
+    let current = version::parse_tag(&version).is_some_and(|v| version::parse_tag(&release.tag) == Some(v));
+    let (tag, asset) = if current {
+        (release.tag.clone(), asset.name.clone())
+    } else {
+        (version, String::new())
+    };
+    Installed {
+        tag,
+        format,
+        asset,
+        package: Some(package),
+        path: None,
+        links: Vec::new(),
+    }
 }
 
 /// The update for `app`, or `None` if it is up to date. An install that is
 /// missing, or in another format than the one the app is pinned to, counts
-/// as out of date.
-pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
-    let Status { state, latest: release } = status(app)?;
+/// as out of date. A system package found for an app with no recorded
+/// install becomes its install (see `Status::found`), so the caller should
+/// save `app`.
+pub fn plan(app: &mut App, platform: &Platform) -> Result<Option<Plan>> {
+    let Status {
+        state,
+        latest: release,
+        found,
+    } = status(app)?;
+    if found.is_some() {
+        app.installed = found;
+    }
     if state == State::UpToDate {
         return Ok(None);
     }
@@ -311,6 +363,24 @@ mod tests {
             missing: false,
             signature: None,
         }
+    }
+
+    #[test]
+    fn found_package_reads_like_foragers_own_install_when_current() {
+        let plan = plan(Format::Rpm, None);
+        let release = Release {
+            tag: "v1.0.0".into(),
+            ..plan.release
+        };
+        let current = existing_install("1.0.0".into(), "tool".into(), Format::Rpm, &plan.asset, &release);
+        assert_eq!(
+            (current.tag.as_str(), current.asset.as_str()),
+            ("v1.0.0", "tool.tar.gz")
+        );
+        assert_eq!(current.package.as_deref(), Some("tool"));
+        let older = existing_install("0.9.1".into(), "tool".into(), Format::Rpm, &plan.asset, &release);
+        assert_eq!((older.tag.as_str(), older.asset.as_str()), ("0.9.1", ""));
+        assert!(version::is_newer(&older.tag, &release.tag));
     }
 
     #[test]

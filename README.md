@@ -115,6 +115,10 @@ forager edit drawio-desktop --format appimage   # or --format auto, --filter, --
 forager remove drawio-desktop
 ```
 
+An app already installed as a deb, rpm or Arch package, by hand or before
+it was added, is recognised by the package name in its release files the
+first time it is checked or updated, and is not installed again.
+
 Background checks run from a systemd user timer:
 
 ```sh

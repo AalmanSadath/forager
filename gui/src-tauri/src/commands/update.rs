@@ -64,9 +64,16 @@ pub const PROGRESS_EVENT: &str = "update-progress";
 pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<Option<PlanView>> {
     let key = id.clone();
     let planned = blocking(move || {
-        let store = load_store()?;
+        let mut store = load_store()?;
+        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
+        let recorded = app.installed.is_some();
+        let planned = update::plan(app, &Platform::detect()).map_err(|e| e.to_string())?;
+        // A package installed without Forager was found: keep it as the install.
+        if !recorded && app.installed.is_some() {
+            store.save().map_err(|e| e.to_string())?;
+        }
         let app = store.get(&id).map_err(|e| e.to_string())?;
-        let Some(plan) = update::plan(app, &Platform::detect()).map_err(|e| e.to_string())? else {
+        let Some(plan) = planned else {
             return Ok(None);
         };
         let view = PlanView {
