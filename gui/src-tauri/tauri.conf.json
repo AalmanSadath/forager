@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1430",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && cargo build --release -p forager-cli",
     "frontendDist": "../dist"
   },
   "app": {
@@ -26,7 +26,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm", "appimage"],
+    "targets": [
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "publisher": "Aalman Sadath",
     "shortDescription": "Install and update apps from their forge releases",
     "category": "Utility",
@@ -35,6 +39,33 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.png"
-    ]
-  }
+    ],
+    "longDescription": "Tracks apps on GitHub, GitLab and Codeberg, picks the release asset that fits this system, verifies it, and installs it with the system package manager, as a Flatpak, an AppImage or a tarball.",
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/bin/forager": "../../target/release/forager"
+        },
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      },
+      "rpm": {
+        "files": {
+          "/usr/bin/forager": "../../target/release/forager"
+        },
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3"
+        ]
+      },
+      "appimage": {
+        "files": {
+          "/usr/bin/forager": "../../target/release/forager"
+        }
+      }
+    }
+  },
+  "mainBinaryName": "forager-gui"
 }

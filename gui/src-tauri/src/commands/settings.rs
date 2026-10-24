@@ -61,10 +61,12 @@ pub struct TimerState {
     pub cli: Option<PathBuf>,
 }
 
-/// The CLI the timer runs: shipped next to the app, else on PATH.
+/// The CLI the timer runs: shipped next to the app, else on PATH. Not one
+/// inside a running AppImage, whose mount disappears when the app exits.
 fn cli_path() -> Option<PathBuf> {
     let beside = std::env::current_exe().ok()?.parent()?.join("forager");
-    if beside.is_file() {
+    let in_appimage = std::env::var_os("APPDIR").is_some_and(|dir| beside.starts_with(dir));
+    if beside.is_file() && !in_appimage {
         return Some(beside);
     }
     std::env::var_os("PATH").and_then(|paths| {

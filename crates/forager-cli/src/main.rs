@@ -421,8 +421,9 @@ fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
                 pending.iter().map(|(id, _)| *id).collect::<Vec<_>>().join(", ")
             ))
             .icon("system-software-update")
-            // Clicking the notification opens the GUI, where one is installed.
-            .hint(notify_rust::Hint::DesktopEntry("io.github.aalmansadath.Forager".into()))
+            // Clicking the notification opens the app, whose packages install
+            // Forager.desktop.
+            .hint(notify_rust::Hint::DesktopEntry("Forager".into()))
             .show()
             .context("cannot show notification")?;
     }

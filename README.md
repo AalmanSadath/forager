@@ -1,12 +1,14 @@
 # Forager
 
-Install and update desktop Linux apps straight from their GitHub releases,
-using the system package manager. Think [Obtainium](https://github.com/ImranR98/Obtainium),
-but for the desktop.
+Install and update desktop Linux apps straight from their GitHub, GitLab
+and Codeberg releases, using the system package manager. Think
+[Obtainium](https://github.com/ImranR98/Obtainium), but for the desktop.
+
+![The apps grid](docs/screenshots/apps.png)
 
 ## Status
 
-Early prototype. CLI only.
+Early, but usable: a desktop app and a CLI over the same core.
 
 - Sources: GitHub, GitLab (gitlab.com, GNOME, freedesktop, KDE, Debian Salsa,
   Framagit, or self-hosted) and Forgejo/Gitea (Codeberg or self-hosted) releases
@@ -16,6 +18,53 @@ Early prototype. CLI only.
   Flatpak bundles (`flatpak install --user`)
 - Verification: SHA-256 from GitHub's asset digest or a published
   `SHA256SUMS` / `checksums.txt` / `<asset>.sha256` file
+
+## The app
+
+Forager's window lists every tracked app with what is installed and
+what is new, grouped into updates, problems, installed and not installed.
+
+An app's page shows its install, its settings, and every asset of the
+latest release with the reason each one was or was not chosen. Changing
+the format, the asset filter or the executables re-runs that choice as
+you type. Adding an app works the same way: paste the address, look it
+up, adjust, track.
+
+| App page | Adding an app |
+| --- | --- |
+| ![An app's page](docs/screenshots/app-page.png) | ![Adding an app](docs/screenshots/add-app.png) |
+
+Updating shows what will be installed and how it is verified before
+anything is downloaded, then downloads with progress (cancellable),
+verifies and installs. System packages ask for a password through
+PackageKit. The Activity page lists what the app, the CLI and the
+background check did, and Settings covers the theme (System, Dark,
+Light, AMOLED, with the desktop's accent colour), the daily background
+check, API tokens and where files live.
+
+| Updating | Activity | Settings |
+| --- | --- | --- |
+| ![The update dialog](docs/screenshots/update.png) | ![The activity log](docs/screenshots/activity.png) | ![Settings](docs/screenshots/settings.png) |
+
+`forager-gui add <url>` opens the add page for an address, and
+`forager-gui open <id>` an app's page.
+
+### Building the app
+
+The app is a [Tauri 2](https://tauri.app) shell around the same core,
+with a React frontend in `gui/`. It needs Node 20 or newer and the
+WebKitGTK 4.1 development files (`webkit2gtk4.1-devel` on Fedora,
+`libwebkit2gtk-4.1-dev` on Debian and Ubuntu).
+
+```sh
+cd gui
+npm ci
+npx tauri dev        # run from source
+npx tauri build      # deb, rpm and AppImage under target/release/bundle
+```
+
+The packages install both `forager-gui` and the `forager` CLI, which the
+background check runs.
 
 ## Usage
 
@@ -131,10 +180,14 @@ check its fingerprint there, not from the release being verified.
 ## Layout
 
 - `crates/forager-core`: sources, asset matching, version comparison,
-  verification, installation, config store
+  verification, installation, config store, history
 - `crates/forager-cli`: the `forager` command
+- `gui/`: the desktop app; `gui/src-tauri` is its Rust side (crate
+  `forager-gui`), `gui/src` the React frontend. Its look follows
+  [BifroSSH](https://github.com/AalmanSadath/BifroSSH), whose colour
+  tokens it shares.
 
 ## Roadmap
 
 - Generic HTML sources
-- GTK4 / libadwaita GUI
+- Release packages of Forager itself, so it can update itself
