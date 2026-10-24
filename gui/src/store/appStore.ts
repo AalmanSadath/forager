@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as ipc from '../ipc';
-import type { CheckEntry } from '../appsView';
+import { restoreChecks, type CheckEntry } from '../appsView';
 import type { AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
 import { NO_APPEARANCE } from './theme';
 
@@ -59,7 +59,7 @@ let nextToast = 1;
 
 /** Seconds after which a check is redone on start or when the window regains focus. */
 const STALE_AFTER = 30 * 60;
-const CHECKS_KEY = 'forager_checks';
+export const CHECKS_KEY = 'forager_checks';
 
 /**
  * Successful checks survive a restart, so opening the window does not spend
@@ -68,9 +68,7 @@ const CHECKS_KEY = 'forager_checks';
  */
 function loadSavedChecks(): Record<string, CheckEntry> {
   try {
-    const saved = JSON.parse(localStorage.getItem(CHECKS_KEY) ?? '{}') as Record<string, CheckEntry>;
-    for (const entry of Object.values(saved)) entry.checking = false;
-    return saved;
+    return restoreChecks(localStorage.getItem(CHECKS_KEY));
   } catch {
     return {};
   }

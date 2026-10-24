@@ -207,3 +207,13 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+
+/* Shown by ErrorBoundary instead of an empty window. */
+.crash {
+  max-width: 560px;
+  margin: 15vh auto 0;
+  padding: 24px;
+  color: var(--text-primary);
+}
+.crash h1 { font-size: 20px; margin-bottom: 12px; }
+.crash .btn-primary { margin-top: 16px; }

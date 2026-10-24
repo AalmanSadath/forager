@@ -48,7 +48,7 @@ function installedFormats(app: AppView, entry: CheckEntry | undefined): Format[]
 
 function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel, 'formats'> {
   // With several installs, the one needing attention is the one shown.
-  const attention = entry?.status?.installs.find((i) => i.state !== 'up_to_date');
+  const attention = entry?.status?.installs?.find((i) => i.state !== 'up_to_date');
   const installed = attention ? { tag: attention.tag, format: attention.format } : app.installed;
   const status = entry?.status ?? null;
   const format = installed?.format ?? status?.asset_format ?? app.format;
@@ -131,4 +131,26 @@ export function formatsInUse(apps: AppView[], entries: Record<string, CheckEntry
 
 export function countUpdates(apps: AppView[], entries: Record<string, CheckEntry>): number {
   return apps.filter((a) => cardModel(a, entries[a.id]).section === 'updates').length;
+}
+
+/**
+ * Checks saved by an earlier run. Entries written by an older version lack
+ * fields this one reads (`installs` came with 0.1.3) and are dropped: they
+ * are only a cache, and the next check replaces them.
+ */
+export function restoreChecks(text: string | null): Record<string, CheckEntry> {
+  let saved: unknown;
+  try {
+    saved = JSON.parse(text ?? '{}');
+  } catch {
+    return {};
+  }
+  if (!saved || typeof saved !== 'object') return {};
+  const checks: Record<string, CheckEntry> = {};
+  for (const [id, entry] of Object.entries(saved as Record<string, Partial<CheckEntry>>)) {
+    if (entry?.status && Array.isArray(entry.status.installs)) {
+      checks[id] = { status: entry.status, error: null, checking: false };
+    }
+  }
+  return checks;
 }

@@ -1,5 +1,6 @@
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/shared/ErrorBoundary';
 import { useAppStore } from './store/appStore';
 import './index.css';
 
@@ -12,4 +13,8 @@ window.addEventListener('unhandledrejection', (e) => {
   useAppStore.getState().toast('error', reason instanceof Error ? reason.message : String(reason));
 });
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(<App />);
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+);

@@ -161,7 +161,7 @@ function AppPageBody({ app }: { app: AppView }) {
                   key={installed.format}
                   installed={installed}
                   several={app.installs.length > 1}
-                  state={status?.installs.find((i) => i.format === installed.format)?.state}
+                  state={status?.installs?.find((i) => i.format === installed.format)?.state}
                 />
               ))}
               <dt>Latest</dt>

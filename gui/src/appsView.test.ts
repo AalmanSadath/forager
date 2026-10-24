@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardModel, countUpdates, formatsInUse, groupApps, type CheckEntry } from './appsView';
+import { cardModel, countUpdates, formatsInUse, groupApps, restoreChecks, type CheckEntry } from './appsView';
 import type { AppView, StatusView } from './types';
 
 function app(id: string, extra: Partial<AppView> = {}): AppView {
@@ -138,5 +138,18 @@ describe('groupApps', () => {
   it('counts updates and lists formats in a fixed order', () => {
     expect(countUpdates(apps, entries)).toBe(1);
     expect(formatsInUse(apps, entries)).toEqual(['flatpak', 'appimage', 'tarball']);
+  });
+});
+
+describe('restoreChecks', () => {
+  it('keeps checks saved by this version and drops older or broken ones', () => {
+    const current = status('up_to_date');
+    const old = status('up_to_date');
+    delete (old.status as Partial<StatusView>).installs;
+    const restored = restoreChecks(JSON.stringify({ a: { ...current, checking: true }, b: old, c: { status: null } }));
+    expect(Object.keys(restored)).toEqual(['a']);
+    expect(restored.a.checking).toBe(false);
+    expect(restoreChecks('not json')).toEqual({});
+    expect(restoreChecks(null)).toEqual({});
   });
 });
