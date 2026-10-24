@@ -119,6 +119,9 @@ fn main() -> Result<()> {
                 match app.source.latest_release(app.prerelease) {
                     Ok(release) => {
                         let status = match &app.installed {
+                            Some(i) if !install::is_present(i) => {
+                                format!("missing (was {}), {} available", i.tag, release.tag)
+                            }
                             Some(i) if version::is_newer(&i.tag, &release.tag) => {
                                 format!("{} -> {}", i.tag, release.tag)
                             }
@@ -142,7 +145,10 @@ fn main() -> Result<()> {
         } => update(&mut store, &ids, yes, allow_unverified)?,
         Command::Remove { id, keep_installed } => {
             let app = store.get(&id)?;
-            if let (Some(installed), false) = (&app.installed, keep_installed) {
+            if let Some(installed) = &app.installed
+                && !keep_installed
+                && install::is_present(installed)
+            {
                 install::uninstall(installed, &Platform::detect())?;
             }
             store.remove(&id)?;
@@ -182,7 +188,11 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
         return Ok(());
     };
 
-    let from = plan.from.as_deref().unwrap_or("not installed");
+    let from = match (&plan.from, plan.missing) {
+        (Some(tag), true) => format!("missing (was {tag})"),
+        (Some(tag), false) => tag.clone(),
+        (None, _) => "not installed".into(),
+    };
     println!("{id}: {from} -> {}", plan.release.tag);
     println!(
         "  asset:  {} ({:.1} MiB, {})",

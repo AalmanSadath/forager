@@ -21,12 +21,16 @@ pub struct Plan {
     pub expected_sha256: Option<String>,
     /// Tag currently installed.
     pub from: Option<String>,
+    /// The recorded install was removed outside Forager.
+    pub missing: bool,
 }
 
 /// The update for `app`, or `None` if it is up to date.
 pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
     let release = app.source.latest_release(app.prerelease)?;
+    let missing = app.installed.as_ref().is_some_and(|i| !install::is_present(i));
     if let Some(installed) = &app.installed
+        && !missing
         && !version::is_newer(&installed.tag, &release.tag)
     {
         return Ok(None);
@@ -40,6 +44,7 @@ pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
         asset,
         format,
         expected_sha256,
+        missing,
     }))
 }
 
@@ -78,6 +83,7 @@ fn install_file(
 
     if let Some(previous) = previous
         && previous.format != installed.format
+        && install::is_present(&previous)
     {
         install::uninstall(&previous, platform).map_err(|source| Error::PreviousNotRemoved {
             format: previous.format,
@@ -127,6 +133,7 @@ mod tests {
             format: Format::Tarball,
             expected_sha256: Some("a".repeat(64)),
             from: None,
+            missing: false,
         };
         let file = tmp.path().join("tool.tar.gz");
         fs::write(&file, "x").unwrap();

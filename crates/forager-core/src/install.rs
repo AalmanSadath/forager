@@ -74,6 +74,27 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
     Ok(installed)
 }
 
+/// Whether the install is still on the system, i.e. was not removed outside
+/// Forager.
+pub fn is_present(installed: &Installed) -> bool {
+    match (
+        installed.format,
+        installed.package.as_deref(),
+        installed.path.as_deref(),
+    ) {
+        (Format::Rpm, Some(package), _) => Command::new("rpm")
+            .args(["-q", "--quiet", package])
+            .status()
+            .is_ok_and(|s| s.success()),
+        (Format::Deb, Some(package), _) => {
+            output(Command::new("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
+                .is_ok_and(|status| status == "installed")
+        }
+        (Format::AppImage | Format::Tarball, _, Some(path)) => path.exists(),
+        _ => false,
+    }
+}
+
 pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
     match (
         installed.format,
@@ -135,4 +156,26 @@ fn output(command: &mut Command) -> Result<String> {
         )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placed_install_is_present_while_its_path_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("tool.AppImage");
+        let installed = Installed {
+            tag: "v1".into(),
+            format: Format::AppImage,
+            asset: "tool.AppImage".into(),
+            package: None,
+            path: Some(path.clone()),
+            links: Vec::new(),
+        };
+        assert!(!is_present(&installed));
+        fs::write(&path, "").unwrap();
+        assert!(is_present(&installed));
+    }
 }
