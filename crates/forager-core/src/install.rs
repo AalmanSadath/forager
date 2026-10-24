@@ -1,12 +1,14 @@
 //! Hands downloaded packages to the system package manager.
 //!
-//! deb, rpm and Arch package installs run through `pkexec`, so polkit asks the user for
-//! authorisation. AppImages and tarballs need no root: AppImages are placed in
+//! deb, rpm and Arch packages go through PackageKit, or the native tool
+//! under `pkexec` where PackageKit is missing; either way polkit asks the
+//! user for authorisation. AppImages and tarballs need no root: AppImages are placed in
 //! `~/Applications`, tarballs are unpacked into `~/.local/opt` with their
 //! executables linked into `~/.local/bin`, and Flatpak bundles go into the
 //! user's Flatpak installation.
 
 mod flatpak;
+mod packagekit;
 mod tarball;
 
 use std::fs;
@@ -20,7 +22,15 @@ use crate::platform::{self, PackageManager, Platform};
 
 /// Installs `file` for `app` and returns what is needed to update or remove
 /// it later. `app.installed` is taken to be the version being replaced.
-pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Platform) -> Result<Installed> {
+/// `progress` gets percentages from PackageKit installs.
+pub fn install(
+    file: &Path,
+    format: Format,
+    app: &App,
+    tag: &str,
+    platform: &Platform,
+    progress: &mut dyn FnMut(u32),
+) -> Result<Installed> {
     let file = fs::canonicalize(file)?;
     let asset = file
         .file_name()
@@ -37,21 +47,21 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
 
     installed.package = package_name(&file, format)?;
     match format {
-        Format::Rpm => match platform.package_manager {
-            Some(PackageManager::Dnf) => run(pkexec(["dnf", "install", "-y"]).arg(&file))?,
+        Format::Rpm => system_install(&file, progress, || match platform.package_manager {
+            Some(PackageManager::Dnf) => run(pkexec(["dnf", "install", "-y"]).arg(&file)),
             Some(PackageManager::Zypper) => {
-                run(pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]).arg(&file))?
+                run(pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]).arg(&file))
             }
-            _ => return Err(Error::NoPackageManager("rpm")),
-        },
-        Format::Deb => match platform.package_manager {
-            Some(PackageManager::Apt) => run(pkexec(["apt-get", "install", "-y"]).arg(&file))?,
-            _ => return Err(Error::NoPackageManager("deb")),
-        },
-        Format::Pacman => match platform.package_manager {
-            Some(PackageManager::Pacman) => run(pkexec(["pacman", "-U", "--noconfirm"]).arg(&file))?,
-            _ => return Err(Error::NoPackageManager("pacman")),
-        },
+            _ => Err(Error::NoPackageManager("rpm")),
+        })?,
+        Format::Deb => system_install(&file, progress, || match platform.package_manager {
+            Some(PackageManager::Apt) => run(pkexec(["apt-get", "install", "-y"]).arg(&file)),
+            _ => Err(Error::NoPackageManager("deb")),
+        })?,
+        Format::Pacman => system_install(&file, progress, || match platform.package_manager {
+            Some(PackageManager::Pacman) => run(pkexec(["pacman", "-U", "--noconfirm"]).arg(&file)),
+            _ => Err(Error::NoPackageManager("pacman")),
+        })?,
         Format::AppImage => {
             let dir = platform::appimage_dir().ok_or(Error::NoHome)?;
             fs::create_dir_all(&dir)?;
@@ -181,19 +191,19 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
         installed.package.as_deref(),
         installed.path.as_deref(),
     ) {
-        (Format::Rpm, Some(package), _) => match platform.package_manager {
+        (Format::Rpm, Some(package), _) => system_remove(package, || match platform.package_manager {
             Some(PackageManager::Dnf) => run(&mut pkexec(["dnf", "remove", "-y", package])),
             Some(PackageManager::Zypper) => run(&mut pkexec(["zypper", "--non-interactive", "remove", package])),
             _ => Err(Error::NoPackageManager("rpm")),
-        },
-        (Format::Deb, Some(package), _) => match platform.package_manager {
+        }),
+        (Format::Deb, Some(package), _) => system_remove(package, || match platform.package_manager {
             Some(PackageManager::Apt) => run(&mut pkexec(["apt-get", "remove", "-y", package])),
             _ => Err(Error::NoPackageManager("deb")),
-        },
-        (Format::Pacman, Some(package), _) => match platform.package_manager {
+        }),
+        (Format::Pacman, Some(package), _) => system_remove(package, || match platform.package_manager {
             Some(PackageManager::Pacman) => run(&mut pkexec(["pacman", "-R", "--noconfirm", package])),
             _ => Err(Error::NoPackageManager("pacman")),
-        },
+        }),
         (Format::AppImage, _, Some(path)) => match fs::remove_file(path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
@@ -215,6 +225,36 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
             "install record is missing package name or path".into(),
         )),
     }
+}
+
+/// Installs a system package through PackageKit when it is available, else
+/// with `fallback` (the native tool under pkexec). Also falls back when
+/// polkit refuses PackageKit, as happens without a graphical authentication
+/// agent (e.g. over SSH); pkexec can then ask on the terminal.
+fn system_install(file: &Path, progress: &mut dyn FnMut(u32), fallback: impl FnOnce() -> Result<()>) -> Result<()> {
+    if packagekit::available() {
+        match packagekit::install_file(file, progress) {
+            Err(Error::PackageKit {
+                code: packagekit::ERROR_NOT_AUTHORIZED,
+                ..
+            }) => {}
+            other => return other,
+        }
+    }
+    fallback()
+}
+
+fn system_remove(package: &str, fallback: impl FnOnce() -> Result<()>) -> Result<()> {
+    if packagekit::available() {
+        match packagekit::remove(package, &mut |_| {}) {
+            Err(Error::PackageKit {
+                code: packagekit::ERROR_NOT_AUTHORIZED,
+                ..
+            }) => {}
+            other => return other,
+        }
+    }
+    fallback()
 }
 
 fn pkexec<'a>(args: impl IntoIterator<Item = &'a str>) -> Command {

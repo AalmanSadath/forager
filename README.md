@@ -88,6 +88,15 @@ Forager links the one executable in that directory or its `bin/`; if there
 are several, the one named after the app id. Files in `~/.local/bin` that
 Forager did not create are never replaced.
 
+## System packages
+
+deb, rpm and Arch packages are installed and removed through PackageKit
+over D-Bus, which asks polkit for permission and reports progress. Where
+PackageKit is missing, or polkit refuses it because there is no graphical
+authentication agent (e.g. over SSH), Forager runs the native tool (dnf,
+zypper, apt-get, pacman) under `pkexec` instead, which can ask on the
+terminal.
+
 ## Security
 
 Installing a `.deb`, `.rpm` or Arch package runs the package's scripts as
@@ -124,5 +133,4 @@ check its fingerprint there, not from the release being verified.
 ## Roadmap
 
 - Generic HTML sources
-- PackageKit over D-Bus instead of `pkexec` + native tools
 - GTK4 / libadwaita GUI

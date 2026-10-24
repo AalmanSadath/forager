@@ -57,7 +57,8 @@ pub(crate) fn find_in_checksums(text: &str, name: &str, single_file: bool) -> Op
 /// Downloads `asset` into `dir`, returning the file path and its SHA-256.
 /// Data goes to `<name>.part` first, so an interrupted download never
 /// leaves a file that looks complete.
-pub fn download(asset: &Asset, dir: &Path) -> Result<(PathBuf, String)> {
+/// `progress` gets bytes received so far and the total, if known.
+pub fn download(asset: &Asset, dir: &Path, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<(PathBuf, String)> {
     fs::create_dir_all(dir)?;
     let file_name = Path::new(&asset.name)
         .file_name()
@@ -67,7 +68,8 @@ pub fn download(asset: &Asset, dir: &Path) -> Result<(PathBuf, String)> {
     part.push(".part");
     let part = PathBuf::from(part);
 
-    match fetch(&asset.url, &part) {
+    let known_size = (asset.size > 0).then_some(asset.size);
+    match fetch(&asset.url, &part, known_size, progress) {
         Ok(hash) => {
             fs::rename(&part, &path)?;
             Ok((path, hash))
@@ -80,8 +82,14 @@ pub fn download(asset: &Asset, dir: &Path) -> Result<(PathBuf, String)> {
 }
 
 /// Streams `url` into `path`, returning its SHA-256.
-fn fetch(url: &str, path: &Path) -> Result<String> {
+fn fetch(url: &str, path: &Path, size: Option<u64>, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<String> {
     let mut response = http::check(http::get(url).call()?)?;
+    let total = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok()?.parse().ok())
+        .or(size);
+    let mut done = 0;
     let mut reader = response.body_mut().as_reader();
     let mut file = File::create(path)?;
     let mut hasher = Sha256::new();
@@ -95,6 +103,8 @@ fn fetch(url: &str, path: &Path) -> Result<String> {
         };
         hasher.update(&buf[..n]);
         file.write_all(&buf[..n])?;
+        done += n as u64;
+        progress(done, total);
     }
     file.sync_all()?;
     Ok(hex::encode(hasher.finalize()))

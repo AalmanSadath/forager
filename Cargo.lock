@@ -591,6 +591,7 @@ dependencies = [
  "thiserror",
  "toml",
  "ureq",
+ "zbus",
 ]
 
 [[package]]

@@ -106,6 +106,19 @@ pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
     }))
 }
 
+/// Progress of `download` and `install`, for frontends to display.
+#[derive(Debug, Clone, Copy)]
+pub enum Progress {
+    Download {
+        done: u64,
+        total: Option<u64>,
+    },
+    /// Percentage reported by PackageKit while installing a system package.
+    Install {
+        percent: u32,
+    },
+}
+
 /// A downloaded and verified asset, deleted when dropped.
 #[derive(Debug)]
 pub struct Download {
@@ -124,8 +137,10 @@ impl Drop for Download {
 }
 
 /// Downloads the plan's asset and checks it against the expected SHA-256.
-pub fn download(plan: &Plan, platform: &Platform) -> Result<Download> {
-    let (path, actual) = verify::download(&plan.asset, &store::download_dir())?;
+pub fn download(plan: &Plan, platform: &Platform, progress: &mut dyn FnMut(Progress)) -> Result<Download> {
+    let (path, actual) = verify::download(&plan.asset, &store::download_dir(), &mut |done, total| {
+        progress(Progress::Download { done, total })
+    })?;
     let mut download = Download {
         path,
         package: None,
@@ -163,9 +178,17 @@ pub fn install(
     plan: &Plan,
     download: &Download,
     platform: &Platform,
+    progress: &mut dyn FnMut(Progress),
 ) -> Result<Installed> {
     let previous = store.get(id)?.installed.clone();
-    let installed = install::install(&download.path, plan.format, store.get(id)?, &plan.release.tag, platform)?;
+    let installed = install::install(
+        &download.path,
+        plan.format,
+        store.get(id)?,
+        &plan.release.tag,
+        platform,
+        &mut |percent| progress(Progress::Install { percent }),
+    )?;
     store.get_mut(id)?.installed = Some(installed.clone());
     store.save()?;
 

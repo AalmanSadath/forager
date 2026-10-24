@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -522,7 +522,10 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
     }
     let first_install = app.installed.as_ref().is_none_or(|i| i.format != plan.format);
 
-    let download = update::download(&plan, platform)?;
+    let mut line = ProgressLine::new();
+    let download = update::download(&plan, platform, &mut |p| line.show(p));
+    line.finish();
+    let download = download?;
     if let (Some(package), Some(version)) = (&download.package, &download.repo_version) {
         println!("  note:   the distro repositories also have {package} {version}; system updates");
         println!("          and this build may replace each other");
@@ -532,7 +535,9 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
             return Ok(());
         }
     }
-    let installed = update::install(store, id, &plan, &download, platform)?;
+    let installed = update::install(store, id, &plan, &download, platform, &mut |p| line.show(p));
+    line.finish();
+    let installed = installed?;
     let links = installed.links;
     println!("{id}: installed {}", plan.release.tag);
     for link in &links {
@@ -560,6 +565,50 @@ fn describe(app: &App) -> String {
     format!(
         "  format:     {format}\n  filter:     {filter}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}"
     )
+}
+
+/// One self-overwriting status line, shown only on a terminal.
+struct ProgressLine {
+    tty: bool,
+    shown: Option<String>,
+}
+
+impl ProgressLine {
+    fn new() -> ProgressLine {
+        ProgressLine {
+            tty: io::stdout().is_terminal(),
+            shown: None,
+        }
+    }
+
+    fn show(&mut self, progress: update::Progress) {
+        if !self.tty {
+            return;
+        }
+        let mib = |bytes: u64| bytes as f64 / 1048576.0;
+        let text = match progress {
+            update::Progress::Download {
+                done,
+                total: Some(total),
+            } if total > 0 => {
+                format!("  download: {:>3}% of {:.1} MiB", done * 100 / total, mib(total))
+            }
+            update::Progress::Download { done, .. } => format!("  download: {:.1} MiB", mib(done)),
+            update::Progress::Install { percent } => format!("  install:  {percent:>3}%"),
+        };
+        // Repaint only when the text changes, not for every 64 KiB chunk.
+        if self.shown.as_deref() != Some(text.as_str()) {
+            print!("\r{text:<40}");
+            io::stdout().flush().ok();
+            self.shown = Some(text);
+        }
+    }
+
+    fn finish(&mut self) {
+        if self.shown.take().is_some() {
+            println!();
+        }
+    }
 }
 
 fn confirm(question: &str) -> Result<bool> {
