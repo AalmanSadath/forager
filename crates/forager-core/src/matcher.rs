@@ -236,12 +236,12 @@ mod tests {
     #[test]
     fn picks_each_of_foragers_own_packages() {
         let release = release(&[
-            "forager_0.2.0_amd64.deb",
-            "forager-0.2.0-1.x86_64.rpm",
-            "forager-0.2.0-1-x86_64.pkg.tar.zst",
-            "forager-0.2.0-x86_64.flatpak",
-            "Forager-0.2.0-x86_64.AppImage",
-            "forager-0.2.0-x86_64-linux.tar.gz",
+            "forager_0.1.0_amd64.deb",
+            "forager-0.1.0-1.x86_64.rpm",
+            "forager-0.1.0-1-x86_64.pkg.tar.zst",
+            "forager-0.1.0-x86_64.flatpak",
+            "Forager-0.1.0-x86_64.AppImage",
+            "forager-0.1.0-x86_64-linux.tar.gz",
             "SHA256SUMS",
         ]);
         let pick = |pm, flatpak| {
@@ -251,15 +251,15 @@ mod tests {
             };
             select_asset(&app(), &release, &platform).unwrap().0.name.clone()
         };
-        assert_eq!(pick(Some(PackageManager::Dnf), true), "forager-0.2.0-1.x86_64.rpm");
-        assert_eq!(pick(Some(PackageManager::Zypper), false), "forager-0.2.0-1.x86_64.rpm");
-        assert_eq!(pick(Some(PackageManager::Apt), true), "forager_0.2.0_amd64.deb");
+        assert_eq!(pick(Some(PackageManager::Dnf), true), "forager-0.1.0-1.x86_64.rpm");
+        assert_eq!(pick(Some(PackageManager::Zypper), false), "forager-0.1.0-1.x86_64.rpm");
+        assert_eq!(pick(Some(PackageManager::Apt), true), "forager_0.1.0_amd64.deb");
         assert_eq!(
             pick(Some(PackageManager::Pacman), true),
-            "forager-0.2.0-1-x86_64.pkg.tar.zst"
+            "forager-0.1.0-1-x86_64.pkg.tar.zst"
         );
-        assert_eq!(pick(None, true), "forager-0.2.0-x86_64.flatpak");
-        assert_eq!(pick(None, false), "Forager-0.2.0-x86_64.AppImage");
+        assert_eq!(pick(None, true), "forager-0.1.0-x86_64.flatpak");
+        assert_eq!(pick(None, false), "Forager-0.1.0-x86_64.AppImage");
     }
 
     #[test]

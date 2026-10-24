@@ -58,9 +58,9 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
-    <release version="0.2.0" date="2026-10-25">
+    <release version="0.1.0" date="2026-10-25">
       <description>
-        <p>First release with packages: deb, rpm, Arch, Flatpak, AppImage and a tarball.</p>
+        <p>First release, with packages for deb, rpm, Arch, Flatpak, AppImage and a tarball.</p>
       </description>
     </release>
   </releases>
