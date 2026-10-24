@@ -34,6 +34,26 @@ fn command_for(program: &str, flatpak: bool) -> Command {
     }
 }
 
+/// A command for a program whose output is parsed: like `command`, but in
+/// the C locale, since `pacman -Si` and `zypper info` translate the field
+/// names Forager reads.
+pub fn query(program: &str) -> Command {
+    query_for(program, in_flatpak())
+}
+
+fn query_for(program: &str, flatpak: bool) -> Command {
+    if flatpak {
+        // The environment of `flatpak-spawn` itself does not reach the host.
+        let mut command = Command::new("flatpak-spawn");
+        command.args(["--host", "--env=LC_ALL=C"]).arg(program);
+        command
+    } else {
+        let mut command = Command::new(program);
+        command.env("LC_ALL", "C");
+        command
+    }
+}
+
 /// Whether `name` is installed on the host.
 pub fn has_command(name: &str) -> bool {
     if in_flatpak() {
@@ -127,6 +147,19 @@ mod tests {
         let local = command_for("rpm", false);
         assert_eq!(local.get_program(), "rpm");
         assert_eq!(local.get_args().count(), 0);
+    }
+
+    #[test]
+    fn queries_run_in_the_c_locale_on_the_host() {
+        let host = query_for("pacman", true);
+        assert_eq!(host.get_program(), "flatpak-spawn");
+        assert_eq!(
+            host.get_args().collect::<Vec<_>>(),
+            ["--host", "--env=LC_ALL=C", "pacman"]
+        );
+        let local = query_for("pacman", false);
+        assert_eq!(local.get_program(), "pacman");
+        assert!(local.get_envs().any(|(k, v)| k == "LC_ALL" && v == Some("C".as_ref())));
     }
 
     #[test]

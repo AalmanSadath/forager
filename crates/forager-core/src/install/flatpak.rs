@@ -69,7 +69,7 @@ fn installation(id: &str) -> &'static str {
 }
 
 fn installed_in(id: &str, installation: &str) -> bool {
-    host::command("flatpak")
+    host::query("flatpak")
         .args(["info", installation, id])
         .output()
         .is_ok_and(|out| out.status.success())
@@ -78,7 +78,7 @@ fn installed_in(id: &str, installation: &str) -> bool {
 /// Installed apps of both installations, as `(id, version)`; the version is
 /// empty when the app does not declare one.
 pub fn installed_apps() -> Vec<(String, String)> {
-    let Ok(out) = host::command("flatpak")
+    let Ok(out) = host::query("flatpak")
         .args(["list", "--app", "--columns=application,version"])
         .output()
     else {

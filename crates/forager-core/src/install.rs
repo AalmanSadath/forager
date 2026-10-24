@@ -98,9 +98,9 @@ pub fn install(
 /// formats that are not system packages.
 pub fn package_name(file: &Path, format: Format) -> Result<Option<String>> {
     let mut command = match format {
-        Format::Rpm => host::command("rpm"),
-        Format::Deb => host::command("dpkg-deb"),
-        Format::Pacman => host::command("pacman"),
+        Format::Rpm => host::query("rpm"),
+        Format::Deb => host::query("dpkg-deb"),
+        Format::Pacman => host::query("pacman"),
         _ => return Ok(None),
     };
     match format {
@@ -116,7 +116,7 @@ pub fn package_name(file: &Path, format: Format) -> Result<Option<String>> {
 /// no network.
 pub fn repo_version(package: &str, platform: &Platform) -> Option<String> {
     let query = |program: &str, args: &[&str]| {
-        let out = host::command(program).args(args).arg(package).output().ok()?;
+        let out = host::query(program).args(args).arg(package).output().ok()?;
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
@@ -165,20 +165,26 @@ fn madison_version(text: &str) -> Option<String> {
 /// and `pacman` append `-<revision>` and may prefix `<epoch>:`.
 pub fn installed_version(package: &str, format: Format) -> Option<String> {
     let text = match format {
-        Format::Rpm => output(host::command("rpm").args(["-q", "--qf", "%{VERSION}", package])).ok()?,
+        Format::Rpm => output(host::query("rpm").args(["-q", "--qf", "%{VERSION}\\n", package])).ok()?,
         Format::Deb => {
-            let line =
-                output(host::command("dpkg-query").args(["-W", "-f=${db:Status-Status} ${Version}", package])).ok()?;
-            line.strip_prefix("installed ")?.to_string()
+            output(host::query("dpkg-query").args(["-W", "-f=${db:Status-Status} ${Version}", package])).ok()?
         }
-        Format::Pacman => output(host::command("pacman").args(["-Q", package]))
-            .ok()?
-            .split_whitespace()
-            .nth(1)?
-            .to_string(),
+        Format::Pacman => output(host::query("pacman").args(["-Q", package])).ok()?,
         _ => return None,
     };
-    upstream_version(&text, format)
+    upstream_version(query_version(&text, format)?, format)
+}
+
+/// The version in the output of the queries `installed_version` runs.
+fn query_version(text: &str, format: Format) -> Option<&str> {
+    match format {
+        // One line per installed architecture of a multilib package.
+        Format::Rpm => text.lines().next(),
+        // A removed package keeps `config-files`, a broken one `half-installed`.
+        Format::Deb => text.strip_prefix("installed "),
+        // `name version-revision`
+        _ => text.split_whitespace().nth(1),
+    }
 }
 
 fn upstream_version(text: &str, format: Format) -> Option<String> {
@@ -212,9 +218,16 @@ pub fn package_guesses(asset: &str, format: Format, id: &str) -> Vec<String> {
                 .map_or(stem, |(i, _)| &stem[..i])
         }
     };
+    // dpkg and pacman names are lowercase; rpm names keep their case, so
+    // the name as written comes first there.
+    let as_written = (format == Format::Rpm).then_some(from_file);
     let mut names = Vec::new();
-    for name in [from_file, id] {
-        let name = name.to_ascii_lowercase();
+    for name in as_written.into_iter().chain([from_file, id]) {
+        let name = if as_written == Some(name) && names.is_empty() {
+            name.to_string()
+        } else {
+            name.to_ascii_lowercase()
+        };
         let valid = !name.is_empty()
             && !name.starts_with(|c: char| c == '-' || c.is_ascii_digit())
             && name.chars().all(|c| c.is_ascii_alphanumeric() || "+-._".contains(c));
@@ -248,15 +261,15 @@ pub fn is_present(installed: &Installed) -> bool {
         installed.package.as_deref(),
         installed.path.as_deref(),
     ) {
-        (Format::Rpm, Some(package), _) => host::command("rpm")
+        (Format::Rpm, Some(package), _) => host::query("rpm")
             .args(["-q", "--quiet", package])
             .status()
             .is_ok_and(|s| s.success()),
         (Format::Deb, Some(package), _) => {
-            output(host::command("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
+            output(host::query("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
                 .is_ok_and(|status| status == "installed")
         }
-        (Format::Pacman, Some(package), _) => host::command("pacman")
+        (Format::Pacman, Some(package), _) => host::query("pacman")
             .args(["-Q", package])
             .output()
             .is_ok_and(|out| out.status.success()),
@@ -401,6 +414,18 @@ mod tests {
         );
         assert_eq!(upstream_version("0.1.0-1", Format::Pacman).as_deref(), Some("0.1.0"));
         assert_eq!(upstream_version("0.1.0", Format::Rpm).as_deref(), Some("0.1.0"));
+        assert_eq!(upstream_version("1.0-rc1-2", Format::Deb).as_deref(), Some("1.0-rc1"));
+    }
+
+    #[test]
+    fn reads_package_manager_queries() {
+        assert_eq!(query_version("1.2.0\n1.2.0\n", Format::Rpm), Some("1.2.0"));
+        assert_eq!(
+            query_version("installed 1:2.0-1ubuntu1", Format::Deb),
+            Some("1:2.0-1ubuntu1")
+        );
+        assert_eq!(query_version("config-files 2.0-1", Format::Deb), None);
+        assert_eq!(query_version("tool 0.1.1-1", Format::Pacman), Some("0.1.1-1"));
     }
 
     #[test]

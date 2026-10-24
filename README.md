@@ -115,8 +115,9 @@ forager edit drawio-desktop --format appimage   # or --format auto, --filter, --
 forager remove drawio-desktop
 ```
 
-An app already installed as a deb, rpm or Arch package or a Flatpak (user
-or system-wide), by hand or before it was added, is recognised by the name
+An app already installed as a deb (dpkg), rpm (dnf or zypper), Arch package
+(pacman) or Flatpak (user or system-wide), by hand, from the distribution or
+before it was added, is recognised by the name
 in its release files the first time it is checked or updated, and is not
 installed again. Updates stay in the format that is installed while the
 release still offers it.
