@@ -170,3 +170,21 @@ export interface HistoryEvent {
   format?: Format;
   message?: string;
 }
+
+export interface TimerState {
+  enabled: boolean;
+  auto_update: boolean;
+  next_run: string | null;
+  cli: string | null;
+}
+
+export interface AboutInfo {
+  version: string;
+  config: string;
+  env_file: string;
+  history: string;
+  cache: string;
+  keys: string;
+  apps_dir: string | null;
+  opt_dir: string | null;
+}

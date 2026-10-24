@@ -28,6 +28,13 @@ pub fn run() {
             commands::update::start_update,
             commands::update::finish_update,
             commands::update::cancel_update,
+            commands::settings::get_gui_settings,
+            commands::settings::set_gui_settings,
+            commands::settings::get_timer,
+            commands::settings::set_timer,
+            commands::settings::get_tokens,
+            commands::settings::set_tokens,
+            commands::settings::about_info,
             commands::system::system_appearance,
             commands::system::start_request,
         ])

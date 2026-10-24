@@ -105,6 +105,14 @@ pub fn disable() -> Result<()> {
     systemctl(&["daemon-reload"])
 }
 
+/// Whether the installed service also installs updates, read back from it.
+pub fn auto_update_enabled() -> bool {
+    unit_dir()
+        .ok()
+        .and_then(|dir| fs::read_to_string(dir.join(SERVICE)).ok())
+        .is_some_and(|unit| unit.contains("--unprivileged-only"))
+}
+
 /// When the timer next fires, or `None` if it is not enabled.
 pub fn next_run() -> Result<Option<String>> {
     if !unit_dir()?.join(TIMER).exists() {

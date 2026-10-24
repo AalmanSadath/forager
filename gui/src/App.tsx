@@ -43,6 +43,7 @@ export default function App() {
   // line asked for.
   const setPage = useAppStore((s) => s.setPage);
   useEffect(() => {
+    useAppStore.getState().loadSettings();
     loadApps().then(() => useAppStore.getState().checkStale());
     ipc.startRequest().then((req) => {
       if (req?.kind === 'add') setPage({ kind: 'add', url: req.url });

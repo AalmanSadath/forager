@@ -45,6 +45,8 @@ interface AppStore {
   clearProgress: (id: string) => void;
 
   settings: GuiSettings;
+  loadSettings: () => Promise<void>;
+  patchSettings: (patch: Partial<GuiSettings>) => void;
   systemAppearance: SystemAppearance;
   setSystemAppearance: (a: SystemAppearance) => void;
 
@@ -161,6 +163,18 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }),
 
   settings: { app_theme: 'system', accent_color: null },
+  loadSettings: async () => {
+    try {
+      set({ settings: await ipc.getGuiSettings() });
+    } catch {
+      // Defaults stand in for a missing or unreadable file.
+    }
+  },
+  patchSettings: (patch) => {
+    const settings = { ...get().settings, ...patch };
+    set({ settings });
+    ipc.setGuiSettings(settings).catch((e) => get().toast('error', `Settings not saved: ${e}`));
+  },
   systemAppearance: NO_APPEARANCE,
   setSystemAppearance: (systemAppearance) => set({ systemAppearance }),
 

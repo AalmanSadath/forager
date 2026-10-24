@@ -12,7 +12,7 @@ use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
 use crate::error::{Error, Result};
-use crate::store;
+use crate::{envfile, store};
 
 static AGENT: LazyLock<Agent> = LazyLock::new(|| {
     Agent::config_builder()
@@ -101,8 +101,9 @@ pub fn get_cached(mut request: RequestBuilder<WithoutBody>, cache_key: &str) -> 
 }
 
 /// Token for `host` from `FORAGER_TOKEN_<HOST>` (e.g. `FORAGER_TOKEN_GITLAB_EXAMPLE_ORG`),
-/// or from `fallback` when `host` is the forge that variable belongs to. A
-/// token is never sent to another host.
+/// or from `fallback` when `host` is the forge that variable belongs to,
+/// looked up in the environment and then in `~/.config/forager/env`. A token
+/// is never sent to another host.
 pub fn token_for(host: &str, fallback: Option<(&str, &str)>) -> Option<String> {
     let name: String = host
         .chars()
@@ -114,12 +115,10 @@ pub fn token_for(host: &str, fallback: Option<(&str, &str)>) -> Option<String> {
             }
         })
         .collect();
-    std::env::var(format!("FORAGER_TOKEN_{name}"))
-        .ok()
-        .or_else(|| match fallback {
-            Some((fallback_host, var)) if host.eq_ignore_ascii_case(fallback_host) => std::env::var(var).ok(),
-            _ => None,
-        })
+    envfile::get(&format!("FORAGER_TOKEN_{name}")).or_else(|| match fallback {
+        Some((fallback_host, var)) if host.eq_ignore_ascii_case(fallback_host) => envfile::get(var),
+        _ => None,
+    })
 }
 
 #[derive(Serialize, Deserialize)]
