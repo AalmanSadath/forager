@@ -76,3 +76,51 @@
   justify-content: flex-end;
 }
 .confirm-overlay { z-index: 200; }
+
+/* ── Update dialog ─────────────────────────────────────────── */
+
+.plan + .plan { border-top: 1px solid var(--border); padding-top: 12px; }
+.plan-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.plan-versions { font-size: 12px; color: var(--text-primary); margin-bottom: 8px; }
+.plan-lines { display: flex; flex-direction: column; gap: 4px; }
+.plan-line {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 12px;
+}
+.plan-line dt { color: var(--text-muted); }
+.plan-line dd { color: var(--text-primary); overflow-wrap: anywhere; user-select: text; }
+.plan-warn dd { color: var(--warning); }
+.plan-danger dd { color: var(--danger); font-weight: 600; }
+.unverified-row { margin: 4px 0 0; color: var(--danger); }
+
+.update-step { font-size: 13px; color: var(--text-muted); }
+.update-step strong { color: var(--text-primary); }
+
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-mid);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+/* No total to measure against: a sliding band rather than a fake number. */
+.progress-unknown .progress-fill {
+  width: 30%;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+
+.update-results { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.update-result { display: flex; gap: 8px; }
+.update-result span { color: var(--text-muted); overflow-wrap: anywhere; }
+.update-installed span { color: var(--success); }
+.update-failed span { color: var(--danger); }

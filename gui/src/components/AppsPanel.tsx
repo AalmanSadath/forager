@@ -20,6 +20,8 @@ export default function AppsPanel() {
   const checkingAll = useAppStore((s) => s.checkingAll);
   const checkApps = useAppStore((s) => s.checkApps);
   const setPage = useAppStore((s) => s.setPage);
+  const openUpdate = useAppStore((s) => s.openUpdate);
+  const progress = useAppStore((s) => s.progress);
   const [chip, setChip] = useState<Chip>('all');
   const [search, setSearch] = useState('');
 
@@ -38,8 +40,13 @@ export default function AppsPanel() {
           {checkingAll ? 'Checking…' : 'Check all'}
         </button>
         {updates > 0 && (
-          <button className="btn-secondary" onClick={() => setChip('updates')}>
-            Updates ({updates})
+          <button
+            className="btn-secondary"
+            onClick={() =>
+              openUpdate(sections.find((s) => s.key === 'updates')?.items.map((i) => i.app.id) ?? [])
+            }
+          >
+            Update all ({updates})
           </button>
         )}
         <input
@@ -79,7 +86,14 @@ export default function AppsPanel() {
               <h2 className="section-title">{section.title}</h2>
               <div className="apps-grid">
                 {section.items.map(({ app, model }) => (
-                  <AppCard key={app.id} app={app} model={model} onOpen={() => setPage({ kind: 'app', id: app.id })} />
+                  <AppCard
+                    key={app.id}
+                    app={app}
+                    model={model}
+                    onOpen={() => setPage({ kind: 'app', id: app.id })}
+                    onAction={() => openUpdate([app.id])}
+                    progress={app.id in progress ? (progress[app.id] ?? 0) : null}
+                  />
                 ))}
               </div>
             </section>

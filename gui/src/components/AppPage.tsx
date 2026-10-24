@@ -46,6 +46,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const checkApps = useAppStore((s) => s.checkApps);
   const toast = useAppStore((s) => s.toast);
   const entry = useAppStore((s) => s.checks[app.id]);
+  const openUpdate = useAppStore((s) => s.openUpdate);
 
   const [draft, setDraft] = useState<SettingsDraft>(() => draftOf(app));
   const [signature, setSignature] = useState<SignatureDraft>(() => signatureDraftOf(app));
@@ -121,6 +122,17 @@ function AppPageBody({ app }: { app: AppView }) {
           <button className="btn-secondary" onClick={() => checkApps([app.id])} disabled={entry?.checking}>
             {entry?.checking ? 'Checking…' : 'Check'}
           </button>
+          {model.action && !dirty && (
+            <button className="btn-primary" onClick={() => openUpdate([app.id])}>
+              {model.action === 'install'
+                ? 'Install'
+                : model.action === 'reinstall'
+                  ? 'Reinstall'
+                  : model.action === 'switch'
+                    ? `Switch to ${draft.format ? FORMAT_NAMES[draft.format] : 'new format'}`
+                    : `Update to ${status?.latest_tag ?? 'latest'}`}
+            </button>
+          )}
           {dirty && (
             <button className="btn-primary" onClick={save} disabled={saving || !!preview?.filter_error}>
               {saving ? 'Saving…' : 'Save'}

@@ -1,0 +1,233 @@
+import { useEffect, useRef, useState } from 'react';
+import * as ipc from '../ipc';
+import { useAppStore } from '../store/appStore';
+import type { PlanView } from '../types';
+import Modal from './shared/Modal';
+import { FORMAT_NAMES } from './shared/icons';
+
+type Phase =
+  | { kind: 'planning' }
+  | { kind: 'confirm' }
+  | { kind: 'working'; id: string; step: 'download' | 'install' }
+  | { kind: 'distro'; id: string; version: string; pkg: string }
+  | { kind: 'done' };
+
+type Result = { id: string; outcome: 'installed' | 'skipped' | 'failed'; detail?: string };
+
+/**
+ * Updating one app, or several from "Update all": show what each will
+ * install and how it is verified, then download, verify and install them one
+ * at a time with progress. Mirrors the CLI's `update` prompts.
+ */
+export default function UpdateModal({ ids }: { ids: string[] }) {
+  const close = useAppStore((s) => s.closeUpdate);
+  const loadApps = useAppStore((s) => s.loadApps);
+  const checkApps = useAppStore((s) => s.checkApps);
+  const clearProgress = useAppStore((s) => s.clearProgress);
+  const toast = useAppStore((s) => s.toast);
+  const progress = useAppStore((s) => s.progress);
+
+  const [phase, setPhase] = useState<Phase>({ kind: 'planning' });
+  const [plans, setPlans] = useState<{ id: string; plan: PlanView | null; error?: string }[]>([]);
+  const [acceptUnverified, setAcceptUnverified] = useState(false);
+  const [results, setResults] = useState<Result[]>([]);
+  // Answers the distro question for the app waiting on it.
+  const distroAnswer = useRef<((install: boolean) => void) | null>(null);
+  const cancelled = useRef(false);
+  const single = ids.length === 1;
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const out: typeof plans = [];
+      for (const id of ids) {
+        try {
+          out.push({ id, plan: await ipc.planUpdate(id) });
+        } catch (e) {
+          out.push({ id, plan: null, error: String(e) });
+        }
+      }
+      if (live) {
+        setPlans(out);
+        setPhase({ kind: 'confirm' });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [ids]);
+
+  const runnable = plans.filter((p) => p.plan);
+  const unverified = runnable.some((p) => p.plan!.unverified);
+  const needsRoot = runnable.some((p) => p.plan!.needs_root);
+
+  const run = async () => {
+    const done: Result[] = [];
+    for (const { id, plan } of runnable) {
+      if (cancelled.current) break;
+      try {
+        setPhase({ kind: 'working', id, step: 'download' });
+        const downloaded = await ipc.startUpdate(id);
+        if (downloaded.repo_version && downloaded.first_install) {
+          // Asked about one app at a time; in "Update all" it is skipped
+          // rather than holding the queue on a question.
+          const install = single
+            ? await new Promise<boolean>((resolve) => {
+                distroAnswer.current = resolve;
+                setPhase({ kind: 'distro', id, version: downloaded.repo_version!, pkg: downloaded.package ?? id });
+              })
+            : false;
+          if (!install) {
+            await ipc.cancelUpdate(id);
+            done.push({ id, outcome: 'skipped', detail: `also in the distro's repositories (${downloaded.repo_version})` });
+            continue;
+          }
+        }
+        setPhase({ kind: 'working', id, step: 'install' });
+        await ipc.finishUpdate(id);
+        done.push({ id, outcome: 'installed', detail: plan!.to });
+      } catch (e) {
+        done.push({ id, outcome: cancelled.current ? 'skipped' : 'failed', detail: cancelled.current ? 'cancelled' : String(e) });
+      } finally {
+        clearProgress(id);
+      }
+    }
+    await loadApps();
+    checkApps(done.filter((r) => r.outcome === 'installed').map((r) => r.id));
+    const failed = done.filter((r) => r.outcome === 'failed');
+    if (single && failed.length === 0) {
+      const r = done[0];
+      if (r?.outcome === 'installed') toast('success', `Installed ${r.id} ${r.detail}.`);
+      close();
+      return;
+    }
+    setResults(done);
+    setPhase({ kind: 'done' });
+  };
+
+  const cancel = () => {
+    if (phase.kind === 'working' && phase.step === 'download') {
+      cancelled.current = true;
+      ipc.cancelUpdate(phase.id);
+    } else if (phase.kind === 'distro') {
+      distroAnswer.current?.(false);
+    } else if (phase.kind !== 'working') {
+      for (const { id } of runnable) ipc.cancelUpdate(id);
+      close();
+    }
+  };
+
+  // Installing something new is not an update, and the title should say so.
+  const firstInstall = single && plans[0]?.plan && !plans[0].plan.from;
+  const title = single ? `${firstInstall ? 'Install' : 'Update'} ${ids[0]}` : `Update ${ids.length} apps`;
+  const blocking = phase.kind === 'working';
+
+  return (
+    <Modal title={title} className="update-modal" onClose={blocking ? undefined : cancel}>
+      {phase.kind === 'planning' && <p className="list-empty">Working out what to install…</p>}
+
+      {phase.kind === 'confirm' && (
+        <>
+          {plans.map(({ id, plan, error }) => (
+            <div key={id} className="plan">
+              {!single && <div className="plan-title">{id}</div>}
+              {error ? (
+                <p className="form-hint form-hint-error">{error}</p>
+              ) : !plan ? (
+                <p className="form-hint">Already up to date.</p>
+              ) : (
+                <>
+                  <p className="plan-versions mono">
+                    {plan.missing ? `${plan.from} (missing)` : (plan.from ?? 'not installed')} → {plan.to} · {FORMAT_NAMES[plan.format]}
+                  </p>
+                  <dl className="plan-lines">
+                    {plan.lines
+                      .filter((l) => single || l.tone !== 'normal')
+                      .map((l, i) => (
+                        <div key={i} className={`plan-line plan-${l.tone}`}>
+                          <dt>{l.label}</dt>
+                          <dd>{l.value}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                </>
+              )}
+            </div>
+          ))}
+          {needsRoot && (
+            <p className="form-hint">System packages ask for your password while they install.</p>
+          )}
+          {unverified && (
+            <label className="checkbox-row unverified-row">
+              <input type="checkbox" checked={acceptUnverified} onChange={(e) => setAcceptUnverified(e.target.checked)} />
+              <span>Install even though nothing can verify {single ? 'this download' : 'some downloads'}</span>
+            </label>
+          )}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={cancel}>Cancel</button>
+            <button className="btn-primary" disabled={runnable.length === 0 || (unverified && !acceptUnverified)} onClick={run}>
+              {single ? 'Install' : `Install ${runnable.length}`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {phase.kind === 'working' && (
+        <>
+          <p className="update-step">
+            {phase.step === 'download' ? 'Downloading and verifying' : 'Installing'} <strong>{phase.id}</strong>
+            {!single && ` (${runnable.findIndex((p) => p.id === phase.id) + 1} of ${runnable.length})`}
+          </p>
+          <ProgressBar fraction={progress[phase.id] ?? null} />
+          {phase.step === 'install' && runnable.find((p) => p.id === phase.id)?.plan?.needs_root && (
+            <p className="form-hint">If a password prompt appears, it is for this install.</p>
+          )}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={cancel} disabled={phase.step === 'install'}>
+              {phase.step === 'install' ? 'Cannot stop an install' : 'Cancel'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {phase.kind === 'distro' && (
+        <>
+          <p>
+            The distribution's repositories also have <span className="mono">{phase.pkg} {phase.version}</span>. System updates
+            and this build may replace each other.
+          </p>
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => distroAnswer.current?.(false)}>Don't install</button>
+            <button className="btn-primary" onClick={() => distroAnswer.current?.(true)}>Install anyway</button>
+          </div>
+        </>
+      )}
+
+      {phase.kind === 'done' && (
+        <>
+          <ul className="update-results">
+            {results.map((r) => (
+              <li key={r.id} className={`update-result update-${r.outcome}`}>
+                <strong>{r.id}</strong>
+                <span>
+                  {r.outcome === 'installed' ? `installed ${r.detail}` : r.outcome === 'skipped' ? `skipped: ${r.detail}` : r.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="modal-actions">
+            <button className="btn-primary" onClick={close}>Close</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function ProgressBar({ fraction }: { fraction: number | null }) {
+  return (
+    <div className={`progress${fraction === null ? ' progress-unknown' : ''}`} role="progressbar" aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}>
+      <div className="progress-fill" style={fraction === null ? undefined : { width: `${Math.round(fraction * 100)}%` }} />
+    </div>
+  );
+}

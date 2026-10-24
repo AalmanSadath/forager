@@ -10,6 +10,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::edit::ReleaseCache::default())
+        .manage(commands::update::Updates::default())
         .setup(|app| {
             appearance::watch(app.handle().clone());
             Ok(())
@@ -22,6 +23,10 @@ pub fn run() {
             commands::edit::add_app,
             commands::edit::save_app,
             commands::edit::remove_app,
+            commands::update::plan_update,
+            commands::update::start_update,
+            commands::update::finish_update,
+            commands::update::cancel_update,
             commands::system::system_appearance,
             commands::system::start_request,
         ])

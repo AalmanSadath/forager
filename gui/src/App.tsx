@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { countUpdates } from './appsView';
-import type { StatusEvent } from './types';
+import type { ProgressEvent, StatusEvent } from './types';
 import * as ipc from './ipc';
 import { useAppStore } from './store/appStore';
 import { useAppChrome } from './useAppChrome';
@@ -12,6 +12,7 @@ import AddAppPage from './components/AddAppPage';
 import ActivityPanel from './components/ActivityPanel';
 import SettingsPanel from './components/SettingsPanel';
 import Toasts from './components/Toasts';
+import UpdateModal from './components/UpdateModal';
 
 export default function App() {
   const chrome = useAppChrome();
@@ -20,6 +21,15 @@ export default function App() {
   const applyStatus = useAppStore((s) => s.applyStatus);
   const apps = useAppStore((s) => s.apps);
   const checks = useAppStore((s) => s.checks);
+
+  const updating = useAppStore((s) => s.updating);
+  const applyProgress = useAppStore((s) => s.applyProgress);
+  useEffect(() => {
+    const unlisten = listen<ProgressEvent>('update-progress', (e) => applyProgress(e.payload));
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [applyProgress]);
 
   // Results stream in per app while a check runs.
   useEffect(() => {
@@ -62,6 +72,7 @@ export default function App() {
         ) : (
           <AppsPanel />
         )}
+        {updating && <UpdateModal key={updating.join(',')} ids={updating} />}
         <Toasts />
       </main>
     </div>

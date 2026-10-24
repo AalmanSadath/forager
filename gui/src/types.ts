@@ -126,3 +126,34 @@ export type SignatureForm =
   | { kind: 'minisign'; key: string }
   | { kind: 'gpg'; key_file: string }
   | { kind: 'attestation' };
+
+export interface SummaryLine {
+  label: string;
+  value: string;
+  tone: 'normal' | 'warn' | 'danger';
+}
+
+export interface PlanView {
+  from: string | null;
+  to: string;
+  missing: boolean;
+  format: Format;
+  lines: SummaryLine[];
+  unverified: boolean;
+  needs_root: boolean;
+}
+
+export interface DownloadedView {
+  package: string | null;
+  repo_version: string | null;
+  first_install: boolean;
+}
+
+/** Payload of `update-progress`. */
+export interface ProgressEvent {
+  id: string;
+  phase: 'download' | 'install';
+  done: number;
+  total: number | null;
+  percent: number | null;
+}

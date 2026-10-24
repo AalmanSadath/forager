@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as ipc from '../ipc';
 import type { CheckEntry } from '../appsView';
-import type { AppView, GuiSettings, StatusEvent, SystemAppearance } from '../types';
+import type { AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
 import { NO_APPEARANCE } from './theme';
 
 /** Which page fills the window. An app's page is a full page, not a drawer. */
@@ -34,6 +34,15 @@ interface AppStore {
   applyStatus: (event: StatusEvent) => void;
   /** Checks apps whose last check is missing or older than half an hour. */
   checkStale: () => void;
+
+  /** Apps the update dialog is working on; null when it is closed. */
+  updating: string[] | null;
+  openUpdate: (ids: string[]) => void;
+  closeUpdate: () => void;
+  /** 0..1 per app while it downloads or installs; null when unknown. */
+  progress: Record<string, number | null>;
+  applyProgress: (event: ProgressEvent) => void;
+  clearProgress: (id: string) => void;
 
   settings: GuiSettings;
   systemAppearance: SystemAppearance;
@@ -128,6 +137,28 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       .map((a) => a.id);
     if (stale.length > 0) get().checkApps(stale);
   },
+
+  updating: null,
+  openUpdate: (ids) => set({ updating: ids }),
+  closeUpdate: () => set({ updating: null }),
+  progress: {},
+  applyProgress: (e) => {
+    const fraction =
+      e.phase === 'download'
+        ? e.total
+          ? e.done / e.total
+          : null
+        : e.percent !== null
+          ? e.percent / 100
+          : null;
+    set((s) => ({ progress: { ...s.progress, [e.id]: fraction } }));
+  },
+  clearProgress: (id) =>
+    set((s) => {
+      const progress = { ...s.progress };
+      delete progress[id];
+      return { progress };
+    }),
 
   settings: { app_theme: 'system', accent_color: null },
   systemAppearance: NO_APPEARANCE,

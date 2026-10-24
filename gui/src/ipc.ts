@@ -5,6 +5,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   AppView,
+  DownloadedView,
+  PlanView,
   ParsedSource,
   Preview,
   SettingsInput,
@@ -30,6 +32,14 @@ export const addApp = (spec: SourceSpec, id: string, settings: SettingsInput, si
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('save_app', { id, settings, signature });
 export const removeApp = (id: string, uninstall: boolean) => invoke<void>('remove_app', { id, uninstall });
+
+// ── update ──────────────────────────────────────────────────────
+/** Null when the app is already up to date. */
+export const planUpdate = (id: string) => invoke<PlanView | null>('plan_update', { id });
+/** Progress arrives as `update-progress` events. */
+export const startUpdate = (id: string) => invoke<DownloadedView>('start_update', { id });
+export const finishUpdate = (id: string) => invoke<AppView>('finish_update', { id });
+export const cancelUpdate = (id: string) => invoke<void>('cancel_update', { id });
 
 // ── system ──────────────────────────────────────────────────────
 export const systemAppearance = () => invoke<SystemAppearance>('system_appearance');
