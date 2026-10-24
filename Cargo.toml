@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["crates/forager-core", "crates/forager-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"

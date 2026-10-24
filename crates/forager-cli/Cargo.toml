@@ -1,0 +1,15 @@
+[package]
+name = "forager-cli"
+version.workspace = true
+edition.workspace = true
+description = "Install and update Linux apps from their GitHub releases"
+
+[[bin]]
+name = "forager"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+forager-core = { version = "0.1.0", path = "../forager-core" }
+regex = "1.13.1"
