@@ -5,12 +5,12 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use std::process::Command;
 use std::sync::LazyLock;
 
 use regex::bytes::Regex;
 
 use crate::error::{Error, Result};
+use crate::host;
 
 /// The bundle header is a GVariant that stores the ref (`app/<id>/<arch>/<branch>`)
 /// as plain text near the start of the file.
@@ -33,18 +33,18 @@ fn find_app_id(header: &[u8]) -> Option<String> {
 /// installed from somewhere else. App data in `~/.var/app` is kept.
 pub fn install(file: &Path) -> Result<()> {
     super::run(
-        Command::new("flatpak")
+        host::command("flatpak")
             .args(["install", "--user", "--noninteractive", "--reinstall", "--bundle"])
             .arg(file),
     )
 }
 
 pub fn uninstall(id: &str) -> Result<()> {
-    super::run(Command::new("flatpak").args(["uninstall", "--user", "--noninteractive", id]))
+    super::run(host::command("flatpak").args(["uninstall", "--user", "--noninteractive", id]))
 }
 
 pub fn is_present(id: &str) -> bool {
-    Command::new("flatpak")
+    host::command("flatpak")
         .args(["info", "--user", id])
         .output()
         .is_ok_and(|out| out.status.success())

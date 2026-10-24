@@ -17,6 +17,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::error::{Error, Result};
+use crate::host;
 use crate::model::{App, Format, Installed};
 use crate::platform::{self, PackageManager, Platform};
 
@@ -97,9 +98,9 @@ pub fn install(
 /// formats that are not system packages.
 pub fn package_name(file: &Path, format: Format) -> Result<Option<String>> {
     let mut command = match format {
-        Format::Rpm => Command::new("rpm"),
-        Format::Deb => Command::new("dpkg-deb"),
-        Format::Pacman => Command::new("pacman"),
+        Format::Rpm => host::command("rpm"),
+        Format::Deb => host::command("dpkg-deb"),
+        Format::Pacman => host::command("pacman"),
         _ => return Ok(None),
     };
     match format {
@@ -115,7 +116,7 @@ pub fn package_name(file: &Path, format: Format) -> Result<Option<String>> {
 /// no network.
 pub fn repo_version(package: &str, platform: &Platform) -> Option<String> {
     let query = |program: &str, args: &[&str]| {
-        let out = Command::new(program).args(args).arg(package).output().ok()?;
+        let out = host::command(program).args(args).arg(package).output().ok()?;
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
@@ -167,15 +168,15 @@ pub fn is_present(installed: &Installed) -> bool {
         installed.package.as_deref(),
         installed.path.as_deref(),
     ) {
-        (Format::Rpm, Some(package), _) => Command::new("rpm")
+        (Format::Rpm, Some(package), _) => host::command("rpm")
             .args(["-q", "--quiet", package])
             .status()
             .is_ok_and(|s| s.success()),
         (Format::Deb, Some(package), _) => {
-            output(Command::new("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
+            output(host::command("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
                 .is_ok_and(|status| status == "installed")
         }
-        (Format::Pacman, Some(package), _) => Command::new("pacman")
+        (Format::Pacman, Some(package), _) => host::command("pacman")
             .args(["-Q", package])
             .output()
             .is_ok_and(|out| out.status.success()),
@@ -258,7 +259,7 @@ fn system_remove(package: &str, fallback: impl FnOnce() -> Result<()>) -> Result
 }
 
 fn pkexec<'a>(args: impl IntoIterator<Item = &'a str>) -> Command {
-    let mut command = Command::new("pkexec");
+    let mut command = host::command("pkexec");
     command.args(args);
     command
 }

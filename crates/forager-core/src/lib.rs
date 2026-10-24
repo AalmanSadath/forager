@@ -4,6 +4,7 @@
 pub mod envfile;
 pub mod error;
 pub mod history;
+pub mod host;
 pub mod http;
 pub mod install;
 pub mod matcher;

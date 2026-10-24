@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use forager_core::{envfile, history, platform, store, timer};
+use forager_core::{envfile, history, host, platform, store, timer};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{CmdResult, blocking, config_path};
@@ -98,7 +98,7 @@ pub async fn set_timer(enabled: bool, auto_update: bool) -> CmdResult<TimerState
             let exe = cli_path().ok_or("the forager command-line tool was not found next to the app or on PATH")?;
             let config = std::env::var_os("FORAGER_CONFIG").map(|_| config_path());
             timer::enable(&timer::Settings {
-                exe,
+                command: host::cli_command(&exe),
                 config,
                 auto_update,
             })

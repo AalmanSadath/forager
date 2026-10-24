@@ -6,6 +6,7 @@ mod commands;
 mod state;
 
 pub fn run() {
+    forager_core::host::use_host_dirs();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

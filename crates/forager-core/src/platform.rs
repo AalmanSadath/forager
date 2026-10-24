@@ -79,10 +79,9 @@ pub fn arch_aliases(arch: &str) -> &'static [&'static str] {
 /// Architectures recognised when rejecting assets built for another one.
 pub const KNOWN_ARCHES: [&str; 7] = ["x86_64", "aarch64", "arm", "x86", "riscv64", "powerpc64", "s390x"];
 
+/// Whether `name` is installed, on the host when running as a Flatpak.
 pub fn has_command(name: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
-        .unwrap_or(false)
+    crate::host::has_command(name)
 }
 
 /// `~/Applications`, where AppImages are placed.

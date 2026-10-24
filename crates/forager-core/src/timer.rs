@@ -3,9 +3,9 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::error::{Error, Result};
+use crate::host;
 
 pub const SERVICE: &str = "forager-check.service";
 pub const TIMER: &str = "forager-check.timer";
@@ -13,8 +13,9 @@ pub const TIMER: &str = "forager-check.timer";
 /// What the timer's service runs.
 #[derive(Debug, Clone)]
 pub struct Settings {
-    /// The `forager` binary.
-    pub exe: PathBuf,
+    /// How to run the `forager` CLI: its path, or `flatpak run ...` from a
+    /// Flatpak; see `host::cli_command`.
+    pub command: Vec<String>,
     /// Config passed with `--config`; the default location when `None`.
     pub config: Option<PathBuf>,
     /// Also install updates that need no root (AppImage, tarball, Flatpak).
@@ -27,7 +28,7 @@ pub fn unit_dir() -> Result<PathBuf> {
 }
 
 pub fn service_unit(settings: &Settings) -> String {
-    let mut base = vec![settings.exe.to_string_lossy().into_owned()];
+    let mut base = settings.command.clone();
     if let Some(config) = &settings.config {
         base.extend(["--config".to_string(), config.to_string_lossy().into_owned()]);
     }
@@ -118,7 +119,7 @@ pub fn next_run() -> Result<Option<String>> {
     if !unit_dir()?.join(TIMER).exists() {
         return Ok(None);
     }
-    let out = Command::new("systemctl")
+    let out = host::command("systemctl")
         .args(["--user", "show", TIMER, "--property=NextElapseUSecRealtime", "--value"])
         .output()?;
     let next = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -126,7 +127,7 @@ pub fn next_run() -> Result<Option<String>> {
 }
 
 fn systemctl(args: &[&str]) -> Result<()> {
-    let status = Command::new("systemctl").arg("--user").args(args).status()?;
+    let status = host::command("systemctl").arg("--user").args(args).status()?;
     if status.success() {
         Ok(())
     } else {
@@ -157,7 +158,7 @@ mod tests {
 
     fn settings(auto_update: bool) -> Settings {
         Settings {
-            exe: "/usr/bin/forager".into(),
+            command: vec!["/usr/bin/forager".into()],
             config: Some("/home/me/My Apps/100%.toml".into()),
             auto_update,
         }

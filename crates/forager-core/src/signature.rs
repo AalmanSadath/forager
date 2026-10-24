@@ -7,14 +7,13 @@
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use minisign_verify::{PublicKey, Signature as Minisig};
 
 use crate::error::{Error, Result};
 use crate::model::{Asset, Release, Signature};
 use crate::source::Source;
-use crate::{http, verify};
+use crate::{host, http, store, verify};
 
 /// What will be checked for an asset.
 #[derive(Debug, Clone)]
@@ -81,7 +80,7 @@ pub fn check(signature: &Signature, signed: &Signed, source: &Source, file: &Pat
         Signed::Checksums { list, sig } => {
             let list_bytes = http::get_bytes(&list.url)?;
             let sig = http::get_bytes(&sig.url)?;
-            let tmp = tempfile::NamedTempFile::new()?;
+            let tmp = scratch_file()?;
             fs::write(tmp.path(), &list_bytes)?;
             check_file(signature, &sig, tmp.path())?;
             let name = file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
@@ -131,9 +130,9 @@ fn minisign(public_key: &str, sig: &[u8], file: &Path) -> Result<()> {
 }
 
 fn gpg(keyring: &Path, sig: &[u8], file: &Path) -> Result<()> {
-    let sig_file = tempfile::NamedTempFile::new()?;
+    let sig_file = scratch_file()?;
     fs::write(sig_file.path(), sig)?;
-    let out = Command::new("gpgv")
+    let out = host::command("gpgv")
         .arg("--keyring")
         .arg(keyring)
         .arg(sig_file.path())
@@ -154,7 +153,7 @@ fn attestation(source: &Source, file: &Path) -> Result<()> {
             "attestations are only available on GitHub".into(),
         ));
     };
-    let out = Command::new("gh")
+    let out = host::command("gh")
         .args(["attestation", "verify"])
         .arg(file)
         .args(["--repo", &format!("{owner}/{repo}")])
@@ -225,7 +224,7 @@ pub fn store_gpg_key(id: &str, key_file: &Path) -> Result<PathBuf> {
 fn store_gpg_key_in(dir: &Path, id: &str, key_file: &Path) -> Result<PathBuf> {
     let key = fs::read(key_file)?;
     let binary = if key.starts_with(b"-----BEGIN PGP") {
-        let out = Command::new("gpg")
+        let out = host::command("gpg")
             .arg("--dearmor")
             .arg("--output")
             .arg("-")
@@ -245,6 +244,14 @@ fn store_gpg_key_in(dir: &Path, id: &str, key_file: &Path) -> Result<PathBuf> {
     let path = dir.join(format!("{id}.gpg"));
     fs::write(&path, binary)?;
     Ok(path)
+}
+
+/// A temporary file under Forager's cache rather than `/tmp`: inside a
+/// Flatpak, programs run on the host, which cannot see the sandbox's `/tmp`.
+fn scratch_file() -> Result<tempfile::NamedTempFile> {
+    let dir = store::cache_dir();
+    fs::create_dir_all(&dir)?;
+    Ok(tempfile::NamedTempFile::new_in(dir)?)
 }
 
 #[cfg(test)]

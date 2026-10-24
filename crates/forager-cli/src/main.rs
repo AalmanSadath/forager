@@ -12,7 +12,7 @@ use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, State};
-use forager_core::{install, timer};
+use forager_core::{host, install, timer};
 
 #[derive(Parser)]
 #[command(
@@ -213,6 +213,7 @@ impl std::str::FromStr for FormatPin {
 }
 
 fn main() -> Result<()> {
+    host::use_host_dirs();
     let cli = Cli::parse();
     let explicit_config = cli.config.clone();
     let via = if cli.from_timer { Via::Timer } else { Via::Cli };
@@ -441,9 +442,9 @@ fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
                 pending.iter().map(|(id, _)| *id).collect::<Vec<_>>().join(", ")
             ))
             .icon("system-software-update")
-            // Clicking the notification opens the app, whose packages install
-            // Forager.desktop.
-            .hint(notify_rust::Hint::DesktopEntry("Forager".into()))
+            // Clicking the notification opens the app: Forager.desktop from
+            // the deb and rpm packages, or the Flatpak's own entry.
+            .hint(notify_rust::Hint::DesktopEntry(host::desktop_entry()))
             .show()
             .context("cannot show notification")?;
     }
@@ -521,7 +522,7 @@ fn timer(action: TimerAction, config: Option<PathBuf>) -> Result<()> {
         TimerAction::Enable { auto_update } => {
             let config = config.map(std::path::absolute).transpose()?;
             let settings = timer::Settings {
-                exe: std::env::current_exe().context("cannot locate the forager binary")?,
+                command: host::cli_command(&std::env::current_exe().context("cannot locate the forager binary")?),
                 config,
                 auto_update,
             };

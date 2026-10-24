@@ -7,9 +7,9 @@
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 use crate::error::{Error, Result};
+use crate::host;
 
 #[derive(Debug)]
 pub struct Placed {
@@ -93,7 +93,7 @@ fn unpack(file: &Path, staging: &Path, id: &str, bins: &[String]) -> Result<(Pat
     // or absolute paths. Archives made on macOS carry AppleDouble `._*` files
     // and xattr headers GNU tar does not know; both are noise here.
     super::run(
-        Command::new("tar")
+        host::command("tar")
             .arg("--extract")
             .arg("--no-same-owner")
             .arg("--warning=no-unknown-keyword")
@@ -222,6 +222,7 @@ fn remove_dir_if_exists(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     struct Fixture {
         tmp: tempfile::TempDir,
