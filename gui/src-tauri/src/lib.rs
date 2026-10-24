@@ -28,6 +28,7 @@ pub fn run() {
             commands::edit::list_releases,
             commands::edit::skip_release,
             commands::edit::unskip_release,
+            commands::system::restart_self,
             commands::update::plan_update,
             commands::update::start_update,
             commands::update::finish_update,

@@ -851,8 +851,15 @@ fn apply(
     event.to = Some(plan.release.tag.clone());
     event.format = Some(plan.format);
     history::record(&event).ok();
+    let restart = install::is_running_self(&installed);
     let links = installed.links;
     println!("{name}: installed {}", plan.release.tag);
+    if restart {
+        println!(
+            "  note:   restart Forager to use {}; open windows still run the old version",
+            plan.release.tag
+        );
+    }
     if let Some(skipped) = &plan.skip_after {
         println!("  note:   {skipped} is skipped; `forager unskip {id}` offers it again");
     }

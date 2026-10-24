@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use forager_core::history::{self, Event, Kind, Via};
+use forager_core::install;
 use forager_core::model::Format;
 use forager_core::platform::Platform;
 use forager_core::update::{self, Download, Plan, Progress, SummaryLine};
@@ -207,6 +208,15 @@ pub async fn start_update(
     }
 }
 
+/// What `finish_update` did.
+#[derive(Debug, Clone, Serialize)]
+pub struct FinishedView {
+    pub app: AppView,
+    /// This was Forager updating itself: the window runs the old version
+    /// until restarted.
+    pub restart_needed: bool,
+}
+
 /// Installs the downloaded asset and records it.
 #[tauri::command]
 pub async fn finish_update(
@@ -214,7 +224,7 @@ pub async fn finish_update(
     updates: State<'_, Updates>,
     id: String,
     format: Format,
-) -> CmdResult<AppView> {
+) -> CmdResult<FinishedView> {
     let session = updates
         .0
         .lock()
@@ -226,7 +236,7 @@ pub async fn finish_update(
     let (handle, key) = (app.clone(), id.clone());
     let result = blocking(move || {
         let mut store = load_store()?;
-        update::install(&mut store, &key, &plan, &download, &Platform::detect(), &mut |p| {
+        let installed = update::install(&mut store, &key, &plan, &download, &Platform::detect(), &mut |p| {
             emit_progress(&handle, &key, p);
             ControlFlow::Continue(())
         })
@@ -245,7 +255,10 @@ pub async fn finish_update(
         event.format = Some(plan.format);
         history::record(&event).ok();
         let app = store.get(&key).map_err(|e| e.to_string())?;
-        Ok(AppView::from(app))
+        Ok(FinishedView {
+            app: AppView::from(app),
+            restart_needed: install::is_running_self(&installed),
+        })
     })
     .await;
     if let Err(e) = &result {

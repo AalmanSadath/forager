@@ -11,6 +11,7 @@ type Phase =
   | { kind: 'confirm' }
   | { kind: 'working'; id: string; format: Format; step: 'download' | 'install' }
   | { kind: 'distro'; id: string; version: string; pkg: string }
+  | { kind: 'restart'; version: string }
   | { kind: 'done' };
 
 type Result = { id: string; name: string; outcome: 'installed' | 'skipped' | 'failed'; detail?: string };
@@ -73,6 +74,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
 
   const run = async () => {
     const done: Result[] = [];
+    // Set when Forager itself was updated.
+    let restartTo: string | null = null;
     for (const { id, plan } of runnable) {
       if (cancelled.current) break;
       const format = plan!.format;
@@ -96,7 +99,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
           }
         }
         setPhase({ kind: 'working', id, format, step: 'install' });
-        await ipc.finishUpdate(id, format);
+        const finished = await ipc.finishUpdate(id, format);
+        if (finished.restart_needed) restartTo = plan!.to;
         done.push({ id, name, outcome: 'installed', detail: plan!.to });
       } catch (e) {
         done.push({ id, name, outcome: cancelled.current ? 'skipped' : 'failed', detail: cancelled.current ? 'cancelled' : String(e) });
@@ -107,6 +111,11 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
     await loadApps();
     checkApps(done.filter((r) => r.outcome === 'installed').map((r) => r.id));
     const failed = done.filter((r) => r.outcome === 'failed');
+    if (restartTo) {
+      setResults(done);
+      setPhase({ kind: 'restart', version: restartTo });
+      return;
+    }
     if (single && failed.length === 0 && done.length === 1) {
       const r = done[0];
       if (r?.outcome === 'installed') toast('success', `Installed ${r.name} ${r.detail}.`);
@@ -226,6 +235,23 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => distroAnswer.current?.(false)}>Don't install</button>
             <button className="btn-primary" onClick={() => distroAnswer.current?.(true)}>Install anyway</button>
+          </div>
+        </>
+      )}
+
+      {phase.kind === 'restart' && (
+        <>
+          <p>
+            Forager {phase.version} is installed. This window still runs the old version until Forager restarts.
+          </p>
+          {results.some((r) => r.outcome !== 'installed') && (
+            <p className="form-hint">Some updates did not install: see Activity for what happened.</p>
+          )}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={close}>Later</button>
+            <button className="btn-primary" onClick={() => ipc.restartSelf().catch((e) => toast('error', String(e)))}>
+              Restart now
+            </button>
           </div>
         </>
       )}

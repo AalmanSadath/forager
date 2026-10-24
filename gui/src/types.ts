@@ -173,6 +173,12 @@ export interface PlanView {
   notes: string | null;
 }
 
+export interface FinishedView {
+  app: AppView;
+  /** Forager updated itself; this window still runs the old version. */
+  restart_needed: boolean;
+}
+
 /** One planned update of an app, or why it cannot be made. */
 export interface PlanResult {
   plan: PlanView | null;

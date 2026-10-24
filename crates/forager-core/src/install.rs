@@ -312,6 +312,59 @@ pub fn is_present(installed: &Installed) -> bool {
     }
 }
 
+/// Whether `installed` is the Forager that is running: after updating it,
+/// the running program is the old version until restarted.
+pub fn is_running_self(installed: &Installed) -> bool {
+    let package = installed.package.as_deref();
+    match installed.format {
+        Format::Flatpak => host::in_flatpak() && package == Some(host::flatpak_id().as_str()),
+        Format::AppImage => {
+            std::env::var_os("APPIMAGE").is_some_and(|p| installed.path.as_deref() == Some(Path::new(&p)))
+        }
+        Format::Tarball => installed
+            .path
+            .as_deref()
+            .is_some_and(|dir| running_exe().is_some_and(|exe| exe.starts_with(dir))),
+        format => {
+            let (Some(package), Some(exe)) = (package, running_exe()) else {
+                return false;
+            };
+            !host::in_flatpak() && owner(&exe, format).as_deref() == Some(package)
+        }
+    }
+}
+
+/// The running executable's path, even after an update replaced the file
+/// (the kernel then reports it with ` (deleted)` appended).
+pub fn running_exe() -> Option<std::path::PathBuf> {
+    std::env::current_exe().ok().map(|p| live_path(&p))
+}
+
+fn live_path(path: &Path) -> std::path::PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_suffix(" (deleted)") {
+        Some(live) => live.into(),
+        None => path.to_path_buf(),
+    }
+}
+
+/// The system package that owns `file`.
+fn owner(file: &Path, format: Format) -> Option<String> {
+    let text = match format {
+        Format::Rpm => output(host::query("rpm").args(["-qf", "--qf", "%{NAME}\\n"]).arg(file)).ok()?,
+        Format::Deb => output(host::query("dpkg").arg("-S").arg(file)).ok()?,
+        Format::Pacman => output(host::query("pacman").arg("-Qoq").arg(file)).ok()?,
+        _ => return None,
+    };
+    let line = text.lines().next()?;
+    // dpkg prints `package: /path`, with `:arch` on multiarch systems.
+    let name = match format {
+        Format::Deb => line.split(':').next()?,
+        _ => line,
+    };
+    Some(name.trim().to_string()).filter(|n| !n.is_empty())
+}
+
 /// Removes the menu entry of the AppImage or tarball being replaced.
 fn replace_menu_entry(app: &App) {
     for previous in app
@@ -453,6 +506,23 @@ mod tests {
             package_guesses("bifrossh.flatpak", Format::Flatpak, "BifroSSH"),
             ["bifrossh"]
         );
+    }
+
+    /// Needs an rpm system: `cargo test -- --ignored owner`.
+    #[test]
+    #[ignore]
+    fn finds_the_owner_of_a_system_file() {
+        assert_eq!(owner(Path::new("/usr/bin/rpm"), Format::Rpm).as_deref(), Some("rpm"));
+        assert_eq!(owner(Path::new("/nonexistent"), Format::Rpm), None);
+    }
+
+    #[test]
+    fn sees_through_a_replaced_executable() {
+        assert_eq!(
+            live_path(Path::new("/usr/bin/forager-gui (deleted)")),
+            Path::new("/usr/bin/forager-gui")
+        );
+        assert_eq!(live_path(Path::new("/usr/bin/forager")), Path::new("/usr/bin/forager"));
     }
 
     #[test]
