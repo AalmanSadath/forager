@@ -25,19 +25,54 @@ pub struct Plan {
     pub missing: bool,
 }
 
+/// How an app's install compares with its latest release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    NotInstalled,
+    /// Recorded as installed, but removed outside Forager.
+    Missing,
+    /// Installed in another format than the one the app is pinned to.
+    WrongFormat,
+    Outdated,
+    UpToDate,
+}
+
+impl State {
+    /// Whether `update` would install something for an app that is tracked
+    /// as installed.
+    pub fn needs_update(self) -> bool {
+        matches!(self, State::Missing | State::WrongFormat | State::Outdated)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Status {
+    pub state: State,
+    pub latest: Release,
+}
+
+/// Fetches the latest release and compares it with the install.
+pub fn status(app: &App) -> Result<Status> {
+    let latest = app.source.latest_release(app.prerelease)?;
+    let state = match &app.installed {
+        None => State::NotInstalled,
+        Some(installed) if !install::is_present(installed) => State::Missing,
+        Some(installed) if app.format.is_some_and(|f| f != installed.format) => State::WrongFormat,
+        Some(installed) if version::is_newer(&installed.tag, &latest.tag) => State::Outdated,
+        Some(_) => State::UpToDate,
+    };
+    Ok(Status { state, latest })
+}
+
 /// The update for `app`, or `None` if it is up to date. An install that is
 /// missing, or in another format than the one the app is pinned to, counts
 /// as out of date.
 pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
-    let release = app.source.latest_release(app.prerelease)?;
-    let missing = app.installed.as_ref().is_some_and(|i| !install::is_present(i));
-    if let Some(installed) = &app.installed
-        && !missing
-        && app.format.is_none_or(|f| f == installed.format)
-        && !version::is_newer(&installed.tag, &release.tag)
-    {
+    let Status { state, latest: release } = status(app)?;
+    if state == State::UpToDate {
         return Ok(None);
     }
+    let missing = state == State::Missing;
     let (asset, format) = select_asset(app, &release, platform)?;
     let asset = asset.clone();
     let expected_sha256 = verify::expected_sha256(&asset, &release)?;

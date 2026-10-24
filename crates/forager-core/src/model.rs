@@ -58,6 +58,13 @@ const TARBALL_SUFFIXES: [&str; 9] = [
     ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar.zst", ".tzst",
 ];
 
+impl Format {
+    /// Installed through the system package manager, as root.
+    pub fn needs_root(self) -> bool {
+        matches!(self, Format::Deb | Format::Rpm | Format::Pacman)
+    }
+}
+
 impl fmt::Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {

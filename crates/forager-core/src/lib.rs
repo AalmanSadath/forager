@@ -9,6 +9,7 @@ pub mod model;
 pub mod platform;
 pub mod source;
 pub mod store;
+pub mod timer;
 pub mod update;
 pub mod verify;
 pub mod version;

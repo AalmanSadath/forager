@@ -28,6 +28,19 @@ forager edit drawio-desktop --format appimage   # or --format auto, --filter, --
 forager remove drawio-desktop
 ```
 
+Background checks run from a systemd user timer:
+
+```sh
+forager timer enable                 # daily `check --notify`: a desktop notification lists updates
+forager timer enable --auto-update   # also installs updates that need no root (AppImage, tarball, Flatpak)
+forager timer status
+forager timer disable
+```
+
+The timer reads `GITHUB_TOKEN` and other variables from `~/.config/forager/env`.
+`update --unprivileged-only` skips anything that needs root, so the timer
+never asks for a password.
+
 `edit` changes an app's settings; a new format is installed (and the old
 install removed) on the next `update`.
 
@@ -84,5 +97,4 @@ corrupted downloads, not a compromised release.
 - PackageKit over D-Bus instead of `pkexec` + native tools
 - Detect conflicts with distro repositories
 - Signature verification (GPG, minisign, GitHub attestations)
-- systemd user timer for background checks, desktop notifications
 - GTK4 / libadwaita GUI
