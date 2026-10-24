@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="#1A1B2E"/>
+  <g fill="none" stroke="#7BC86C" stroke-linecap="round" stroke-linejoin="round">
+    <!-- the tray an app lands in -->
+    <path d="M 110 300 L 110 382 Q 110 410 138 410 L 374 410 Q 402 410 402 382 L 402 300" stroke-width="30"/>
+    <!-- arriving from the forge -->
+    <path d="M 256 120 L 256 324" stroke-width="30"/>
+    <path d="M 186 254 L 256 324 L 326 254" stroke-width="30"/>
+    <!-- foraged, so it carries a leaf -->
+    <path d="M 256 186 Q 268 108 352 96 Q 344 176 256 186 Z" stroke-width="24"/>
+  </g>
+</svg>

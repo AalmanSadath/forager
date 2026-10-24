@@ -1,0 +1,333 @@
+/*
+ * Shared primitives: the page frame, inputs, buttons, chips and cards, after
+ * BifroSSH's forms.css. Everything below this file may override them.
+ */
+
+/* ── Page frame ────────────────────────────────────────────── */
+
+.panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+
+.panel-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.panel-title-row .panel-title { margin-bottom: 0; }
+
+.panel-section { margin-bottom: 32px; }
+
+.panel-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+/* ── Forms ─────────────────────────────────────────────────── */
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.form-group > label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+}
+.form-row .form-group { flex: 1; }
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea {
+  background: var(--bg-mid);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+textarea {
+  resize: vertical;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23768390'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+input:read-only { color: var(--text-muted); }
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
+
+select option {
+  background: var(--bg-mid);
+  color: var(--text-primary);
+}
+
+.input-invalid, .input-invalid:focus { border-color: var(--danger) !important; }
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.checkbox-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  flex: none;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-mid);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.1s, border-color 0.1s;
+}
+.checkbox-row input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 4px;
+  height: 8px;
+  border: 2px solid var(--on-accent);
+  border-top: none;
+  border-left: none;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.form-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.form-hint-error { color: var(--danger); }
+.form-hint-warn { color: var(--warning); }
+
+.form-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 0 0 8px;
+  user-select: text;
+}
+
+/* A choice of a few, as one segmented control. */
+.toggle-row {
+  display: flex;
+  background: var(--bg-mid);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.toggle-btn {
+  flex: 1;
+  padding: 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.toggle-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.toggle-btn:not(.active):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+
+button { cursor: pointer; font-family: inherit; }
+button:disabled { cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  /* Transparent rather than none, so it is as tall as a bordered button. */
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; }
+
+.btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 14px;
+  font-size: 13px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-secondary:hover:not(:disabled) { background: var(--bg-mid); }
+.btn-secondary:disabled { opacity: 0.5; }
+
+.btn-danger {
+  background: var(--danger);
+  color: var(--on-danger);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.btn-danger:hover:not(:disabled) { opacity: 0.85; }
+.btn-danger:disabled { opacity: 0.5; }
+
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-muted);
+  padding: 5px;
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ── Chips and tags ────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -8px 0 16px;
+}
+.chip {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+.chip:hover {
+  border-color: var(--text-dim);
+  color: var(--text-primary);
+}
+.chip.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-dark));
+  color: var(--accent);
+}
+.chip-count { margin-left: 4px; color: var(--text-dim); }
+
+.tag {
+  flex-shrink: 0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.tag-accent { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tag-warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+
+/* ── Card contents ─────────────────────────────────────────── */
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Versions and paths: monospace, as BifroSSH sets addresses. */
+.card-sub, .mono {
+  font-family: monospace;
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.section-title {
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

@@ -1,0 +1,13 @@
+/*
+ * Split by area as in BifroSSH. Order is cascade order: forms.css defines the
+ * shared buttons and inputs that the page stylesheets after it may override.
+ */
+
+@import './styles/tokens.css';
+@import './styles/layout.css';
+@import './styles/forms.css';
+@import './styles/modals.css';
+@import './styles/apps.css';
+@import './styles/app-page.css';
+@import './styles/activity.css';
+@import './styles/settings.css';

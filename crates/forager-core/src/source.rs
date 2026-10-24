@@ -111,6 +111,20 @@ impl Source {
         }
     }
 
+    /// The project's page in a browser.
+    pub fn web_url(&self) -> String {
+        format!("https://{self}")
+    }
+
+    /// Short name of the forge kind: `github`, `gitlab` or `forgejo`.
+    pub fn forge(&self) -> &'static str {
+        match self {
+            Source::GitHub { .. } => "github",
+            Source::GitLab { .. } => "gitlab",
+            Source::Forgejo { .. } => "forgejo",
+        }
+    }
+
     /// Suggested app id derived from the source.
     pub fn default_id(&self) -> String {
         match self {

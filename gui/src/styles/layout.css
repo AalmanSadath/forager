@@ -1,0 +1,209 @@
+/*
+ * The window: the sidebar and the page area. Rules follow BifroSSH's
+ * layout.css so the two apps look alike.
+ */
+
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  color-scheme: dark;
+}
+.app-light, body.app-light { color-scheme: light; }
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  position: relative;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.18s ease, min-width 0.18s ease;
+}
+
+.sidebar-collapsed {
+  width: 48px;
+  min-width: 48px;
+}
+
+.sidebar-top {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sidebar-collapsed .sidebar-top { justify-content: center; }
+.sidebar-collapsed .sidebar-collapse-btn { height: 28px; }
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar-brand-text { overflow: hidden; }
+
+.sidebar-collapse-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-nav-bottom {
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--border);
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+  /* Clipped rather than wrapped while the sidebar's width animates. */
+  white-space: nowrap;
+  overflow: hidden;
+  position: relative;
+}
+.nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.nav-btn.active {
+  background: var(--bg-mid);
+  color: var(--accent);
+}
+.nav-icon { font-size: 20px; flex-shrink: 0; display: flex; }
+
+/* The number of apps with updates, after the Apps label. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.sidebar-collapsed .nav-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 8px;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
+}
+
+/* ── Status dots ───────────────────────────────────────────── */
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-on     { background: var(--success); }
+.dot-off    { background: var(--text-dim); }
+.dot-error  { background: var(--danger); }
+.dot-update { background: var(--accent); }
+
+/* Checking or installing. Pulsing rather than labelled, so a busy card is the
+   same height as an idle one. */
+.dot-busy {
+  background: var(--warning);
+  animation: dot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+/* ── Toasts ────────────────────────────────────────────────── */
+
+.toasts {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 150;
+  max-width: 420px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.toast-error { border-left-color: var(--danger); }
+.toast-success { border-left-color: var(--success); }
+.toast span {
+  flex: 1;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
