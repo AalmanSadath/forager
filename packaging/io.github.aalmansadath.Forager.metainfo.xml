@@ -58,6 +58,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.1" date="2026-10-25">
+      <description>
+        <p>Apps installed as a deb, rpm or Arch package before they were tracked are recognised as installed, instead of being installed again.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-25">
       <description>
         <p>First release, with packages for deb, rpm, Arch, Flatpak, AppImage and a tarball.</p>
