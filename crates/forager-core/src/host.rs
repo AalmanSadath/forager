@@ -8,6 +8,7 @@
 //! of keys whether or not they run sandboxed. Outside a Flatpak nothing here
 //! changes anything.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -49,6 +50,16 @@ pub fn has_command(name: &str) -> bool {
     std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
         .unwrap_or(false)
+}
+
+/// The host's `PATH`: the sandbox's own only lists `/app/bin` and `/usr/bin`.
+pub fn path() -> Option<OsString> {
+    if in_flatpak() {
+        let out = command("printenv").arg("PATH").output().ok()?;
+        let path = String::from_utf8(out.stdout).ok()?;
+        return out.status.success().then(|| path.trim_end().into());
+    }
+    std::env::var_os("PATH")
 }
 
 /// Inside a Flatpak, points the XDG data directories at the host's own,

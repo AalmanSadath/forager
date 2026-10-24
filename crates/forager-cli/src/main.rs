@@ -641,7 +641,7 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
     }
     if !links.is_empty()
         && let Some(bin_dir) = platform::bin_dir()
-        && !std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|p| p == bin_dir))
+        && !host::path().is_some_and(|paths| std::env::split_paths(&paths).any(|p| p == bin_dir))
     {
         println!("  note:   {} is not on PATH", bin_dir.display());
     }
