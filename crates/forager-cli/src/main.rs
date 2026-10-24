@@ -7,8 +7,8 @@ use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format};
 use forager_core::platform::{self, Platform};
 use forager_core::source::Source;
-use forager_core::store::{self, Store};
-use forager_core::{install, verify, version};
+use forager_core::store::Store;
+use forager_core::{install, version};
 
 #[derive(Parser)]
 #[command(
@@ -176,28 +176,22 @@ fn update(store: &mut Store, ids: &[String], yes: bool, allow_unverified: bool) 
 
 fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow_unverified: bool) -> Result<()> {
     let app = store.get(id)?;
-    let release = app.source.latest_release(app.prerelease)?;
-    if let Some(installed) = &app.installed
-        && !version::is_newer(&installed.tag, &release.tag)
-    {
-        println!("{id}: {} is up to date", installed.tag);
+    let Some(plan) = forager_core::update::plan(app, platform)? else {
+        let tag = app.installed.as_ref().map_or("", |i| i.tag.as_str());
+        println!("{id}: {tag} is up to date");
         return Ok(());
-    }
+    };
 
-    let (asset, format) = select_asset(app, &release, platform)?;
-    let expected = verify::expected_sha256(asset, &release)?;
-    let from = app
-        .installed
-        .as_ref()
-        .map_or("not installed".to_string(), |i| i.tag.clone());
-    println!("{id}: {from} -> {}", release.tag);
+    let from = plan.from.as_deref().unwrap_or("not installed");
+    println!("{id}: {from} -> {}", plan.release.tag);
     println!(
-        "  asset:  {} ({:.1} MiB, {format})",
-        asset.name,
-        asset.size as f64 / 1048576.0
+        "  asset:  {} ({:.1} MiB, {})",
+        plan.asset.name,
+        plan.asset.size as f64 / 1048576.0,
+        plan.format
     );
     println!("  source: {}", app.source);
-    match &expected {
+    match &plan.expected_sha256 {
         Some(_) => println!("  sha256: published, will verify"),
         None => {
             println!("  sha256: NOT PUBLISHED, download cannot be verified");
@@ -206,33 +200,25 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
             }
         }
     }
-    if matches!(format, Format::Deb | Format::Rpm) {
+    if matches!(plan.format, Format::Deb | Format::Rpm) {
         println!("  note:   package scripts run as root");
+    }
+    if let Some(previous) = &app.installed
+        && previous.format != plan.format
+    {
+        println!(
+            "  note:   replaces the {} install, which will be removed",
+            previous.format
+        );
     }
     if !yes && !confirm("Install?")? {
         println!("{id}: skipped");
         return Ok(());
     }
 
-    let (file, actual) = verify::download(asset, &store::download_dir())?;
-    if let Some(expected) = expected
-        && expected != actual
-    {
-        std::fs::remove_file(&file).ok();
-        return Err(forager_core::Error::ChecksumMismatch {
-            asset: asset.name.clone(),
-            expected,
-            actual,
-        }
-        .into());
-    }
-
-    let installed = install::install(&file, format, store.get(id)?, &release.tag, platform)?;
-    std::fs::remove_file(&file).ok();
-    let links = installed.links.clone();
-    store.get_mut(id)?.installed = Some(installed);
-    store.save()?;
-    println!("{id}: installed {}", release.tag);
+    let installed = forager_core::update::apply(store, id, &plan, platform)?;
+    let links = installed.links;
+    println!("{id}: installed {}", plan.release.tag);
     for link in &links {
         println!("  linked: {}", link.display());
     }

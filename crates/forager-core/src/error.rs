@@ -34,6 +34,11 @@ pub enum Error {
     Archive(String),
     #[error("{} already exists and was not created by forager", .0.display())]
     LinkConflict(PathBuf),
+    #[error("installed, but the previous {format} install could not be removed: {source}")]
+    PreviousNotRemoved {
+        format: crate::model::Format,
+        source: Box<Error>,
+    },
     #[error("command failed: {0}")]
     CommandFailed(String),
     #[error("app not tracked: {0}")]
