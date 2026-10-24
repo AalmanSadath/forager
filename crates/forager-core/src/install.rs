@@ -365,6 +365,54 @@ fn owner(file: &Path, format: Format) -> Option<String> {
     Some(name.trim().to_string()).filter(|n| !n.is_empty())
 }
 
+/// Whether an install has the menu entry Forager can give it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MenuEntry {
+    Present,
+    /// An AppImage, or a tarball shipping an entry, that has none in the
+    /// menu: installed before Forager made entries, or the entry was deleted.
+    Missing,
+    /// Not Forager's to make: a system package or Flatpak brings its own,
+    /// a tarball ships none, or the install is gone.
+    Unavailable,
+}
+
+pub fn menu_entry_state(installed: &Installed) -> MenuEntry {
+    let Some(path) = installed.path.as_deref().filter(|p| p.exists()) else {
+        return MenuEntry::Unavailable;
+    };
+    let possible = match installed.format {
+        Format::AppImage => true,
+        Format::Tarball => desktop::tarball_has_entry(path),
+        _ => false,
+    };
+    let present = installed
+        .desktop
+        .iter()
+        .any(|f| f.extension().is_some_and(|x| x == "desktop"))
+        && installed.desktop.iter().all(|f| f.exists());
+    match (possible, present) {
+        (false, _) => MenuEntry::Unavailable,
+        (true, true) => MenuEntry::Present,
+        (true, false) => MenuEntry::Missing,
+    }
+}
+
+/// Makes the menu entry of an AppImage or tarball install of app `id`
+/// afresh, returning the files written.
+pub fn create_menu_entry(id: &str, installed: &Installed) -> Result<Vec<std::path::PathBuf>> {
+    desktop::remove(&installed.desktop);
+    let path = installed.path.as_deref().ok_or(Error::NoHome)?;
+    match installed.format {
+        Format::AppImage => desktop::for_appimage(id, path),
+        Format::Tarball => desktop::for_tarball(id, path, &installed.links),
+        format => Err(Error::Archive(format!(
+            "{format} packages bring their own menu entries"
+        ))),
+    }
+}
+
 /// Removes the menu entry of the AppImage or tarball being replaced.
 fn replace_menu_entry(app: &App) {
     for previous in app
@@ -514,6 +562,58 @@ mod tests {
     fn finds_the_owner_of_a_system_file() {
         assert_eq!(owner(Path::new("/usr/bin/rpm"), Format::Rpm).as_deref(), Some("rpm"));
         assert_eq!(owner(Path::new("/nonexistent"), Format::Rpm), None);
+    }
+
+    #[test]
+    fn tells_which_installs_lack_a_menu_entry() {
+        let dir = std::env::temp_dir().join(format!("forager-menu-{}", std::process::id()));
+        fs::create_dir_all(dir.join("tar/bin")).unwrap();
+        fs::write(dir.join("tool.AppImage"), b"").unwrap();
+        fs::write(dir.join("forager-tool.desktop"), b"").unwrap();
+        let install = |format, path: &str, desktop: Vec<std::path::PathBuf>| Installed {
+            tag: "v1".into(),
+            format,
+            asset: String::new(),
+            package: None,
+            path: Some(dir.join(path)),
+            links: Vec::new(),
+            desktop,
+        };
+        let entry = vec![dir.join("forager-tool.desktop")];
+        assert_eq!(
+            menu_entry_state(&install(Format::AppImage, "tool.AppImage", Vec::new())),
+            MenuEntry::Missing
+        );
+        assert_eq!(
+            menu_entry_state(&install(Format::AppImage, "tool.AppImage", entry.clone())),
+            MenuEntry::Present
+        );
+        // An entry file deleted by hand counts as missing.
+        let gone = vec![dir.join("forager-gone.desktop")];
+        assert_eq!(
+            menu_entry_state(&install(Format::AppImage, "tool.AppImage", gone)),
+            MenuEntry::Missing
+        );
+        assert_eq!(
+            menu_entry_state(&install(Format::AppImage, "gone.AppImage", Vec::new())),
+            MenuEntry::Unavailable
+        );
+        // A tarball gets one only if it ships one.
+        assert_eq!(
+            menu_entry_state(&install(Format::Tarball, "tar", Vec::new())),
+            MenuEntry::Unavailable
+        );
+        fs::create_dir_all(dir.join("tar/share/applications")).unwrap();
+        fs::write(dir.join("tar/share/applications/tool.desktop"), b"").unwrap();
+        assert_eq!(
+            menu_entry_state(&install(Format::Tarball, "tar", Vec::new())),
+            MenuEntry::Missing
+        );
+        assert_eq!(
+            menu_entry_state(&install(Format::Rpm, "tool.AppImage", Vec::new())),
+            MenuEntry::Unavailable
+        );
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -147,7 +147,9 @@ AppImages and tarballs get a menu entry: an AppImage's own `.desktop` file
 and icon, read from the image without running it, or the entry a tarball
 ships in `share/applications` (command-line tools without one get none).
 They are written as `forager-<id>` in `~/.local/share/applications` and
-`~/.local/share/icons`, and removed with the app.
+`~/.local/share/icons`, and removed with the app. For ones installed before
+Forager made entries, run `forager menu-entries`, or use "Add menu entries"
+on the Apps page of the app.
 
 Background checks run from a systemd user timer:
 

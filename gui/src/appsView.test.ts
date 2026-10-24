@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardModel, countUpdates, formatsInUse, groupApps, restoreChecks, type CheckEntry } from './appsView';
+import { cardModel, countUpdates, formatsInUse, groupApps, missingMenuEntries, restoreChecks, type CheckEntry } from './appsView';
 import type { AppView, StatusView } from './types';
 
 function app(id: string, extra: Partial<AppView> = {}): AppView {
@@ -25,7 +25,7 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
 }
 
 const installed = (tag: string, format: AppView['format'] = 'tarball') =>
-  ({ tag, format: format!, asset: 'x', package: null, path: null, links: [] });
+  ({ tag, format: format!, asset: 'x', package: null, path: null, links: [], menu_entry: 'unavailable' as const });
 
 function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
   return {
@@ -154,5 +154,18 @@ describe('restoreChecks', () => {
     expect(restored.a.checking).toBe(false);
     expect(restoreChecks('not json')).toEqual({});
     expect(restoreChecks(null)).toEqual({});
+  });
+});
+
+describe('missingMenuEntries', () => {
+  it('lists apps with an install that is not in the menu', () => {
+    const appimage = (entry: 'present' | 'missing') => ({ ...installed('1.0', 'appimage'), menu_entry: entry });
+    const apps = [
+      app('a', { installed: appimage('missing') }),
+      app('b', { installed: appimage('present') }),
+      app('c', { installed: installed('1.0', 'rpm') }),
+      app('d'),
+    ];
+    expect(missingMenuEntries(apps)).toEqual(['a']);
   });
 });

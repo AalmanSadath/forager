@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { countUpdates, formatsInUse, groupApps, type Chip } from '../appsView';
+import { countUpdates, formatsInUse, groupApps, missingMenuEntries, type Chip } from '../appsView';
 import AppCard from './AppCard';
 import { BrandMark, FORMAT_NAMES } from './shared/icons';
 
@@ -22,12 +22,15 @@ export default function AppsPanel() {
   const setPage = useAppStore((s) => s.setPage);
   const openUpdate = useAppStore((s) => s.openUpdate);
   const progress = useAppStore((s) => s.progress);
+  const addMenuEntries = useAppStore((s) => s.addMenuEntries);
+  const [adding, setAdding] = useState(false);
   const [chip, setChip] = useState<Chip>('all');
   const [search, setSearch] = useState('');
 
   const sections = useMemo(() => groupApps(apps, checks, chip, search), [apps, checks, chip, search]);
   const formats = useMemo(() => formatsInUse(apps, checks), [apps, checks]);
   const updates = countUpdates(apps, checks);
+  const unlisted = missingMenuEntries(apps);
 
   return (
     <div className="panel apps-panel">
@@ -39,6 +42,20 @@ export default function AppsPanel() {
         <button className="btn-secondary" onClick={() => checkApps()} disabled={checkingAll || apps.length === 0}>
           {checkingAll ? 'Checking…' : 'Check all'}
         </button>
+        {unlisted.length > 0 && (
+          <button
+            className="btn-secondary"
+            title={`Not in the app menu: ${unlisted.join(', ')}`}
+            disabled={adding}
+            onClick={async () => {
+              setAdding(true);
+              await addMenuEntries();
+              setAdding(false);
+            }}
+          >
+            {adding ? 'Adding…' : `Add menu entries (${unlisted.length})`}
+          </button>
+        )}
         {updates > 0 && (
           <button
             className="btn-secondary"

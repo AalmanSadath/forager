@@ -25,6 +25,8 @@ interface AppStore {
   apps: AppView[];
   appsError: string | null;
   loadApps: () => Promise<void>;
+  /** Adds missing menu entries (of `ids`, or every app) and reports how it went. */
+  addMenuEntries: (ids?: string[]) => Promise<void>;
 
   /** Latest check per app id. */
   checks: Record<string, CheckEntry>;
@@ -99,6 +101,18 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
+  addMenuEntries: async (ids) => {
+    try {
+      const results = await ipc.createMenuEntries(ids ?? null);
+      await get().loadApps();
+      const failed = results.filter((r) => r.error);
+      for (const r of failed) get().toast('error', `${r.id}: ${r.error}`);
+      const added = results.length - failed.length;
+      if (added > 0) get().toast('success', added === 1 ? 'Added 1 menu entry.' : `Added ${added} menu entries.`);
+    } catch (e) {
+      get().toast('error', String(e));
+    }
+  },
   checks: loadSavedChecks(),
   checkingAll: false,
   checkApps: async (ids) => {

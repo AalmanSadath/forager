@@ -129,6 +129,11 @@ export function formatsInUse(apps: AppView[], entries: Record<string, CheckEntry
   return order.filter((f) => used.has(f));
 }
 
+/** Apps with an AppImage or tarball install that is not in the menu. */
+export function missingMenuEntries(apps: AppView[]): string[] {
+  return apps.filter((a) => a.installs.some((i) => i.menu_entry === 'missing')).map((a) => a.id);
+}
+
 export function countUpdates(apps: AppView[], entries: Record<string, CheckEntry>): number {
   return apps.filter((a) => cardModel(a, entries[a.id]).section === 'updates').length;
 }

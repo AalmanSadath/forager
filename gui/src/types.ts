@@ -10,6 +10,13 @@ export interface InstalledView {
   package: string | null;
   path: string | null;
   links: string[];
+  /** Whether an AppImage or tarball is in the menu; `unavailable` for other formats. */
+  menu_entry: 'present' | 'missing' | 'unavailable';
+}
+
+export interface MenuEntryResult {
+  id: string;
+  error: string | null;
 }
 
 /** A source as the backend stores it; opaque here, passed back as is. */

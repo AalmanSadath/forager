@@ -11,6 +11,7 @@ import type {
   TimerState,
   DownloadedView,
   FinishedView,
+  MenuEntryResult,
   HistoryEvent,
   PlanResult,
   ReleaseView,
@@ -46,6 +47,9 @@ export const saveApp = (id: string, settings: SettingsInput, signature: Signatur
 /** Stops tracking `id`, first uninstalling its installs in these formats. */
 export const removeApp = (id: string, uninstall: Format[]) => invoke<void>('remove_app', { id, uninstall });
 
+/** Adds the menu entries missing from AppImages and tarballs (of `ids`, or every app). */
+export const createMenuEntries = (ids: string[] | null = null) =>
+  invoke<MenuEntryResult[]>('create_menu_entries', { ids });
 /** The app's releases, newest first, as its settings see them. */
 export const listReleases = (id: string, refresh = false) => invoke<ReleaseView[]>('list_releases', { id, refresh });
 /** Stops offering `tag` (the latest release when null) as an update. */

@@ -298,6 +298,31 @@ pub async fn list_releases(cache: State<'_, ReleaseCache>, id: String, refresh: 
         .collect())
 }
 
+/// One app's result from `create_menu_entries`.
+#[derive(Debug, Clone, Serialize)]
+pub struct MenuEntryResult {
+    pub id: String,
+    pub error: Option<String>,
+}
+
+/// Adds the menu entries missing from AppImage and tarball installs, of the
+/// apps named or of every app.
+#[tauri::command]
+pub async fn create_menu_entries(ids: Option<Vec<String>>) -> CmdResult<Vec<MenuEntryResult>> {
+    blocking(move || {
+        let mut store = load_store()?;
+        let results = update::create_menu_entries(&mut store, &ids.unwrap_or_default()).map_err(|e| e.to_string())?;
+        Ok(results
+            .into_iter()
+            .map(|(id, result)| MenuEntryResult {
+                id,
+                error: result.err().map(|e| e.to_string()),
+            })
+            .collect())
+    })
+    .await
+}
+
 /// Stops offering `tag` (the latest release when `None`) as an update.
 #[tauri::command]
 pub async fn skip_release(cache: State<'_, ReleaseCache>, id: String, tag: Option<String>) -> CmdResult<AppView> {

@@ -67,6 +67,15 @@ pub fn for_tarball(id: &str, dir: &Path, links: &[PathBuf]) -> Result<Vec<PathBu
     write(id, Some(&entry), &quote(&exec), icon)
 }
 
+/// Whether a tarball unpacked at `dir` ships a menu entry.
+pub fn tarball_has_entry(dir: &Path) -> bool {
+    fs::read_dir(dir.join("share/applications")).is_ok_and(|entries| {
+        entries
+            .filter_map(|e| e.ok())
+            .any(|e| e.path().extension().is_some_and(|x| x == "desktop"))
+    })
+}
+
 /// Removes files written for a menu entry: only ones in the user's
 /// applications and icons directories, whatever the config says.
 pub fn remove(files: &[PathBuf]) {

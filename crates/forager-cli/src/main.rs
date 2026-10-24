@@ -111,6 +111,9 @@ enum Command {
         #[arg(long)]
         tag: Option<String>,
     },
+    /// Add the menu entries missing from AppImages and tarballs (all apps if
+    /// none are given), e.g. ones installed before Forager made entries.
+    MenuEntries { ids: Vec<String> },
     /// List tracked apps.
     List,
     /// Check tracked apps for new releases.
@@ -381,6 +384,28 @@ fn main() -> Result<()> {
             println!("{}{}", release.tag, name.map_or(String::new(), |n| format!(" ({n})")));
             println!();
             println!("{}", release.notes.as_deref().unwrap_or("No release notes."));
+        }
+        Command::MenuEntries { ids } => {
+            let results = update::create_menu_entries(&mut store, &ids)?;
+            if results.is_empty() {
+                println!("Every AppImage and tarball that can have a menu entry has one.");
+            }
+            let mut failed = 0;
+            for (id, result) in results {
+                match result {
+                    Ok(_) => println!("{id}: menu entry added"),
+                    Err(e) => {
+                        eprintln!("{id}: {e}");
+                        failed += 1;
+                    }
+                }
+            }
+            if failed > 0 {
+                bail!(
+                    "{failed} menu entr{} could not be made",
+                    if failed == 1 { "y" } else { "ies" }
+                );
+            }
         }
         Command::List => {
             if store.apps.is_empty() {

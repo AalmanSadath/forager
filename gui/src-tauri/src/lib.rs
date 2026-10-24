@@ -26,6 +26,7 @@ pub fn run() {
             commands::edit::save_app,
             commands::edit::remove_app,
             commands::edit::list_releases,
+            commands::edit::create_menu_entries,
             commands::edit::skip_release,
             commands::edit::unskip_release,
             commands::system::restart_self,

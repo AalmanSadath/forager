@@ -609,6 +609,41 @@ pub fn install(
     Ok(installed)
 }
 
+/// Adds the menu entries missing from the AppImage and tarball installs of
+/// the apps named (all when `ids` is empty), recording them in `store`.
+/// Gives, per app with a missing entry, how many were added or the error.
+pub fn create_menu_entries(store: &mut Store, ids: &[String]) -> Result<Vec<(String, Result<usize>)>> {
+    let mut results = Vec::new();
+    for app in store.apps.iter_mut().filter(|a| ids.is_empty() || ids.contains(&a.id)) {
+        let missing = app
+            .installs()
+            .any(|i| install::menu_entry_state(i) == install::MenuEntry::Missing);
+        if !missing {
+            continue;
+        }
+        let id = app.id.clone();
+        let mut installs = app.install_list();
+        let mut added = 0;
+        let mut error = None;
+        for installed in installs
+            .iter_mut()
+            .filter(|i| install::menu_entry_state(i) == install::MenuEntry::Missing)
+        {
+            match install::create_menu_entry(&id, installed) {
+                Ok(files) => {
+                    installed.desktop = files;
+                    added += 1;
+                }
+                Err(e) => error = Some(e),
+            }
+        }
+        app.set_installs(installs);
+        results.push((id, error.map_or(Ok(added), Err)));
+    }
+    store.save()?;
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use forager_core::install::{self, MenuEntry};
 use forager_core::model::{App, Format, Installed, Signature};
 use forager_core::source::Source;
 use serde::Serialize;
@@ -44,6 +45,8 @@ pub struct InstalledView {
     pub package: Option<String>,
     pub path: Option<PathBuf>,
     pub links: Vec<PathBuf>,
+    /// Whether it is in the menu, for AppImages and tarballs.
+    pub menu_entry: MenuEntry,
 }
 
 impl From<&Installed> for InstalledView {
@@ -55,6 +58,7 @@ impl From<&Installed> for InstalledView {
             package: i.package.clone(),
             path: i.path.clone(),
             links: i.links.clone(),
+            menu_entry: install::menu_entry_state(i),
         }
     }
 }

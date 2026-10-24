@@ -175,6 +175,7 @@ function AppPageBody({ app }: { app: AppView }) {
               {app.installs.map((installed) => (
                 <InstallFacts
                   key={installed.format}
+                  appId={app.id}
                   installed={installed}
                   several={app.installs.length > 1}
                   state={status?.installs?.find((i) => i.format === installed.format)?.state}
@@ -284,7 +285,18 @@ const INSTALL_STATES: Partial<Record<UpdateState, string>> = {
 };
 
 /** One install in the Status card; with several, each is named by its format. */
-function InstallFacts({ installed, several, state }: { installed: InstalledView; several: boolean; state?: UpdateState }) {
+function InstallFacts({
+  appId,
+  installed,
+  several,
+  state,
+}: {
+  appId: string;
+  installed: InstalledView;
+  several: boolean;
+  state?: UpdateState;
+}) {
+  const addMenuEntries = useAppStore((s) => s.addMenuEntries);
   return (
     <>
       <dt>{several ? FORMAT_NAMES[installed.format] : 'Installed'}</dt>
@@ -308,6 +320,23 @@ function InstallFacts({ installed, several, state }: { installed: InstalledView;
         <>
           <dt>{several ? '' : 'Commands'}</dt>
           <dd className="mono">{installed.links.join(', ')}</dd>
+        </>
+      )}
+      {installed.menu_entry !== 'unavailable' && (
+        <>
+          <dt>{several ? '' : 'Menu'}</dt>
+          <dd>
+            {installed.menu_entry === 'present' ? (
+              'In the app menu'
+            ) : (
+              <>
+                Not in the app menu ·{' '}
+                <button className="link-btn" onClick={() => addMenuEntries([appId])}>
+                  Add it
+                </button>
+              </>
+            )}
+          </dd>
         </>
       )}
     </>
