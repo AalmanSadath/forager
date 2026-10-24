@@ -2,7 +2,7 @@
 //! then download, verify and install it.
 
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 use crate::matcher::select_asset;
@@ -86,36 +86,63 @@ pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
     }))
 }
 
-/// Downloads, verifies and installs `plan` for app `id`, and records the
-/// install in `store`. An install in another format is removed afterwards,
-/// so a failed install never leaves the app missing.
-pub fn apply(store: &mut Store, id: &str, plan: &Plan, platform: &Platform) -> Result<Installed> {
-    let (file, actual) = verify::download(&plan.asset, &store::download_dir())?;
-    let result = install_file(store, id, plan, &file, &actual, platform);
-    fs::remove_file(&file).ok();
-    result
+/// A downloaded and verified asset, deleted when dropped.
+#[derive(Debug)]
+pub struct Download {
+    pub path: PathBuf,
+    /// Package name for system packages (deb, rpm, Arch).
+    pub package: Option<String>,
+    /// Version of the same package in the distribution's repositories. A
+    /// distro update may then replace the forge's build, or the reverse.
+    pub repo_version: Option<String>,
 }
 
-fn install_file(
-    store: &mut Store,
-    id: &str,
-    plan: &Plan,
-    file: &Path,
-    actual: &str,
-    platform: &Platform,
-) -> Result<Installed> {
-    if let Some(expected) = &plan.expected_sha256
-        && expected != actual
-    {
-        return Err(Error::ChecksumMismatch {
+impl Drop for Download {
+    fn drop(&mut self) {
+        fs::remove_file(&self.path).ok();
+    }
+}
+
+/// Downloads the plan's asset and checks it against the expected SHA-256.
+pub fn download(plan: &Plan, platform: &Platform) -> Result<Download> {
+    let (path, actual) = verify::download(&plan.asset, &store::download_dir())?;
+    let mut download = Download {
+        path,
+        package: None,
+        repo_version: None,
+    };
+    check_sha256(plan, &actual)?;
+    download.package = install::package_name(&download.path, plan.format)?;
+    download.repo_version = download
+        .package
+        .as_deref()
+        .and_then(|p| install::repo_version(p, platform));
+    Ok(download)
+}
+
+fn check_sha256(plan: &Plan, actual: &str) -> Result<()> {
+    match &plan.expected_sha256 {
+        Some(expected) if expected != actual => Err(Error::ChecksumMismatch {
             asset: plan.asset.name.clone(),
             expected: expected.clone(),
             actual: actual.to_string(),
-        });
+        }),
+        _ => Ok(()),
     }
+}
 
+/// Installs a download for app `id` and records it in `store`. An install in
+/// another format is removed afterwards, so a failed install never leaves
+/// the app missing.
+pub fn install(
+    store: &mut Store,
+    id: &str,
+    plan: &Plan,
+    download: &Download,
+    platform: &Platform,
+) -> Result<Installed> {
     let previous = store.get(id)?.installed.clone();
-    let installed = install::install(file, plan.format, store.get(id)?, &plan.release.tag, platform)?;
+    let installed = install::install(&download.path, plan.format, store.get(id)?, &plan.release.tag, platform)?;
     store.get_mut(id)?.installed = Some(installed.clone());
     store.save()?;
 
@@ -134,26 +161,9 @@ fn install_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::Source;
 
     #[test]
-    fn checksum_mismatch_installs_nothing() {
-        let tmp = tempfile::tempdir().unwrap();
-        let mut store = Store::load(&tmp.path().join("apps.toml")).unwrap();
-        store
-            .add(App {
-                id: "tool".into(),
-                source: Source::GitHub {
-                    owner: "o".into(),
-                    repo: "tool".into(),
-                },
-                asset_filter: None,
-                format: None,
-                prerelease: false,
-                bins: Vec::new(),
-                installed: None,
-            })
-            .unwrap();
+    fn checksum_mismatch_is_an_error() {
         let plan = Plan {
             release: Release {
                 tag: "v1".into(),
@@ -173,11 +183,15 @@ mod tests {
             from: None,
             missing: false,
         };
-        let file = tmp.path().join("tool.tar.gz");
-        fs::write(&file, "x").unwrap();
-
-        let result = install_file(&mut store, "tool", &plan, &file, &"b".repeat(64), &Platform::detect());
-        assert!(matches!(result, Err(Error::ChecksumMismatch { .. })));
-        assert!(store.get("tool").unwrap().installed.is_none());
+        assert!(matches!(
+            check_sha256(&plan, &"b".repeat(64)),
+            Err(Error::ChecksumMismatch { .. })
+        ));
+        assert!(check_sha256(&plan, &"a".repeat(64)).is_ok());
+        let unverified = Plan {
+            expected_sha256: None,
+            ..plan
+        };
+        assert!(check_sha256(&unverified, &"b".repeat(64)).is_ok());
     }
 }

@@ -302,6 +302,13 @@ fn check(store: &Store, notify: bool, quiet: bool) -> Result<()> {
             State::Outdated => format!("{tag} -> {latest}"),
             State::UpToDate => format!("{tag} (up to date)"),
         };
+        let text = match installed.and_then(|i| i.package.as_deref().filter(|_| i.format.needs_root())) {
+            Some(package) => match install::repo_version(package, &platform) {
+                Some(version) => format!("{text} [distro: {version}]"),
+                None => text,
+            },
+            None => text,
+        };
         let asset = match select_asset(app, &status.latest, &platform) {
             Ok((asset, _)) => asset.name.clone(),
             Err(e) => e.to_string(),
@@ -434,8 +441,19 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         println!("{id}: skipped");
         return Ok(());
     }
+    let first_install = app.installed.as_ref().is_none_or(|i| i.format != plan.format);
 
-    let installed = update::apply(store, id, &plan, platform)?;
+    let download = update::download(&plan, platform)?;
+    if let (Some(package), Some(version)) = (&download.package, &download.repo_version) {
+        println!("  note:   the distro repositories also have {package} {version}; system updates");
+        println!("          and this build may replace each other");
+        // Asked once; later updates of the same package only show the note.
+        if first_install && !yes && !confirm("Install anyway?")? {
+            println!("{id}: skipped");
+            return Ok(());
+        }
+    }
+    let installed = update::install(store, id, &plan, &download, platform)?;
     let links = installed.links;
     println!("{id}: installed {}", plan.release.tag);
     for link in &links {

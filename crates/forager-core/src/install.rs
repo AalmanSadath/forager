@@ -35,31 +35,23 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
         links: Vec::new(),
     };
 
+    installed.package = package_name(&file, format)?;
     match format {
-        Format::Rpm => {
-            installed.package = Some(output(Command::new("rpm").args(["-qp", "--qf", "%{NAME}"]).arg(&file))?);
-            match platform.package_manager {
-                Some(PackageManager::Dnf) => run(pkexec(["dnf", "install", "-y"]).arg(&file))?,
-                Some(PackageManager::Zypper) => {
-                    run(pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]).arg(&file))?
-                }
-                _ => return Err(Error::NoPackageManager("rpm")),
+        Format::Rpm => match platform.package_manager {
+            Some(PackageManager::Dnf) => run(pkexec(["dnf", "install", "-y"]).arg(&file))?,
+            Some(PackageManager::Zypper) => {
+                run(pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]).arg(&file))?
             }
-        }
-        Format::Deb => {
-            installed.package = Some(output(Command::new("dpkg-deb").arg("-f").arg(&file).arg("Package"))?);
-            match platform.package_manager {
-                Some(PackageManager::Apt) => run(pkexec(["apt-get", "install", "-y"]).arg(&file))?,
-                _ => return Err(Error::NoPackageManager("deb")),
-            }
-        }
-        Format::Pacman => {
-            installed.package = Some(output(Command::new("pacman").arg("-Qqp").arg(&file))?);
-            match platform.package_manager {
-                Some(PackageManager::Pacman) => run(pkexec(["pacman", "-U", "--noconfirm"]).arg(&file))?,
-                _ => return Err(Error::NoPackageManager("pacman")),
-            }
-        }
+            _ => return Err(Error::NoPackageManager("rpm")),
+        },
+        Format::Deb => match platform.package_manager {
+            Some(PackageManager::Apt) => run(pkexec(["apt-get", "install", "-y"]).arg(&file))?,
+            _ => return Err(Error::NoPackageManager("deb")),
+        },
+        Format::Pacman => match platform.package_manager {
+            Some(PackageManager::Pacman) => run(pkexec(["pacman", "-U", "--noconfirm"]).arg(&file))?,
+            _ => return Err(Error::NoPackageManager("pacman")),
+        },
         Format::AppImage => {
             let dir = platform::appimage_dir().ok_or(Error::NoHome)?;
             fs::create_dir_all(&dir)?;
@@ -89,6 +81,72 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
         }
     }
     Ok(installed)
+}
+
+/// Name of the package inside a deb, rpm or Arch package; `None` for
+/// formats that are not system packages.
+pub fn package_name(file: &Path, format: Format) -> Result<Option<String>> {
+    let mut command = match format {
+        Format::Rpm => Command::new("rpm"),
+        Format::Deb => Command::new("dpkg-deb"),
+        Format::Pacman => Command::new("pacman"),
+        _ => return Ok(None),
+    };
+    match format {
+        Format::Rpm => command.args(["-qp", "--qf", "%{NAME}"]).arg(file),
+        Format::Deb => command.arg("-f").arg(file).arg("Package"),
+        _ => command.arg("-Qqp").arg(file),
+    };
+    output(&mut command).map(Some)
+}
+
+/// Newest version of `package` in the distribution's repositories, if they
+/// carry it. Uses only cached repository metadata, so it is quick and needs
+/// no network.
+pub fn repo_version(package: &str, platform: &Platform) -> Option<String> {
+    let query = |program: &str, args: &[&str]| {
+        let out = Command::new(program).args(args).arg(package).output().ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    match platform.package_manager? {
+        PackageManager::Dnf => last_line(&query(
+            "dnf",
+            &["-q", "--cacheonly", "repoquery", "--available", "--qf", "%{version}\n"],
+        )?),
+        PackageManager::Zypper => zypper_repo_version(&query("zypper", &["--no-refresh", "-q", "info"])?),
+        PackageManager::Apt => madison_version(&query("apt-cache", &["madison"])?),
+        PackageManager::Pacman => field(&query("pacman", &["-Si"])?, "Version"),
+    }
+}
+
+/// dnf lists every available version, oldest first.
+fn last_line(text: &str) -> Option<String> {
+    text.lines().map(str::trim).rfind(|l| !l.is_empty()).map(str::to_string)
+}
+
+/// `Key : value` output of `pacman -Si` and `zypper info`.
+fn field(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let (k, v) = line.split_once(':')?;
+        (k.trim() == key).then(|| v.trim().to_string())
+    })
+}
+
+/// zypper also describes installed packages; `@System` means no repository has it.
+fn zypper_repo_version(text: &str) -> Option<String> {
+    match field(text, "Repository") {
+        Some(repo) if repo != "@System" => field(text, "Version"),
+        _ => None,
+    }
+}
+
+/// `apt-cache madison` prints `name | version | source` per repository version.
+fn madison_version(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.split('|').nth(1))
+        .map(|v| v.trim().to_string())
 }
 
 /// Whether the install is still on the system, i.e. was not removed outside
@@ -204,5 +262,22 @@ mod tests {
         assert!(!is_present(&installed));
         fs::write(&path, "").unwrap();
         assert!(is_present(&installed));
+    }
+
+    #[test]
+    fn parses_repository_versions() {
+        assert_eq!(last_line("14.1.1\n15.2.0\n\n").as_deref(), Some("15.2.0"));
+        assert_eq!(last_line(""), None);
+
+        let pacman = "Repository      : extra\nName            : tool\nVersion         : 1:2.3-1\n";
+        assert_eq!(field(pacman, "Version").as_deref(), Some("1:2.3-1"));
+
+        let zypper = "Information for package tool:\nRepository     : repo-oss\nName           : tool\nVersion        : 1.2-3.1\n";
+        assert_eq!(zypper_repo_version(zypper).as_deref(), Some("1.2-3.1"));
+        assert_eq!(zypper_repo_version(&zypper.replace("repo-oss", "@System")), None);
+
+        let madison = "      tool | 1.2-1 | http://deb.debian.org/debian trixie/main amd64 Packages\n";
+        assert_eq!(madison_version(madison).as_deref(), Some("1.2-1"));
+        assert_eq!(madison_version(""), None);
     }
 }

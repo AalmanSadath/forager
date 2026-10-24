@@ -55,10 +55,10 @@ from a tarball, relative to its top directory.
 
 Tracked apps live in `~/.config/forager/apps.toml` (override with `--config`
 or `FORAGER_CONFIG`). Set `GITHUB_TOKEN` to raise the GitHub API limit from
-60 to 5000 requests per hour. Release lists are cached in
-`~/.cache/forager/github` and fetched conditionally; with a token, checking
-an app whose releases have not changed does not use up the limit. `GITLAB_TOKEN` is
-used for gitlab.com and `CODEBERG_TOKEN` for codeberg.org. For any host,
+60 to 5000 requests per hour. Release lists are cached in `~/.cache/forager`
+and fetched conditionally; with a GitHub token, checking an app whose
+releases have not changed does not use up the limit. `GITLAB_TOKEN` is used
+for gitlab.com and `CODEBERG_TOKEN` for codeberg.org. For any host,
 `FORAGER_TOKEN_<HOST>` (e.g. `FORAGER_TOKEN_GIT_EXAMPLE_ORG`) takes
 precedence; a token is only ever sent to its own host.
 
@@ -66,6 +66,11 @@ Only one Forager process works on a config at a time; a second one waits.
 Installs removed outside Forager (`dnf remove`, a deleted AppImage) show as
 `missing` in `check` and are reinstalled by `update`. Switching an app to
 another format removes the old install once the new one is in place.
+
+When a deb, rpm or Arch package is also in the distribution's repositories,
+`update` says so and asks again before the first install, since system
+updates and the forge's build can replace each other. `check` marks such
+installs with the distro's version.
 
 ## How an asset is chosen
 
@@ -102,6 +107,5 @@ corrupted downloads, not a compromised release.
 
 - Generic HTML sources
 - PackageKit over D-Bus instead of `pkexec` + native tools
-- Detect conflicts with distro repositories
 - Signature verification (GPG, minisign, GitHub attestations)
 - GTK4 / libadwaita GUI
