@@ -142,10 +142,9 @@ fn gpg(keyring: &Path, sig: &[u8], file: &Path) -> Result<()> {
     if out.status.success() {
         Ok(())
     } else {
-        Err(Error::SignatureInvalid(format!(
-            "{}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        )))
+        Err(Error::SignatureInvalid(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ))
     }
 }
 
