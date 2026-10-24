@@ -31,7 +31,8 @@ export const listApps = () => invoke<AppView[]>('list_apps');
 export const checkApps = (ids?: string[]) => invoke<void>('check_apps', { ids: ids ?? null });
 
 // ── edit ────────────────────────────────────────────────────────
-export const parseSource = (url: string, forge: string | null) => invoke<ParsedSource>('parse_source', { url, forge });
+export const parseSource = (url: string, forge: string | null, pattern: string | null) =>
+  invoke<ParsedSource>('parse_source', { url, forge, pattern });
 export const preview = (spec: SourceSpec, settings: SettingsInput, refresh: boolean) =>
   invoke<Preview>('preview', { spec, settings, refresh });
 export const addApp = (spec: SourceSpec, id: string, settings: SettingsInput, signature: SignatureForm) =>

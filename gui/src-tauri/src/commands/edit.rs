@@ -24,8 +24,10 @@ use crate::state::{CmdResult, blocking, load_store};
 pub struct ReleaseCache(Mutex<HashMap<String, Release>>);
 
 impl ReleaseCache {
+    /// The whole source, not its display name: a web page's releases depend
+    /// on its pattern too.
     fn key(source: &Source, prerelease: bool) -> String {
-        format!("{source}|{prerelease}")
+        format!("{source:?}|{prerelease}")
     }
 
     pub fn put(&self, source: &Source, prerelease: bool, release: Release) {
@@ -54,9 +56,13 @@ pub struct ParsedSource {
 }
 
 #[tauri::command]
-pub fn parse_source(url: String, forge: Option<String>) -> CmdResult<ParsedSource> {
+pub fn parse_source(url: String, forge: Option<String>, pattern: Option<String>) -> CmdResult<ParsedSource> {
     let forge = forge.map(|f| f.parse::<Forge>()).transpose()?;
-    match Source::from_url(&url, forge) {
+    let parsed = match (forge, pattern.filter(|p| !p.trim().is_empty())) {
+        (Some(Forge::Html), Some(pattern)) => Source::html(&url, &pattern),
+        (forge, _) => Source::from_url(&url, forge),
+    };
+    match parsed {
         Ok(spec) => Ok(ParsedSource {
             info: Some(SourceInfo {
                 display: spec.to_string(),
@@ -82,14 +88,21 @@ pub struct SettingsInput {
     pub asset_filter: Option<String>,
     pub prerelease: bool,
     pub bins: Vec<String>,
+    /// New download pattern, for an app tracked from a web page.
+    #[serde(default)]
+    pub pattern: Option<String>,
 }
 
 impl SettingsInput {
-    fn apply(&self, app: &mut App) {
+    fn apply(&self, app: &mut App) -> CmdResult<()> {
+        if let (Source::Html { url, .. }, Some(pattern)) = (&app.source, &self.pattern) {
+            app.source = Source::html(&url.clone(), pattern).map_err(|e| e.to_string())?;
+        }
         app.format = self.format;
         app.asset_filter = self.asset_filter.clone().filter(|f| !f.is_empty());
         app.prerelease = self.prerelease;
         app.bins = self.bins.iter().filter(|b| !b.trim().is_empty()).cloned().collect();
+        Ok(())
     }
 }
 
@@ -126,6 +139,10 @@ pub async fn preview(
     settings: SettingsInput,
     refresh: bool,
 ) -> CmdResult<Preview> {
+    // A new pattern changes which links are releases, so it is part of the source.
+    let mut app = App::new(spec, "preview".into());
+    settings.apply(&mut app)?;
+    let spec = app.source.clone();
     let cached = (!refresh).then(|| cache.get(&spec, settings.prerelease)).flatten();
     let release = match cached {
         Some(release) => release,
@@ -137,8 +154,6 @@ pub async fn preview(
         }
     };
 
-    let mut app = App::new(spec, "preview".into());
-    settings.apply(&mut app);
     let filter_error = app
         .asset_filter
         .as_deref()
@@ -212,7 +227,7 @@ pub async fn add_app(
     blocking(move || {
         let mut store = load_store()?;
         let mut app = App::new(spec, id.trim().to_string());
-        settings.apply(&mut app);
+        settings.apply(&mut app)?;
         app.validate().map_err(|e| e.to_string())?;
         if store.get(&app.id).is_ok() {
             return Err(format!("{} is already tracked", app.id));
@@ -233,7 +248,7 @@ pub async fn save_app(id: String, settings: SettingsInput, signature: SignatureF
         let mut store = load_store()?;
         let app = store.get_mut(&id).map_err(|e| e.to_string())?;
         let mut edited = app.clone();
-        settings.apply(&mut edited);
+        settings.apply(&mut edited)?;
         edited.validate().map_err(|e| e.to_string())?;
         apply_signature(&mut edited, &signature)?;
         *app = edited;

@@ -22,7 +22,9 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
 
   const [url, setUrl] = useState(initialUrl ?? '');
   const [unknownHost, setUnknownHost] = useState<string | null>(null);
-  const [forge, setForge] = useState<'gitlab' | 'forgejo'>('forgejo');
+  // What the address is: worked out from the host, or said by the user.
+  const [kind, setKind] = useState<'auto' | 'gitlab' | 'forgejo' | 'html'>('auto');
+  const [pattern, setPattern] = useState('');
   const [info, setInfo] = useState<SourceInfo | null>(null);
   const [id, setId] = useState('');
   const [draft, setDraft] = useState<SettingsDraft>(EMPTY_DRAFT);
@@ -39,7 +41,11 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
     e?.preventDefault();
     setError(null);
     try {
-      const parsed = await ipc.parseSource(url.trim(), unknownHost ? forge : null);
+      if (kind === 'html' && !pattern.trim()) {
+        setError('A web page needs a pattern matching its download links.');
+        return;
+      }
+      const parsed = await ipc.parseSource(url.trim(), kind === 'auto' ? null : kind, kind === 'html' ? pattern : null);
       setUnknownHost(parsed.unknown_host);
       setInfo(parsed.info);
       if (parsed.info) setId(parsed.info.default_id);
@@ -101,16 +107,39 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
           }}
           spellCheck={false}
         />
-        {unknownHost && (
-          <select value={forge} onChange={(e) => setForge(e.target.value as 'gitlab' | 'forgejo')} title={`What ${unknownHost} runs`}>
-            <option value="forgejo">Forgejo / Gitea</option>
-            <option value="gitlab">GitLab</option>
-          </select>
-        )}
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as typeof kind)}
+          title="What the address is"
+          aria-label="Source type"
+        >
+          <option value="auto">Detect from address</option>
+          <option value="gitlab">GitLab</option>
+          <option value="forgejo">Forgejo / Gitea</option>
+          <option value="html">Web page with links</option>
+        </select>
         <button className="btn-secondary" type="submit" disabled={!url.trim()}>Look up</button>
       </form>
+      {kind === 'html' && (
+        <div className="form-group pattern-field">
+          <input
+            className="mono"
+            placeholder="Pattern for download links, e.g. app-[0-9.]+-x86_64\.AppImage$"
+            aria-label="Download link pattern"
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            spellCheck={false}
+          />
+          <p className="form-hint">
+            A regular expression over each link's full address. Matching links are the downloads; the version is the
+            first number in the file name, or a group named version: (?P&lt;version&gt;…).
+          </p>
+        </div>
+      )}
       {unknownHost && !info && (
-        <p className="form-hint">Forager does not know what {unknownHost} runs. Choose its forge, then look up again.</p>
+        <p className="form-hint">
+          Forager does not know what {unknownHost} runs. Choose GitLab, Forgejo / Gitea, or a web page, then look up again.
+        </p>
       )}
       {error && <p className="form-error">{error}</p>}
       {existing && (

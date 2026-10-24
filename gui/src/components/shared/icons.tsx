@@ -120,6 +120,7 @@ export const FORGE_NAMES: Record<Forge, string> = {
   github: 'GitHub',
   gitlab: 'GitLab',
   forgejo: 'Forgejo',
+  html: 'Web page',
 };
 
 export const FORMAT_NAMES: Record<Format, string> = {

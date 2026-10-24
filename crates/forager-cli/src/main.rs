@@ -42,6 +42,10 @@ enum Command {
         /// and well-known GitLab instances.
         #[arg(long)]
         forge: Option<Forge>,
+        /// For a web page (`--forge html`): a regex matching the addresses of
+        /// the app's downloads. A `(?P<version>...)` group names the version.
+        #[arg(long, value_name = "REGEX")]
+        pattern: Option<String>,
         /// Id to refer to the app by. Defaults to the repository name.
         #[arg(long)]
         id: Option<String>,
@@ -85,6 +89,9 @@ enum Command {
         prerelease: Option<bool>,
         #[command(flatten)]
         signature: SignatureArgs,
+        /// New download pattern, for an app tracked from a web page.
+        #[arg(long, value_name = "REGEX")]
+        pattern: Option<String>,
         /// Stop requiring a signature.
         #[arg(long, conflicts_with_all = ["minisign_key", "gpg_key", "attestation"])]
         no_signature: bool,
@@ -216,6 +223,7 @@ fn main() -> Result<()> {
         Command::Add {
             url,
             forge,
+            pattern,
             id,
             filter,
             format,
@@ -223,7 +231,11 @@ fn main() -> Result<()> {
             bins,
             signature,
         } => {
-            let source = Source::from_url(&url, forge)?;
+            let source = match (forge, pattern) {
+                (Some(Forge::Html) | None, Some(pattern)) => Source::html(&url, &pattern)?,
+                (_, Some(_)) => bail!("--pattern is only for web pages (--forge html)"),
+                (forge, None) => Source::from_url(&url, forge)?,
+            };
             let id = id.unwrap_or_else(|| source.default_id());
             let mut app = App::new(source, id.clone());
             app.asset_filter = filter;
@@ -250,9 +262,11 @@ fn main() -> Result<()> {
             prerelease,
             signature,
             no_signature,
+            pattern,
         } => {
             if signature.is_empty()
                 && !no_signature
+                && pattern.is_none()
                 && format.is_none()
                 && filter.is_none()
                 && !clear_filter
@@ -277,6 +291,12 @@ fn main() -> Result<()> {
             }
             if let Some(prerelease) = prerelease {
                 app.prerelease = prerelease;
+            }
+            if let Some(pattern) = pattern {
+                let Source::Html { url, .. } = &app.source else {
+                    bail!("--pattern is only for apps tracked from a web page");
+                };
+                app.source = Source::html(&url.clone(), &pattern)?;
             }
             if !signature.is_empty() || no_signature {
                 let source = app.source.clone();
@@ -637,8 +657,12 @@ fn describe(app: &App) -> String {
     };
     let prerelease = if app.prerelease { "yes" } else { "no" };
     let signature = app.signature.as_ref().map_or("none".to_string(), |s| s.to_string());
+    let pattern = match &app.source {
+        Source::Html { pattern, .. } => format!("\n  pattern:    {pattern}"),
+        _ => String::new(),
+    };
     format!(
-        "  format:     {format}\n  filter:     {filter}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}"
+        "  format:     {format}\n  filter:     {filter}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
     )
 }
 

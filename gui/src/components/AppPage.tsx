@@ -200,6 +200,7 @@ function AppPageBody({ app }: { app: AppView }) {
             </dl>
           </section>
           <SettingsSection
+            webPage={app.forge === 'html'}
             draft={draft}
             onChange={setDraft}
             preview={preview}

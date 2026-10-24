@@ -1,7 +1,7 @@
 /** Shapes the Rust side sends, mirroring `src-tauri/src/commands/*.rs`. */
 
 export type Format = 'deb' | 'rpm' | 'appimage' | 'tarball' | 'flatpak' | 'pacman';
-export type Forge = 'github' | 'gitlab' | 'forgejo';
+export type Forge = 'github' | 'gitlab' | 'forgejo' | 'html';
 
 export interface InstalledView {
   tag: string;
@@ -87,6 +87,8 @@ export interface SettingsInput {
   asset_filter: string | null;
   prerelease: boolean;
   bins: string[];
+  /** For web-page sources: the download link pattern. */
+  pattern: string | null;
 }
 
 export type Reason =

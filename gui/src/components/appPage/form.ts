@@ -9,9 +9,11 @@ export interface SettingsDraft {
   prerelease: boolean;
   /** Comma-separated paths. */
   bins: string;
+  /** Download link pattern; only web-page apps have one. */
+  pattern: string;
 }
 
-export const EMPTY_DRAFT: SettingsDraft = { format: '', filter: '', prerelease: false, bins: '' };
+export const EMPTY_DRAFT: SettingsDraft = { format: '', filter: '', prerelease: false, bins: '', pattern: '' };
 
 export function draftOf(app: AppView): SettingsDraft {
   return {
@@ -19,6 +21,7 @@ export function draftOf(app: AppView): SettingsDraft {
     filter: app.asset_filter ?? '',
     prerelease: app.prerelease,
     bins: app.bins.join(', '),
+    pattern: app.spec.kind === 'html' ? (app.spec.pattern ?? '') : '',
   };
 }
 
@@ -31,6 +34,7 @@ export function toInput(d: SettingsDraft): SettingsInput {
       .split(',')
       .map((b) => b.trim())
       .filter(Boolean),
+    pattern: d.pattern.trim() || null,
   };
 }
 

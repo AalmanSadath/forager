@@ -195,6 +195,7 @@
   gap: 8px;
   margin-bottom: 8px;
 }
-.lookup-row select { width: 180px; flex-shrink: 0; }
+.lookup-row select { width: 210px; flex-shrink: 0; }
 .lookup-row + .form-hint, .lookup-row ~ .form-error { margin-bottom: 12px; }
 .lookup-row ~ .page-columns { margin-top: 16px; }
+.pattern-field { margin: 0 0 8px; }

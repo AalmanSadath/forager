@@ -20,8 +20,12 @@ pub enum Error {
     Regex(#[from] regex::Error),
     #[error("unsupported source URL: {0}")]
     UnsupportedSource(String),
-    #[error("unknown forge at {0}; say which with --forge gitlab or --forge forgejo")]
+    #[error("unknown forge at {0}; say which with --forge gitlab, --forge forgejo, or --forge html --pattern <regex>")]
     UnknownForge(String),
+    #[error("a web page source needs a pattern matching its download links")]
+    PatternNeeded,
+    #[error("invalid download pattern: {0}")]
+    InvalidPattern(regex::Error),
     #[error("API rate limit reached{}; set a token (GITHUB_TOKEN for GitHub) to raise the limit", reset_hint(*.reset))]
     RateLimited {
         /// Unix time at which the limit resets.

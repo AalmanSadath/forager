@@ -11,12 +11,15 @@ export default function SettingsSection({
   onChange,
   preview,
   idField,
+  webPage,
 }: {
   draft: SettingsDraft;
   onChange: (d: SettingsDraft) => void;
   preview: Preview | null;
   /** The id input on the add page; read-only text on an app's page. */
   idField: React.ReactNode;
+  /** The app is tracked from a web page, whose pattern can be edited. */
+  webPage?: boolean;
 }) {
   const set = (patch: Partial<SettingsDraft>) => onChange({ ...draft, ...patch });
   const counts = preview ? filterCounts(preview.candidates) : null;
@@ -27,6 +30,19 @@ export default function SettingsSection({
     <section className="page-card">
       <h3>Settings</h3>
       {idField}
+      {webPage && (
+        <div className="form-group">
+          <label htmlFor="pattern">Download link pattern</label>
+          <input
+            id="pattern"
+            className="mono"
+            value={draft.pattern}
+            onChange={(e) => set({ pattern: e.target.value })}
+            spellCheck={false}
+          />
+          <p className="form-hint">Links on the page whose address matches are this app's downloads.</p>
+        </div>
+      )}
       <div className="form-group">
         <label htmlFor="format">Format</label>
         <select id="format" value={draft.format} onChange={(e) => set({ format: e.target.value as Format | '' })}>
