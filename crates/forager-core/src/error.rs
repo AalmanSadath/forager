@@ -9,10 +9,7 @@ pub enum Error {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid config {path}: {source}")]
-    Config {
-        path: PathBuf,
-        source: toml::de::Error,
-    },
+    Config { path: PathBuf, source: toml::de::Error },
     #[error("cannot serialize config: {0}")]
     ConfigWrite(#[from] toml::ser::Error),
     #[error("invalid asset filter: {0}")]

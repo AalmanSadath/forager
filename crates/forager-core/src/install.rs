@@ -38,13 +38,9 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
             installed.package = Some(output(Command::new("rpm").args(["-qp", "--qf", "%{NAME}"]).arg(&file))?);
             match platform.package_manager {
                 Some(PackageManager::Dnf) => run(pkexec(["dnf", "install", "-y"]).arg(&file))?,
-                Some(PackageManager::Zypper) => run(pkexec([
-                    "zypper",
-                    "--non-interactive",
-                    "install",
-                    "--allow-unsigned-rpm",
-                ])
-                .arg(&file))?,
+                Some(PackageManager::Zypper) => {
+                    run(pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]).arg(&file))?
+                }
                 _ => return Err(Error::NoPackageManager("rpm")),
             }
         }
@@ -79,7 +75,11 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
 }
 
 pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
-    match (installed.format, installed.package.as_deref(), installed.path.as_deref()) {
+    match (
+        installed.format,
+        installed.package.as_deref(),
+        installed.path.as_deref(),
+    ) {
         (Format::Rpm, Some(package), _) => match platform.package_manager {
             Some(PackageManager::Dnf) => run(&mut pkexec(["dnf", "remove", "-y", package])),
             Some(PackageManager::Zypper) => run(&mut pkexec(["zypper", "--non-interactive", "remove", package])),
@@ -105,7 +105,9 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
             }
             tarball::uninstall(dir, &installed.links)
         }
-        _ => Err(Error::CommandFailed("install record is missing package name or path".into())),
+        _ => Err(Error::CommandFailed(
+            "install record is missing package name or path".into(),
+        )),
     }
 }
 

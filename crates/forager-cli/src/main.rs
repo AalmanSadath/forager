@@ -11,7 +11,11 @@ use forager_core::store::{self, Store};
 use forager_core::{install, verify, version};
 
 #[derive(Parser)]
-#[command(name = "forager", version, about = "Install and update apps from their GitHub releases")]
+#[command(
+    name = "forager",
+    version,
+    about = "Install and update apps from their GitHub releases"
+)]
 struct Cli {
     /// Path to the tracked apps file.
     #[arg(long, global = true, env = "FORAGER_CONFIG")]
@@ -182,9 +186,16 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
 
     let (asset, format) = select_asset(app, &release, platform)?;
     let expected = verify::expected_sha256(asset, &release)?;
-    let from = app.installed.as_ref().map_or("not installed".to_string(), |i| i.tag.clone());
+    let from = app
+        .installed
+        .as_ref()
+        .map_or("not installed".to_string(), |i| i.tag.clone());
     println!("{id}: {from} -> {}", release.tag);
-    println!("  asset:  {} ({:.1} MiB, {format})", asset.name, asset.size as f64 / 1048576.0);
+    println!(
+        "  asset:  {} ({:.1} MiB, {format})",
+        asset.name,
+        asset.size as f64 / 1048576.0
+    );
     println!("  source: {}", app.source);
     match &expected {
         Some(_) => println!("  sha256: published, will verify"),

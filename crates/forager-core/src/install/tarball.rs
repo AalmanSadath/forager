@@ -111,9 +111,7 @@ fn content_root(staging: &Path) -> Result<PathBuf> {
     let entries: Vec<_> = fs::read_dir(staging)?.collect::<std::io::Result<_>>()?;
     match entries.as_slice() {
         [] => Err(Error::Archive("archive is empty".into())),
-        [only] if only.file_type()?.is_dir() && !LAYOUT_DIRS.iter().any(|d| only.file_name() == *d) => {
-            Ok(only.path())
-        }
+        [only] if only.file_type()?.is_dir() && !LAYOUT_DIRS.iter().any(|d| only.file_name() == *d) => Ok(only.path()),
         _ => Ok(staging.to_path_buf()),
     }
 }
@@ -132,7 +130,9 @@ fn find_executables(root: &Path, id: &str, bins: &[String]) -> Result<Vec<PathBu
                 if inside && is_executable(&root.join(&rel)) {
                     Ok(rel)
                 } else {
-                    Err(Error::Archive(format!("{bin} is not an executable file in the archive")))
+                    Err(Error::Archive(format!(
+                        "{bin} is not an executable file in the archive"
+                    )))
                 }
             })
             .collect();
@@ -158,7 +158,10 @@ fn find_executables(root: &Path, id: &str, bins: &[String]) -> Result<Vec<PathBu
         [only] => Ok(vec![only.clone()]),
         many => many
             .iter()
-            .find(|rel| rel.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(id)))
+            .find(|rel| {
+                rel.file_name()
+                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(id))
+            })
             .map(|rel| vec![rel.clone()])
             .ok_or_else(|| {
                 let names: Vec<_> = many.iter().map(|rel| rel.to_string_lossy()).collect();
@@ -172,14 +175,19 @@ fn find_executables(root: &Path, id: &str, bins: &[String]) -> Result<Vec<PathBu
 fn plan_links(executables: &[PathBuf], target: &Path, bin_dir: &Path, old_links: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut links = Vec::new();
     for rel in executables {
-        let name = rel.file_name().ok_or_else(|| Error::Archive(format!("bad path {}", rel.display())))?;
+        let name = rel
+            .file_name()
+            .ok_or_else(|| Error::Archive(format!("bad path {}", rel.display())))?;
         let link = bin_dir.join(name);
         let ours = old_links.contains(&link) || fs::read_link(&link).is_ok_and(|to| to.starts_with(target));
         if !ours && fs::symlink_metadata(&link).is_ok() {
             return Err(Error::LinkConflict(link));
         }
         if links.contains(&link) {
-            return Err(Error::Archive(format!("two executables named {}", name.to_string_lossy())));
+            return Err(Error::Archive(format!(
+                "two executables named {}",
+                name.to_string_lossy()
+            )));
         }
         links.push(link);
     }

@@ -65,8 +65,8 @@ fn contains_word(haystack: &str, word: &str) -> bool {
 fn names_other_os(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     [
-        "darwin", "macos", "osx", "mac", "apple", "windows", "win", "win32", "win64", "freebsd", "openbsd",
-        "netbsd", "android", "ios", "illumos", "solaris",
+        "darwin", "macos", "osx", "mac", "apple", "windows", "win", "win32", "win64", "freebsd", "openbsd", "netbsd",
+        "android", "ios", "illumos", "solaris",
     ]
     .iter()
     .any(|os| contains_word(&lower, os))

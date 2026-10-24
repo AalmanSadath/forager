@@ -87,7 +87,10 @@ mod tests {
     fn finds_hash_in_sha256sums() {
         let text = format!("{HASH}  tool.rpm\n{}  other.deb\n", "a".repeat(64));
         assert_eq!(find_in_checksums(&text, "tool.rpm", false).as_deref(), Some(HASH));
-        assert_eq!(find_in_checksums(&format!("{HASH} *dist/tool.rpm"), "tool.rpm", false).as_deref(), Some(HASH));
+        assert_eq!(
+            find_in_checksums(&format!("{HASH} *dist/tool.rpm"), "tool.rpm", false).as_deref(),
+            Some(HASH)
+        );
         assert_eq!(find_in_checksums(&text, "missing.rpm", false), None);
     }
 
