@@ -123,6 +123,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # Signing the build provenance through Sigstore, keyless.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -133,6 +136,11 @@ jobs:
           cd artifacts
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
+      # Records that this workflow built each file from this commit; checked
+      # with `gh attestation verify <file> -R AalmanSadath/forager`.
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifacts/*
       - uses: softprops/action-gh-release@v2
         with:
           name: Forager ${{ needs.version.outputs.version }}

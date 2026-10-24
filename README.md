@@ -36,6 +36,14 @@ Each [release](https://github.com/AalmanSadath/forager/releases) has:
 `SHA256SUMS` lists every file's checksum. All of them except the AppImage
 contain both the app (`forager-gui`) and the CLI (`forager`).
 
+Every file also has a GitHub build attestation: a Sigstore-signed record
+that this repository's release workflow built it from the tagged commit.
+Check one with the GitHub CLI:
+
+```sh
+gh attestation verify forager-<v>-1.x86_64.rpm -R AalmanSadath/forager
+```
+
 The Flatpak is a convenience, not a sandbox: Forager installs software for
 the host, so it runs the host's package tools through `flatpak-spawn
 --host`, reads and writes your home directory, and talks to PackageKit.
@@ -45,7 +53,7 @@ Its permissions are listed, with reasons, in
 Forager can keep itself up to date like any other app:
 
 ```sh
-forager add https://github.com/AalmanSadath/forager
+forager add https://github.com/AalmanSadath/forager --attestation   # verify each update (needs `gh auth login`)
 forager edit forager --format flatpak   # only if you installed the Flatpak
 ```
 
