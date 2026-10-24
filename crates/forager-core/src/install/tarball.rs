@@ -90,11 +90,15 @@ pub fn uninstall(dir: &Path, links: &[PathBuf]) -> Result<()> {
 /// to link, relative to that directory.
 fn unpack(file: &Path, staging: &Path, id: &str, bins: &[String]) -> Result<(PathBuf, Vec<PathBuf>)> {
     // GNU tar detects the compression itself and refuses members with `..`
-    // or absolute paths.
+    // or absolute paths. Archives made on macOS carry AppleDouble `._*` files
+    // and xattr headers GNU tar does not know; both are noise here.
     super::run(
         Command::new("tar")
             .arg("--extract")
             .arg("--no-same-owner")
+            .arg("--warning=no-unknown-keyword")
+            .arg("--exclude=._*")
+            .arg("--exclude=__MACOSX")
             .arg("--file")
             .arg(file)
             .arg("--directory")
@@ -277,6 +281,22 @@ mod tests {
         assert_eq!(fs::read_to_string(f.bin().join("tool")).unwrap(), "v1");
         assert!(f.opt().join("tool/README").exists());
         assert!(!f.opt().join(".tool.new").exists());
+    }
+
+    #[test]
+    fn ignores_macos_metadata_files() {
+        let f = Fixture::new();
+        let file = f.archive(
+            "v1",
+            &[
+                ("._tool-1.0", false),
+                ("tool-1.0/tool", true),
+                ("tool-1.0/._tool", false),
+            ],
+        );
+        let placed = f.install(&file, &[], &[]).unwrap();
+        assert_eq!(placed.links, vec![f.bin().join("tool")]);
+        assert!(!f.opt().join("tool/._tool").exists());
     }
 
     #[test]

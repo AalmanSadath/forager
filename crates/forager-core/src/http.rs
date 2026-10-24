@@ -46,6 +46,15 @@ pub fn check(response: Response<Body>) -> Result<Response<Body>> {
     Err(ureq::Error::StatusCode(status.as_u16()).into())
 }
 
+/// Fetches a small file such as a signature or checksum list.
+pub fn get_bytes(url: &str) -> Result<Vec<u8>> {
+    Ok(check(get(url).call()?)?
+        .body_mut()
+        .with_config()
+        .limit(16 * 1024 * 1024)
+        .read_to_vec()?)
+}
+
 /// Release lists with many assets can pass ureq's default 10 MB limit.
 const BODY_LIMIT: u64 = 64 * 1024 * 1024;
 

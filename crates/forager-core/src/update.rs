@@ -6,8 +6,10 @@ use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 use crate::matcher::select_asset;
-use crate::model::{App, Asset, Format, Installed, Release};
+use crate::model::{App, Asset, Format, Installed, Release, Signature};
 use crate::platform::Platform;
+use crate::signature::{self, Signed};
+use crate::source::Source;
 use crate::store::{self, Store};
 use crate::{install, verify, version};
 
@@ -23,6 +25,15 @@ pub struct Plan {
     pub from: Option<String>,
     /// The recorded install was removed outside Forager.
     pub missing: bool,
+    /// Signature check required by the app.
+    pub signature: Option<SignatureCheck>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignatureCheck {
+    pub signature: Signature,
+    pub signed: Signed,
+    pub source: Source,
 }
 
 /// How an app's install compares with its latest release.
@@ -76,6 +87,14 @@ pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
     let (asset, format) = select_asset(app, &release, platform)?;
     let asset = asset.clone();
     let expected_sha256 = verify::expected_sha256(&asset, &release)?;
+    let signature = match &app.signature {
+        Some(signature) => Some(SignatureCheck {
+            signed: signature::find(signature, &asset, &release)?,
+            signature: signature.clone(),
+            source: app.source.clone(),
+        }),
+        None => None,
+    };
     Ok(Some(Plan {
         from: app.installed.as_ref().map(|i| i.tag.clone()),
         release,
@@ -83,6 +102,7 @@ pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
         format,
         expected_sha256,
         missing,
+        signature,
     }))
 }
 
@@ -112,6 +132,9 @@ pub fn download(plan: &Plan, platform: &Platform) -> Result<Download> {
         repo_version: None,
     };
     check_sha256(plan, &actual)?;
+    if let Some(check) = &plan.signature {
+        signature::check(&check.signature, &check.signed, &check.source, &download.path, &actual)?;
+    }
     download.package = install::package_name(&download.path, plan.format)?;
     download.repo_version = download
         .package
@@ -182,6 +205,7 @@ mod tests {
             expected_sha256: Some("a".repeat(64)),
             from: None,
             missing: false,
+            signature: None,
         };
         assert!(matches!(
             check_sha256(&plan, &"b".repeat(64)),

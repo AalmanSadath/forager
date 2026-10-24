@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use forager_core::matcher::select_asset;
-use forager_core::model::{App, Format};
+use forager_core::model::{App, Format, Signature};
 use forager_core::platform::{self, Platform};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, State};
-use forager_core::{install, timer};
+use forager_core::{install, signature, timer};
 
 #[derive(Parser)]
 #[command(
@@ -51,6 +51,8 @@ enum Command {
         /// Repeat for several. Found automatically if not given.
         #[arg(long = "bin", value_name = "PATH")]
         bins: Vec<String>,
+        #[command(flatten)]
+        signature: SignatureArgs,
     },
     /// Change how a tracked app is installed. Takes effect on the next `update`.
     Edit {
@@ -74,6 +76,11 @@ enum Command {
         /// Whether to consider prereleases.
         #[arg(long, value_name = "BOOL")]
         prerelease: Option<bool>,
+        #[command(flatten)]
+        signature: SignatureArgs,
+        /// Stop requiring a signature.
+        #[arg(long, conflicts_with_all = ["minisign_key", "gpg_key", "attestation"])]
+        no_signature: bool,
     },
     /// List tracked apps.
     List,
@@ -111,6 +118,45 @@ enum Command {
         #[arg(long)]
         keep_installed: bool,
     },
+}
+
+/// Require assets to be signed by a key the user trusts.
+#[derive(clap::Args)]
+#[group(multiple = false)]
+struct SignatureArgs {
+    /// Minisign public key (base64) or path to a minisign.pub file.
+    #[arg(long, value_name = "KEY")]
+    minisign_key: Option<String>,
+    /// OpenPGP public key file (armored or binary).
+    #[arg(long, value_name = "FILE")]
+    gpg_key: Option<PathBuf>,
+    /// GitHub artifact attestation from the app's repository (needs `gh`).
+    #[arg(long)]
+    attestation: bool,
+}
+
+impl SignatureArgs {
+    fn is_empty(&self) -> bool {
+        self.minisign_key.is_none() && self.gpg_key.is_none() && !self.attestation
+    }
+
+    fn resolve(&self, id: &str, source: &Source) -> Result<Option<Signature>> {
+        if let Some(key) = &self.minisign_key {
+            let public_key = signature::parse_minisign_key(key)?;
+            return Ok(Some(Signature::Minisign { public_key }));
+        }
+        if let Some(file) = &self.gpg_key {
+            let keyring = signature::store_gpg_key(id, file)?;
+            return Ok(Some(Signature::Gpg { keyring }));
+        }
+        if self.attestation {
+            if !matches!(source, Source::GitHub { .. }) {
+                bail!("attestations are only available for GitHub projects");
+            }
+            return Ok(Some(Signature::Attestation));
+        }
+        Ok(None)
+    }
 }
 
 #[derive(Subcommand)]
@@ -165,12 +211,17 @@ fn main() -> Result<()> {
             format,
             prerelease,
             bins,
+            signature,
         } => {
             let source = Source::from_url(&url, forge)?;
             let id = id.unwrap_or_else(|| source.default_id());
             if let Some(filter) = &filter {
                 regex::Regex::new(filter).context("invalid --filter")?;
             }
+            if store.get(&id).is_ok() {
+                bail!("app already tracked: {id}");
+            }
+            let signature = signature.resolve(&id, &source)?;
             store.add(App {
                 id: id.clone(),
                 source,
@@ -178,6 +229,7 @@ fn main() -> Result<()> {
                 format,
                 prerelease,
                 bins,
+                signature,
                 installed: None,
             })?;
             store.save()?;
@@ -191,8 +243,12 @@ fn main() -> Result<()> {
             bins,
             clear_bins,
             prerelease,
+            signature,
+            no_signature,
         } => {
-            if format.is_none()
+            if signature.is_empty()
+                && !no_signature
+                && format.is_none()
                 && filter.is_none()
                 && !clear_filter
                 && bins.is_empty()
@@ -217,6 +273,18 @@ fn main() -> Result<()> {
             if let Some(prerelease) = prerelease {
                 app.prerelease = prerelease;
             }
+            if !signature.is_empty() || no_signature {
+                let source = app.source.clone();
+                let new = signature.resolve(&id, &source)?;
+                let app = store.get_mut(&id)?;
+                if let Some(Signature::Gpg { keyring }) = &app.signature
+                    && !matches!(&new, Some(Signature::Gpg { keyring: k }) if k == keyring)
+                {
+                    std::fs::remove_file(keyring).ok();
+                }
+                app.signature = new;
+            }
+            let app = store.get(&id)?;
             let settings = describe(app);
             store.save()?;
             println!("{id}:\n{settings}");
@@ -258,8 +326,11 @@ fn main() -> Result<()> {
             {
                 install::uninstall(installed, &Platform::detect())?;
             }
-            store.remove(&id)?;
+            let app = store.remove(&id)?;
             store.save()?;
+            if let Some(Signature::Gpg { keyring }) = &app.signature {
+                std::fs::remove_file(keyring).ok();
+            }
             println!("Removed {id}.");
         }
     }
@@ -414,14 +485,22 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
     };
     println!("  asset:  {} ({size}{})", plan.asset.name, plan.format);
     println!("  source: {}", app.source);
-    match &plan.expected_sha256 {
-        Some(_) => println!("  sha256: published, will verify"),
-        None => {
+    match (&plan.expected_sha256, &plan.signature) {
+        (Some(_), _) => println!("  sha256: published, will verify"),
+        (None, Some(_)) => println!("  sha256: not published"),
+        (None, None) => {
             println!("  sha256: NOT PUBLISHED, download cannot be verified");
             if yes && !allow_unverified {
                 bail!("refusing unverified asset without --allow-unverified");
             }
         }
+    }
+    if let Some(check) = &plan.signature {
+        println!(
+            "  signed: {} ({}), will verify",
+            check.signature,
+            check.signed.describe()
+        );
     }
     if plan.format.needs_root() {
         println!("  note:   package scripts run as root");
@@ -477,7 +556,10 @@ fn describe(app: &App) -> String {
         app.bins.join(", ")
     };
     let prerelease = if app.prerelease { "yes" } else { "no" };
-    format!("  format:     {format}\n  filter:     {filter}\n  bins:       {bins}\n  prerelease: {prerelease}")
+    let signature = app.signature.as_ref().map_or("none".to_string(), |s| s.to_string());
+    format!(
+        "  format:     {format}\n  filter:     {filter}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}"
+    )
 }
 
 fn confirm(question: &str) -> Result<bool> {

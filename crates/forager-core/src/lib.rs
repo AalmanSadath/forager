@@ -7,6 +7,7 @@ pub mod install;
 pub mod matcher;
 pub mod model;
 pub mod platform;
+pub mod signature;
 pub mod source;
 pub mod store;
 pub mod timer;

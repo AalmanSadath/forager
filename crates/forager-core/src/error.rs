@@ -48,6 +48,10 @@ pub enum Error {
         format: crate::model::Format,
         source: Box<Error>,
     },
+    #[error("{0} has no signature, but the app requires one")]
+    SignatureMissing(String),
+    #[error("signature check failed: {0}")]
+    SignatureInvalid(String),
     #[error("command failed: {0}")]
     CommandFailed(String),
     #[error("app not tracked: {0}")]

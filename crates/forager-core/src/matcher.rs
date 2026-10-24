@@ -114,6 +114,7 @@ mod tests {
             format: None,
             prerelease: false,
             bins: Vec::new(),
+            signature: None,
             installed: None,
         }
     }

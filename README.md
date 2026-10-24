@@ -90,12 +90,30 @@ Forager did not create are never replaced.
 
 ## Security
 
-Installing a `.deb`, `.rpm` or Arch package runs the package's scripts as root, so it
-means trusting the upstream project and its GitHub account completely.
+Installing a `.deb`, `.rpm` or Arch package runs the package's scripts as
+root, so it means trusting the upstream project and its forge account
+completely.
 Forager shows the asset and whether it can be verified before installing,
 and with `--yes` it refuses unverified assets unless `--allow-unverified`
 is given. A checksum published next to the asset only guards against
 corrupted downloads, not a compromised release.
+
+To guard against that, give Forager the project's signing key; assets
+without a valid signature are then refused, with no override:
+
+```sh
+forager add https://github.com/jedisct1/minisign --bin x86_64/minisign \
+    --minisign-key RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
+forager add https://github.com/keepassxreboot/keepassxc --gpg-key keepassxc.asc
+forager add https://github.com/owner/repo --attestation   # GitHub attestations, needs `gh auth login`
+forager edit keepassxc --no-signature
+```
+
+Forager looks for `<asset>.minisig`, or `<asset>.asc` / `.sig` / `.gpg`,
+and falls back to a signed checksum list such as `SHA256SUMS.asc`. GPG keys
+are kept in `~/.local/share/forager/keys` and checked with `gpgv`; nothing
+is added to your own keyring. Get the key from the project's website or
+check its fingerprint there, not from the release being verified.
 
 ## Layout
 
@@ -107,5 +125,4 @@ corrupted downloads, not a compromised release.
 
 - Generic HTML sources
 - PackageKit over D-Bus instead of `pkexec` + native tools
-- Signature verification (GPG, minisign, GitHub attestations)
 - GTK4 / libadwaita GUI

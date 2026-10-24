@@ -32,14 +32,14 @@ pub fn expected_sha256(asset: &Asset, release: &Release) -> Result<Option<String
     Ok(None)
 }
 
-fn is_checksum_list(lower: &str) -> bool {
+pub(crate) fn is_checksum_list(lower: &str) -> bool {
     let stem = lower.trim_end_matches(".txt");
     stem.ends_with("sha256sums") || stem.ends_with("sha256sum") || stem.ends_with("checksums")
 }
 
 /// Reads `sha256sum` output (`<hex>  <name>` or `<hex> *<name>`). A file made
 /// for a single asset may contain only the hash.
-fn find_in_checksums(text: &str, name: &str, single_file: bool) -> Option<String> {
+pub(crate) fn find_in_checksums(text: &str, name: &str, single_file: bool) -> Option<String> {
     text.lines().find_map(|line| {
         let mut fields = line.split_whitespace();
         let hex = fields.next()?;

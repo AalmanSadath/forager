@@ -124,8 +124,33 @@ pub struct App {
     /// Found automatically when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bins: Vec<String>,
+    /// Key the app's assets must be signed with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Signature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed: Option<Installed>,
+}
+
+/// How an app's assets are signed, with the key the user trusts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Signature {
+    /// A minisign public key, base64.
+    Minisign { public_key: String },
+    /// A keyring holding the trusted OpenPGP key, as stored by Forager.
+    Gpg { keyring: PathBuf },
+    /// A GitHub artifact attestation from the app's own repository.
+    Attestation,
+}
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Signature::Minisign { .. } => "minisign",
+            Signature::Gpg { .. } => "gpg",
+            Signature::Attestation => "attestation",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
