@@ -25,12 +25,15 @@ pub struct Plan {
     pub missing: bool,
 }
 
-/// The update for `app`, or `None` if it is up to date.
+/// The update for `app`, or `None` if it is up to date. An install that is
+/// missing, or in another format than the one the app is pinned to, counts
+/// as out of date.
 pub fn plan(app: &App, platform: &Platform) -> Result<Option<Plan>> {
     let release = app.source.latest_release(app.prerelease)?;
     let missing = app.installed.as_ref().is_some_and(|i| !install::is_present(i));
     if let Some(installed) = &app.installed
         && !missing
+        && app.format.is_none_or(|f| f == installed.format)
         && !version::is_newer(&installed.tag, &release.tag)
     {
         return Ok(None);
