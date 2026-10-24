@@ -58,6 +58,12 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.2" date="2026-10-25">
+      <description>
+        <p>Apps installed outside Forager are recognised on Debian, Ubuntu, Fedora, openSUSE and Arch, as system packages or Flatpaks (user or system-wide), and their installed version is read again on every check.</p>
+        <p>The latest release is the newest one with a file for this system, so repositories that also tag other builds still find their Linux release.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-25">
       <description>
         <p>Apps installed as a deb, rpm or Arch package before they were tracked are recognised as installed, instead of being installed again.</p>
