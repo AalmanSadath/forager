@@ -157,3 +157,16 @@ export interface ProgressEvent {
   total: number | null;
   percent: number | null;
 }
+
+export type EventKind = 'installed' | 'updated' | 'removed' | 'failed' | 'updates_found';
+
+export interface HistoryEvent {
+  time: number;
+  app: string;
+  kind: EventKind;
+  via: 'cli' | 'gui' | 'timer';
+  from?: string;
+  to?: string;
+  format?: Format;
+  message?: string;
+}

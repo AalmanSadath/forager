@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AppView,
   DownloadedView,
+  HistoryEvent,
   PlanView,
   ParsedSource,
   Preview,
@@ -15,6 +16,9 @@ import type {
   StartRequest,
   SystemAppearance,
 } from './types';
+
+// ── activity ────────────────────────────────────────────────────
+export const listHistory = (limit: number) => invoke<HistoryEvent[]>('list_history', { limit });
 
 // ── apps ────────────────────────────────────────────────────────
 export const listApps = () => invoke<AppView[]>('list_apps');

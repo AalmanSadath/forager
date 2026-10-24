@@ -16,6 +16,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::activity::list_history,
             commands::apps::list_apps,
             commands::check::check_apps,
             commands::edit::parse_source,
