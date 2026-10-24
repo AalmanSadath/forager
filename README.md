@@ -115,9 +115,15 @@ forager edit drawio-desktop --format appimage   # or --format auto, --filter, --
 forager remove drawio-desktop
 ```
 
-An app already installed as a deb, rpm or Arch package, by hand or before
-it was added, is recognised by the package name in its release files the
-first time it is checked or updated, and is not installed again.
+An app already installed as a deb, rpm or Arch package or a Flatpak (user
+or system-wide), by hand or before it was added, is recognised by the name
+in its release files the first time it is checked or updated, and is not
+installed again. Updates stay in the format that is installed while the
+release still offers it.
+
+The latest release is the newest one with a file for this system, so a
+project that also tags, say, Android builds in the same repository still
+finds its Linux release.
 
 Background checks run from a systemd user timer:
 

@@ -42,16 +42,28 @@ pub struct Candidate<'a> {
 /// Every asset of `release` with its verdict, in release order. At most one
 /// is `Chosen`.
 ///
-/// Preference order: format (as ranked by the platform), then an asset naming
-/// this architecture over one naming none. Assets naming another architecture
-/// or operating system, debug packages and source packages are never picked.
+/// Preference order: format (the installed one first, then as ranked by the
+/// platform), then an asset naming this architecture over one naming none.
+/// Assets naming another architecture or operating system, debug packages
+/// and source packages are never picked.
 /// A tarball must name Linux or this architecture, since one naming neither is
 /// usually a source archive.
 pub fn candidates<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<Vec<Candidate<'a>>> {
     let filter = app.asset_filter.as_deref().map(Regex::new).transpose()?;
     let formats = match app.format {
         Some(format) => vec![format],
-        None => platform.formats(),
+        // Updates stay in the format already installed when it still suits
+        // the system, so a Flatpak is not replaced by the distro package.
+        None => {
+            let mut formats = platform.formats();
+            if let Some(installed) = &app.installed
+                && let Some(index) = formats.iter().position(|f| *f == installed.format)
+            {
+                let format = formats.remove(index);
+                formats.insert(0, format);
+            }
+            formats
+        }
     };
 
     let mut best: Option<(usize, (usize, bool))> = None;
@@ -260,6 +272,23 @@ mod tests {
         );
         assert_eq!(pick(None, true), "forager-0.1.0-x86_64.flatpak");
         assert_eq!(pick(None, false), "Forager-0.1.0-x86_64.AppImage");
+    }
+
+    #[test]
+    fn automatic_format_keeps_the_installed_one() {
+        let mut app = app();
+        app.installed = Some(crate::model::Installed {
+            tag: "v0.9.0".into(),
+            format: Format::AppImage,
+            asset: String::new(),
+            package: None,
+            path: None,
+            links: Vec::new(),
+        });
+        assert_eq!(pick(&app, Some(PackageManager::Dnf)), "Tool-1.0.0-x86_64.AppImage");
+        // Unless the installed format no longer suits the system.
+        app.installed.as_mut().unwrap().format = Format::Pacman;
+        assert_eq!(pick(&app, Some(PackageManager::Dnf)), "tool-1.0.0-1.x86_64.rpm");
     }
 
     #[test]

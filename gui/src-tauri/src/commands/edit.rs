@@ -11,7 +11,7 @@ use forager_core::model::{App, Format, Release, Signature};
 use forager_core::platform::Platform;
 use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
-use forager_core::{Error, install};
+use forager_core::{Error, install, update};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -21,21 +21,21 @@ use crate::state::{CmdResult, blocking, load_store};
 /// Latest release per source and prerelease setting, so previews while the
 /// user types a filter need no network.
 #[derive(Default)]
-pub struct ReleaseCache(Mutex<HashMap<String, Release>>);
+pub struct ReleaseCache(Mutex<HashMap<String, Vec<Release>>>);
 
 impl ReleaseCache {
     /// The whole source, not its display name: a web page's releases depend
     /// on its pattern too.
-    fn key(source: &Source, prerelease: bool) -> String {
-        format!("{source:?}|{prerelease}")
+    fn key(source: &Source) -> String {
+        format!("{source:?}")
     }
 
-    pub fn put(&self, source: &Source, prerelease: bool, release: Release) {
-        self.0.lock().unwrap().insert(Self::key(source, prerelease), release);
+    pub fn put(&self, source: &Source, releases: Vec<Release>) {
+        self.0.lock().unwrap().insert(Self::key(source), releases);
     }
 
-    fn get(&self, source: &Source, prerelease: bool) -> Option<Release> {
-        self.0.lock().unwrap().get(&Self::key(source, prerelease)).cloned()
+    fn get(&self, source: &Source) -> Option<Vec<Release>> {
+        self.0.lock().unwrap().get(&Self::key(source)).cloned()
     }
 }
 
@@ -143,14 +143,14 @@ pub async fn preview(
     let mut app = App::new(spec, "preview".into());
     settings.apply(&mut app)?;
     let spec = app.source.clone();
-    let cached = (!refresh).then(|| cache.get(&spec, settings.prerelease)).flatten();
-    let release = match cached {
-        Some(release) => release,
+    let cached = (!refresh).then(|| cache.get(&spec)).flatten();
+    let releases = match cached {
+        Some(releases) => releases,
         None => {
-            let (source, prerelease) = (spec.clone(), settings.prerelease);
-            let release = blocking(move || source.latest_release(prerelease).map_err(|e| e.to_string())).await?;
-            cache.put(&spec, settings.prerelease, release.clone());
-            release
+            let source = spec.clone();
+            let releases = blocking(move || source.releases().map_err(|e| e.to_string())).await?;
+            cache.put(&spec, releases.clone());
+            releases
         }
     };
 
@@ -162,7 +162,9 @@ pub async fn preview(
     if filter_error.is_some() {
         app.asset_filter = None;
     }
-    let candidates = matcher::candidates(&app, &release, &Platform::detect())
+    let platform = Platform::detect();
+    let release = update::latest(&app, releases, &platform).map_err(|e| e.to_string())?;
+    let candidates = matcher::candidates(&app, &release, &platform)
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|c| CandidateView {

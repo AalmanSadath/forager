@@ -193,26 +193,51 @@ fn upstream_version(text: &str, format: Format) -> Option<String> {
 
 /// Package names an asset is likely to install: the start of its file name
 /// (`tool-1.2.0-1.x86_64.rpm`, `tool_1.2.0_amd64.deb`,
-/// `tool-1.2.0-1-x86_64.pkg.tar.zst`), then the app's id.
+/// `Tool-v1.2.0-x86_64.flatpak`, `tool.flatpak`), then the app's id.
 pub fn package_guesses(asset: &str, format: Format, id: &str) -> Vec<String> {
+    let stem = [".rpm", ".deb", ".flatpak", ".pkg.tar.zst", ".pkg.tar.xz"]
+        .iter()
+        .find_map(|ext| asset.strip_suffix(ext))
+        .unwrap_or(asset);
     let from_file = match format {
-        Format::Deb => asset.split('_').next(),
-        _ => asset
-            .char_indices()
-            .find(|&(i, c)| c == '-' && asset[i + 1..].starts_with(|d: char| d.is_ascii_digit()))
-            .map(|(i, _)| &asset[..i]),
+        Format::Deb => stem.split('_').next().unwrap_or(stem),
+        _ => {
+            // Up to the first `-<version>` or `-v<version>`.
+            let version = |rest: &str| {
+                let rest = rest.strip_prefix('v').unwrap_or(rest);
+                rest.starts_with(|c: char| c.is_ascii_digit())
+            };
+            stem.char_indices()
+                .find(|&(i, c)| c == '-' && version(&stem[i + 1..]))
+                .map_or(stem, |(i, _)| &stem[..i])
+        }
     };
     let mut names = Vec::new();
-    for name in from_file.into_iter().chain([id]) {
+    for name in [from_file, id] {
         let name = name.to_ascii_lowercase();
         let valid = !name.is_empty()
-            && !name.starts_with('-')
+            && !name.starts_with(|c: char| c == '-' || c.is_ascii_digit())
             && name.chars().all(|c| c.is_ascii_alphanumeric() || "+-._".contains(c));
         if valid && !names.contains(&name) {
             names.push(name);
         }
     }
     names
+}
+
+/// The installed Flatpak app named like one of `names`: its id, or the last
+/// part of it (`org.example.Tool` for `tool`), compared without case. Gives
+/// `(id, version)`.
+pub fn find_flatpak(names: &[String]) -> Option<(String, String)> {
+    let apps = flatpak::installed_apps();
+    names.iter().find_map(|name| {
+        apps.iter()
+            .find(|(id, _)| {
+                let id = id.to_ascii_lowercase();
+                id == *name || id.rsplit('.').next() == Some(name.as_str())
+            })
+            .cloned()
+    })
 }
 
 /// Whether the install is still on the system, i.e. was not removed outside
@@ -358,6 +383,14 @@ mod tests {
             ["foo-bar", "foo"]
         );
         assert_eq!(package_guesses("1.0.rpm", Format::Rpm, "x"), ["x"]);
+        assert_eq!(
+            package_guesses("OpenLogi-v0.8.17-x86_64.flatpak", Format::Flatpak, "openlogi-flatpak"),
+            ["openlogi", "openlogi-flatpak"]
+        );
+        assert_eq!(
+            package_guesses("bifrossh.flatpak", Format::Flatpak, "BifroSSH"),
+            ["bifrossh"]
+        );
     }
 
     #[test]

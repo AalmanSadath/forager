@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::matcher::select_asset;
+use crate::matcher::{self, Verdict, select_asset};
 use crate::model::{App, Asset, Format, Installed, Release, Signature};
 use crate::platform::Platform;
 use crate::signature::{self, Signed};
@@ -143,10 +143,16 @@ pub struct Status {
 
 /// Fetches the latest release and compares it with the install.
 pub fn status(app: &App) -> Result<Status> {
-    let latest = app.source.latest_release(app.prerelease)?;
+    status_in(app, app.source.releases()?)
+}
+
+/// `status` against releases already fetched, newest first.
+pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
+    let platform = Platform::detect();
+    let latest = latest(app, releases, &platform)?;
     let found = match app.installed {
         Some(_) => None,
-        None => find_existing(app, &latest, &Platform::detect()),
+        None => find_existing(app, &latest, &platform),
     };
     let state = match app.installed.as_ref().or(found.as_ref()) {
         None => State::NotInstalled,
@@ -158,19 +164,50 @@ pub fn status(app: &App) -> Result<Status> {
     Ok(Status { state, latest, found })
 }
 
-/// The deb, rpm or Arch package an update would install, if a package of
-/// that name is already on the system.
-fn find_existing(app: &App, release: &Release, platform: &Platform) -> Option<Installed> {
-    let (asset, format) = select_asset(app, release, platform).ok()?;
-    if !format.needs_root() {
-        return None;
-    }
-    install::package_guesses(&asset.name, format, &app.id)
+/// The newest release the app takes (no prereleases unless it follows them)
+/// with an asset for this system. Projects that also publish other builds
+/// from the same repository, e.g. `android-v1.0` next to `v2.3`, would
+/// otherwise have their newest release be one with nothing to install.
+/// Falls back to the newest release, so the reason it has nothing shows.
+pub fn latest(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<Release> {
+    let mut eligible = releases
         .into_iter()
-        .find_map(|package| {
-            let version = install::installed_version(&package, format)?;
-            Some(existing_install(version, package, format, asset, release))
-        })
+        .filter(|r| app.prerelease || !r.prerelease)
+        .peekable();
+    let newest = eligible.peek().cloned().ok_or(Error::NoRelease)?;
+    Ok(eligible
+        .find(|r| select_asset(app, r, platform).is_ok())
+        .unwrap_or(newest))
+}
+
+/// A system package or Flatpak of the app installed without Forager, looked
+/// for among every asset of the release that suits this system, the one an
+/// update would choose first.
+fn find_existing(app: &App, release: &Release, platform: &Platform) -> Option<Installed> {
+    let mut usable: Vec<_> = matcher::candidates(app, release, platform)
+        .ok()?
+        .into_iter()
+        .filter(|c| !matches!(c.verdict, Verdict::Rejected(_)))
+        .collect();
+    usable.sort_by_key(|c| c.verdict != Verdict::Chosen);
+    usable.into_iter().find_map(|candidate| {
+        let format = candidate.format?;
+        let names = install::package_guesses(&candidate.asset.name, format, &app.id);
+        let (package, version) = match format {
+            Format::Flatpak => {
+                let (id, version) = install::find_flatpak(&names)?;
+                // Flatpaks need not declare a version; an unknown one counts
+                // as older than any release.
+                (id, if version.is_empty() { "unknown".into() } else { version })
+            }
+            format if format.needs_root() => names
+                .into_iter()
+                .find_map(|name| Some((install::installed_version(&name, format)?, name)))
+                .map(|(version, name)| (name, version))?,
+            _ => return None,
+        };
+        Some(existing_install(version, package, format, candidate.asset, release))
+    })
 }
 
 /// Records the found version as the release's own tag and asset when they
@@ -363,6 +400,47 @@ mod tests {
             missing: false,
             signature: None,
         }
+    }
+
+    #[test]
+    fn latest_skips_releases_with_nothing_for_this_system() {
+        let release = |tag: &str, prerelease: bool, assets: &[&str]| Release {
+            tag: tag.into(),
+            name: None,
+            prerelease,
+            published_at: None,
+            assets: assets
+                .iter()
+                .map(|name| Asset {
+                    name: name.to_string(),
+                    url: String::new(),
+                    size: 0,
+                    digest: None,
+                })
+                .collect(),
+        };
+        let releases = vec![
+            release("v2.1.0-rc.1", true, &["tool-2.1.0-1.x86_64.rpm"]),
+            release("android-v0.3.0", false, &["tool.apk"]),
+            release("v2.0.0", false, &["tool-2.0.0-1.x86_64.rpm", "tool-setup.exe"]),
+        ];
+        let platform = Platform {
+            arch: "x86_64",
+            package_manager: Some(crate::platform::PackageManager::Dnf),
+            flatpak: false,
+        };
+        let source = Source::GitHub {
+            owner: "o".into(),
+            repo: "tool".into(),
+        };
+        let mut app = App::new(source, "tool".into());
+        assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.0.0");
+        app.prerelease = true;
+        assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.1.0-rc.1");
+        // Nothing fits at all: the newest release, to show why.
+        app.prerelease = false;
+        app.asset_filter = Some("nothing".into());
+        assert_eq!(latest(&app, releases, &platform).unwrap().tag, "android-v0.3.0");
     }
 
     #[test]

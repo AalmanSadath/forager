@@ -49,39 +49,44 @@ pub struct StatusEvent {
 pub const STATUS_EVENT: &str = "app-status";
 
 pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> StatusEvent {
-    let result = update::status(app).map(|status| {
-        cache.put(&app.source, app.prerelease, status.latest.clone());
-        let found = status
-            .found
-            .clone()
-            .is_some_and(|installed| record_found(&app.id, installed));
-        let app = &App {
-            installed: app.installed.clone().or(status.found),
-            ..app.clone()
-        };
-        let (asset, asset_format, asset_error) = match select_asset(app, &status.latest, platform) {
-            Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
-            Err(e) => (None, None, Some(e.to_string())),
-        };
-        let repo_version = app
-            .installed
-            .as_ref()
-            .filter(|i| i.format.needs_root())
-            .and_then(|i| i.package.as_deref())
-            .and_then(|p| install::repo_version(p, platform));
-        StatusView {
-            state: status.state,
-            latest_tag: status.latest.tag,
-            latest_name: status.latest.name,
-            published_at: status.latest.published_at,
-            asset,
-            asset_format,
-            asset_error,
-            repo_version,
-            checked_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-            found,
-        }
-    });
+    let releases = app.source.releases();
+    if let Ok(releases) = &releases {
+        cache.put(&app.source, releases.clone());
+    }
+    let result = releases
+        .and_then(|releases| update::status_in(app, releases))
+        .map(|status| {
+            let found = status
+                .found
+                .clone()
+                .is_some_and(|installed| record_found(&app.id, installed));
+            let app = &App {
+                installed: app.installed.clone().or(status.found),
+                ..app.clone()
+            };
+            let (asset, asset_format, asset_error) = match select_asset(app, &status.latest, platform) {
+                Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
+                Err(e) => (None, None, Some(e.to_string())),
+            };
+            let repo_version = app
+                .installed
+                .as_ref()
+                .filter(|i| i.format.needs_root())
+                .and_then(|i| i.package.as_deref())
+                .and_then(|p| install::repo_version(p, platform));
+            StatusView {
+                state: status.state,
+                latest_tag: status.latest.tag,
+                latest_name: status.latest.name,
+                published_at: status.latest.published_at,
+                asset,
+                asset_format,
+                asset_error,
+                repo_version,
+                checked_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+                found,
+            }
+        });
     let (status, error) = match result {
         Ok(status) => (Some(status), None),
         Err(e) => (None, Some(e.to_string())),
