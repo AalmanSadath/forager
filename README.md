@@ -9,7 +9,8 @@ but for the desktop.
 Early prototype. CLI only.
 
 - Sources: GitHub releases
-- Formats: `.rpm` (dnf, zypper), `.deb` (apt), AppImage (`~/Applications`),
+- Formats: `.rpm` (dnf, zypper), `.deb` (apt), Arch packages
+  (`.pkg.tar.*`, `.pacman`; pacman), AppImage (`~/Applications`),
   tarballs (`~/.local/opt/<id>`, executables linked into `~/.local/bin`),
   Flatpak bundles (`flatpak install --user`)
 - Verification: SHA-256 from GitHub's asset digest or a published
@@ -31,7 +32,7 @@ forager remove drawio-desktop
 install removed) on the next `update`.
 
 `add` options: `--id`, `--filter <regex>` to restrict asset names,
-`--format deb|rpm|appimage|tarball|flatpak` to override format selection,
+`--format deb|rpm|pacman|appimage|tarball|flatpak` to override format selection,
 `--prerelease`, `--bin <path>` (repeatable) to name the executables to link
 from a tarball, relative to its top directory.
 
@@ -49,7 +50,8 @@ another format removes the old install once the new one is in place.
 ## How an asset is chosen
 
 1. Formats the system can install, in order: native package format first
-   (rpm on dnf/zypper systems, deb on apt systems), then Flatpak if
+   (rpm on dnf/zypper systems, Arch packages on pacman systems, deb on apt
+   systems), then Flatpak if
    `flatpak` is installed, then AppImage, then tarball.
 2. Assets naming this CPU architecture beat assets naming none; assets
    naming another architecture or operating system are skipped.
@@ -63,7 +65,7 @@ Forager did not create are never replaced.
 
 ## Security
 
-Installing a `.deb` or `.rpm` runs the package's scripts as root, so it
+Installing a `.deb`, `.rpm` or Arch package runs the package's scripts as root, so it
 means trusting the upstream project and its GitHub account completely.
 Forager shows the asset and whether it can be verified before installing,
 and with `--yes` it refuses unverified assets unless `--allow-unverified`
@@ -78,7 +80,6 @@ corrupted downloads, not a compromised release.
 
 ## Roadmap
 
-- Arch packages (`pacman -U`)
 - GitLab, Codeberg/Forgejo and generic HTML sources
 - PackageKit over D-Bus instead of `pkexec` + native tools
 - Detect conflicts with distro repositories

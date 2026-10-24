@@ -7,6 +7,7 @@ use crate::model::Format;
 pub enum PackageManager {
     Dnf,
     Zypper,
+    Pacman,
     Apt,
 }
 
@@ -25,6 +26,8 @@ impl Platform {
             Some(PackageManager::Dnf)
         } else if has_command("zypper") {
             Some(PackageManager::Zypper)
+        } else if has_command("pacman") {
+            Some(PackageManager::Pacman)
         } else if has_command("apt-get") {
             Some(PackageManager::Apt)
         } else {
@@ -42,6 +45,7 @@ impl Platform {
     pub fn formats(&self) -> Vec<Format> {
         let native = match self.package_manager {
             Some(PackageManager::Dnf | PackageManager::Zypper) => Some(Format::Rpm),
+            Some(PackageManager::Pacman) => Some(Format::Pacman),
             Some(PackageManager::Apt) => Some(Format::Deb),
             None => None,
         };
@@ -114,6 +118,10 @@ mod tests {
         assert_eq!(
             platform(Some(PackageManager::Apt), false).formats(),
             [Format::Deb, Format::AppImage, Format::Tarball]
+        );
+        assert_eq!(
+            platform(Some(PackageManager::Pacman), true).formats(),
+            [Format::Pacman, Format::Flatpak, Format::AppImage, Format::Tarball]
         );
         assert_eq!(
             platform(None, true).formats(),

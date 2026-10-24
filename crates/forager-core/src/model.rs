@@ -16,15 +16,18 @@ pub enum Format {
     Tarball,
     /// A single-file Flatpak bundle.
     Flatpak,
+    /// An Arch Linux package (`.pkg.tar.*`).
+    Pacman,
 }
 
 impl Format {
-    pub const ALL: [Format; 5] = [
+    pub const ALL: [Format; 6] = [
         Format::Deb,
         Format::Rpm,
         Format::AppImage,
         Format::Tarball,
         Format::Flatpak,
+        Format::Pacman,
     ];
 
     pub fn from_file_name(name: &str) -> Option<Format> {
@@ -37,6 +40,9 @@ impl Format {
             Some(Format::AppImage)
         } else if lower.ends_with(".flatpak") {
             Some(Format::Flatpak)
+        } else if PACMAN_SUFFIXES.iter().any(|suffix| lower.ends_with(suffix)) {
+            // Checked before tarballs, which these also look like.
+            Some(Format::Pacman)
         } else if TARBALL_SUFFIXES.iter().any(|suffix| lower.ends_with(suffix)) {
             Some(Format::Tarball)
         } else {
@@ -44,6 +50,9 @@ impl Format {
         }
     }
 }
+
+/// `.pacman` is what electron-builder names Arch packages.
+const PACMAN_SUFFIXES: [&str; 4] = [".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pacman"];
 
 const TARBALL_SUFFIXES: [&str; 9] = [
     ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar.zst", ".tzst",
@@ -57,6 +66,7 @@ impl fmt::Display for Format {
             Format::AppImage => "appimage",
             Format::Tarball => "tarball",
             Format::Flatpak => "flatpak",
+            Format::Pacman => "pacman",
         })
     }
 }
@@ -68,7 +78,7 @@ impl std::str::FromStr for Format {
         Format::ALL
             .into_iter()
             .find(|f| f.to_string().eq_ignore_ascii_case(s))
-            .ok_or_else(|| format!("unknown format '{s}' (expected deb, rpm, appimage, tarball or flatpak)"))
+            .ok_or_else(|| format!("unknown format '{s}' (expected deb, rpm, appimage, tarball, flatpak or pacman)"))
     }
 }
 
@@ -125,4 +135,29 @@ pub struct Installed {
     /// Symlinks Forager created for a tarball's executables.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_file_names() {
+        for (name, format) in [
+            ("tool_1.0_amd64.deb", Some(Format::Deb)),
+            ("tool-1.0-1.x86_64.rpm", Some(Format::Rpm)),
+            ("tool-1.0-1.src.rpm", None),
+            ("Tool.AppImage", Some(Format::AppImage)),
+            ("tool-x86_64.flatpak", Some(Format::Flatpak)),
+            ("tool-1.0-1-x86_64.pkg.tar.zst", Some(Format::Pacman)),
+            ("tool-1.0-1-any.pkg.tar.xz", Some(Format::Pacman)),
+            ("Tool-1.0-linux-x64.pacman", Some(Format::Pacman)),
+            ("tool-1.0-1-x86_64.pkg.tar.zst.sig", None),
+            ("tool-linux-x86_64.tar.zst", Some(Format::Tarball)),
+            ("tool.tgz", Some(Format::Tarball)),
+            ("SHA256SUMS", None),
+        ] {
+            assert_eq!(Format::from_file_name(name), format, "{name}");
+        }
+    }
 }

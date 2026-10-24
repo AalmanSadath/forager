@@ -1,6 +1,6 @@
 //! Hands downloaded packages to the system package manager.
 //!
-//! deb and rpm installs run through `pkexec`, so polkit asks the user for
+//! deb, rpm and Arch package installs run through `pkexec`, so polkit asks the user for
 //! authorisation. AppImages and tarballs need no root: AppImages are placed in
 //! `~/Applications`, tarballs are unpacked into `~/.local/opt` with their
 //! executables linked into `~/.local/bin`, and Flatpak bundles go into the
@@ -53,6 +53,13 @@ pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Pla
                 _ => return Err(Error::NoPackageManager("deb")),
             }
         }
+        Format::Pacman => {
+            installed.package = Some(output(Command::new("pacman").arg("-Qqp").arg(&file))?);
+            match platform.package_manager {
+                Some(PackageManager::Pacman) => run(pkexec(["pacman", "-U", "--noconfirm"]).arg(&file))?,
+                _ => return Err(Error::NoPackageManager("pacman")),
+            }
+        }
         Format::AppImage => {
             let dir = platform::appimage_dir().ok_or(Error::NoHome)?;
             fs::create_dir_all(&dir)?;
@@ -100,6 +107,10 @@ pub fn is_present(installed: &Installed) -> bool {
             output(Command::new("dpkg-query").args(["-W", "-f=${db:Status-Status}", package]))
                 .is_ok_and(|status| status == "installed")
         }
+        (Format::Pacman, Some(package), _) => Command::new("pacman")
+            .args(["-Q", package])
+            .output()
+            .is_ok_and(|out| out.status.success()),
         (Format::Flatpak, Some(id), _) => flatpak::is_present(id),
         (Format::AppImage | Format::Tarball, _, Some(path)) => path.exists(),
         _ => false,
@@ -120,6 +131,10 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
         (Format::Deb, Some(package), _) => match platform.package_manager {
             Some(PackageManager::Apt) => run(&mut pkexec(["apt-get", "remove", "-y", package])),
             _ => Err(Error::NoPackageManager("deb")),
+        },
+        (Format::Pacman, Some(package), _) => match platform.package_manager {
+            Some(PackageManager::Pacman) => run(&mut pkexec(["pacman", "-R", "--noconfirm", package])),
+            _ => Err(Error::NoPackageManager("pacman")),
         },
         (Format::AppImage, _, Some(path)) => match fs::remove_file(path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),

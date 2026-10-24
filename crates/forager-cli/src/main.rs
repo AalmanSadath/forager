@@ -288,7 +288,7 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
             }
         }
     }
-    if matches!(plan.format, Format::Deb | Format::Rpm) {
+    if matches!(plan.format, Format::Deb | Format::Rpm | Format::Pacman) {
         println!("  note:   package scripts run as root");
     }
     if plan.format == Format::Flatpak {
