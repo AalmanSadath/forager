@@ -67,8 +67,8 @@ pub fn arch_aliases(arch: &str) -> &'static [&'static str] {
     match arch {
         "x86_64" => &["x86_64", "x86-64", "amd64", "x64"],
         "aarch64" => &["aarch64", "arm64"],
-        "arm" => &["armv7", "armv7l", "armhf"],
-        "x86" => &["i386", "i686", "x86_32"],
+        "arm" => &["armv7", "armv7l", "armhf", "armv6", "armv6l", "armel"],
+        "x86" => &["i386", "i686", "x86_32", "386"],
         "riscv64" => &["riscv64"],
         "powerpc64" => &["ppc64le"],
         "s390x" => &["s390x"],

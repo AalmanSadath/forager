@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format};
 use forager_core::platform::{self, Platform};
-use forager_core::source::Source;
+use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, State};
 use forager_core::{install, timer};
@@ -15,7 +15,7 @@ use forager_core::{install, timer};
 #[command(
     name = "forager",
     version,
-    about = "Install and update apps from their GitHub releases"
+    about = "Install and update apps from their GitHub, GitLab and Codeberg releases"
 )]
 struct Cli {
     /// Path to the tracked apps file.
@@ -31,6 +31,10 @@ enum Command {
     /// Track an app by its project URL.
     Add {
         url: String,
+        /// API the host speaks, for hosts other than github.com, codeberg.org
+        /// and well-known GitLab instances.
+        #[arg(long)]
+        forge: Option<Forge>,
         /// Id to refer to the app by. Defaults to the repository name.
         #[arg(long)]
         id: Option<String>,
@@ -155,13 +159,14 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Add {
             url,
+            forge,
             id,
             filter,
             format,
             prerelease,
             bins,
         } => {
-            let source = Source::from_url(&url)?;
+            let source = Source::from_url(&url, forge)?;
             let id = id.unwrap_or_else(|| source.default_id());
             if let Some(filter) = &filter {
                 regex::Regex::new(filter).context("invalid --filter")?;
@@ -395,12 +400,12 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         (None, _) => "not installed".into(),
     };
     println!("{id}: {from} -> {}", plan.release.tag);
-    println!(
-        "  asset:  {} ({:.1} MiB, {})",
-        plan.asset.name,
-        plan.asset.size as f64 / 1048576.0,
-        plan.format
-    );
+    // GitLab does not report asset sizes.
+    let size = match plan.asset.size {
+        0 => String::new(),
+        bytes => format!("{:.1} MiB, ", bytes as f64 / 1048576.0),
+    };
+    println!("  asset:  {} ({size}{})", plan.asset.name, plan.format);
     println!("  source: {}", app.source);
     match &plan.expected_sha256 {
         Some(_) => println!("  sha256: published, will verify"),

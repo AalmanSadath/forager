@@ -18,7 +18,9 @@ pub enum Error {
     Regex(#[from] regex::Error),
     #[error("unsupported source URL: {0}")]
     UnsupportedSource(String),
-    #[error("GitHub API rate limit reached{}; set GITHUB_TOKEN to raise the limit", reset_hint(*.reset))]
+    #[error("unknown forge at {0}; say which with --forge gitlab or --forge forgejo")]
+    UnknownForge(String),
+    #[error("API rate limit reached{}; set a token (GITHUB_TOKEN for GitHub) to raise the limit", reset_hint(*.reset))]
     RateLimited {
         /// Unix time at which the limit resets.
         reset: Option<u64>,

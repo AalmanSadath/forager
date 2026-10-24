@@ -15,15 +15,16 @@ pub fn expected_sha256(asset: &Asset, release: &Release) -> Result<Option<String
         return Ok(Some(hex.to_ascii_lowercase()));
     }
 
-    let own_file = format!("{}.sha256", asset.name).to_ascii_lowercase();
+    let lower_name = asset.name.to_ascii_lowercase();
+    let own_files = [format!("{lower_name}.sha256"), format!("{lower_name}.sha256sum")];
     for candidate in release.assets.iter().filter(|a| {
         let lower = a.name.to_ascii_lowercase();
-        lower == own_file || is_checksum_list(&lower)
+        own_files.contains(&lower) || is_checksum_list(&lower)
     }) {
         let text = http::check(http::get(&candidate.url).call()?)?
             .body_mut()
             .read_to_string()?;
-        let single_file = candidate.name.eq_ignore_ascii_case(&own_file);
+        let single_file = own_files.contains(&candidate.name.to_ascii_lowercase());
         if let Some(hex) = find_in_checksums(&text, &asset.name, single_file) {
             return Ok(Some(hex));
         }

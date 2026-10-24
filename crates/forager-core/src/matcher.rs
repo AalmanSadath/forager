@@ -207,4 +207,10 @@ mod tests {
         platform.flatpak = true;
         assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::Flatpak);
     }
+
+    #[test]
+    fn rejects_32_bit_builds_named_386() {
+        let release = release(&["glab_1.0_linux_386.tar.gz", "glab_1.0_linux_armv6.tar.gz"]);
+        assert!(select_asset(&app(), &release, &platform(None)).is_err());
+    }
 }
