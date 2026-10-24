@@ -302,7 +302,7 @@ fn current(app: &App, recorded: &Installed, release: &Release, platform: &Platfo
 }
 
 /// The asset an update in `format` would install.
-fn asset_in<'a>(app: &App, release: &'a Release, platform: &Platform, format: Format) -> Option<&'a Asset> {
+pub fn asset_in<'a>(app: &App, release: &'a Release, platform: &Platform, format: Format) -> Option<&'a Asset> {
     let mut in_format = app.clone();
     in_format.format = Some(format);
     select_asset(&in_format, release, platform).ok().map(|(asset, _)| asset)

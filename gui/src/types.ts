@@ -127,6 +127,8 @@ export interface CandidateView {
   size: number;
   format: Format | null;
   verdict: Verdict;
+  /** The app's install updating would replace with this asset. */
+  updates: Format | null;
 }
 
 export interface ReleaseView {

@@ -1,4 +1,5 @@
 /** How the app page explains each release asset. Pure, so it is tested. */
+import { FORMAT_NAMES } from './components/shared/icons';
 import type { CandidateView, Reason } from './types';
 
 const REASONS: Record<Reason, string> = {
@@ -11,10 +12,16 @@ const REASONS: Record<Reason, string> = {
   source_archive: 'Source code',
 };
 
-export function verdictText(c: CandidateView, pinned: boolean): string {
+/**
+ * What the matcher made of an asset. For an installed app, the assets that
+ * update its installs say so, and the pick for a fresh install is only
+ * another installable asset.
+ */
+export function verdictText(c: CandidateView, pinned: boolean, installed = false): string {
+  if (c.updates) return `Updates the ${FORMAT_NAMES[c.updates]} install`;
   switch (c.verdict.kind) {
     case 'chosen':
-      return 'Will be installed';
+      return installed ? 'Also installable' : 'Will be installed';
     case 'usable':
       return 'Also installable';
     case 'rejected':
@@ -22,9 +29,10 @@ export function verdictText(c: CandidateView, pinned: boolean): string {
   }
 }
 
-/** Chosen first, then other installable assets, then the rest in release order. */
+/** Assets updating an install, then the chosen one, then other installable assets, then the rest in release order. */
 export function sortCandidates(list: CandidateView[]): CandidateView[] {
-  const rank = (c: CandidateView) => (c.verdict.kind === 'chosen' ? 0 : c.verdict.kind === 'usable' ? 1 : 2);
+  const rank = (c: CandidateView) =>
+    c.updates ? -1 : c.verdict.kind === 'chosen' ? 0 : c.verdict.kind === 'usable' ? 1 : 2;
   return list
     .map((c, i) => ({ c, i }))
     .sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i)

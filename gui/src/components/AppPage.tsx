@@ -59,7 +59,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const uninstall = app.installs.map((i) => i.format).filter((f) => !keep.includes(f));
 
   const input = useMemo(() => toInput(draft), [draft]);
-  const { preview, error: previewError, loading, refresh } = usePreview(app.spec, input);
+  const { preview, error: previewError, loading, refresh } = usePreview(app.spec, input, app.id);
   const sigForm = signatureForm(signature, app);
   const dirty = !sameDraft(draft, draftOf(app)) || sigForm.kind !== 'keep';
   const model = cardModel(app, entry);
@@ -229,7 +229,14 @@ function AppPageBody({ app }: { app: AppView }) {
           <SignatureSection draft={signature} onChange={setSignature} app={app} forge={app.forge} />
         </div>
         <div className="page-column">
-          <AssetsSection preview={preview} pinned={!!draft.format} loading={loading} error={previewError} onRefresh={refresh} />
+          <AssetsSection
+            preview={preview}
+            pinned={!!draft.format}
+            installed={app.installs.length > 0}
+            loading={loading}
+            error={previewError}
+            onRefresh={refresh}
+          />
           <VersionsSection app={app} />
           <section className="page-card danger-zone">
             <div>

@@ -8,12 +8,15 @@ import Markdown from '../shared/Markdown';
 export default function AssetsSection({
   preview,
   pinned,
+  installed = false,
   loading,
   error,
   onRefresh,
 }: {
   preview: Preview | null;
   pinned: boolean;
+  /** The app is installed: mark what updates each install, not what a fresh install would pick. */
+  installed?: boolean;
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
@@ -56,11 +59,11 @@ export default function AssetsSection({
           ) : (
             <ul className="asset-list">
               {shown.map((c) => (
-                <li key={c.name} className={`asset-row asset-${c.verdict.kind}`}>
+                <li key={c.name} className={`asset-row asset-${c.updates ? 'chosen' : installed && c.verdict.kind === 'chosen' ? 'usable' : c.verdict.kind}`}>
                   <span className="asset-name mono" title={c.name}>{c.name}</span>
                   {c.format && <span className="tag">{FORMAT_NAMES[c.format]}</span>}
                   <span className="asset-size">{formatSize(c.size)}</span>
-                  <span className="asset-verdict">{verdictText(c, pinned)}</span>
+                  <span className="asset-verdict">{verdictText(c, pinned, installed)}</span>
                 </li>
               ))}
             </ul>

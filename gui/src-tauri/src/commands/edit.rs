@@ -137,6 +137,8 @@ pub struct CandidateView {
     pub size: u64,
     pub format: Option<Format>,
     pub verdict: Verdict,
+    /// The app's install that updating would replace with this asset.
+    pub updates: Option<Format>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,13 +152,15 @@ pub struct Preview {
 }
 
 /// What the latest release looks like under `settings`. Fetches the release
-/// only when `refresh` is set or it is not cached yet.
+/// only when `refresh` is set or it is not cached yet. With the `id` of a
+/// tracked app, assets that would update one of its installs are marked.
 #[tauri::command]
 pub async fn preview(
     cache: State<'_, ReleaseCache>,
     spec: Source,
     settings: SettingsInput,
     refresh: bool,
+    id: Option<String>,
 ) -> CmdResult<Preview> {
     // A new pattern changes which links are releases, so it is part of the source.
     let mut app = App::new(spec, "preview".into());
@@ -181,6 +185,16 @@ pub async fn preview(
     }
     let platform = Platform::detect();
     let release = update::latest(&app, releases, &platform).map_err(|e| e.to_string())?;
+    let installs = match id {
+        Some(id) => blocking(move || Ok(load_store()?.get(&id).map(|a| a.install_list()).unwrap_or_default())).await?,
+        None => Vec::new(),
+    };
+    let updates: Vec<(String, Format)> = installs
+        .iter()
+        .filter_map(|i| {
+            update::asset_in(&app, &release, &platform, i.format).map(|asset| (asset.name.clone(), i.format))
+        })
+        .collect();
     let candidates = matcher::candidates(&app, &release, &platform)
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -189,6 +203,7 @@ pub async fn preview(
             size: c.asset.size,
             format: c.format,
             verdict: c.verdict,
+            updates: updates.iter().find(|(name, _)| *name == c.asset.name).map(|(_, f)| *f),
         })
         .collect();
     Ok(Preview {

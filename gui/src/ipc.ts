@@ -36,8 +36,9 @@ export const checkApps = (ids?: string[]) => invoke<void>('check_apps', { ids: i
 // ── edit ────────────────────────────────────────────────────────
 export const parseSource = (url: string, forge: string | null, pattern: string | null) =>
   invoke<ParsedSource>('parse_source', { url, forge, pattern });
-export const preview = (spec: SourceSpec, settings: SettingsInput, refresh: boolean) =>
-  invoke<Preview>('preview', { spec, settings, refresh });
+/** With the `id` of a tracked app, assets that would update its installs are marked. */
+export const preview = (spec: SourceSpec, settings: SettingsInput, refresh: boolean, id: string | null = null) =>
+  invoke<Preview>('preview', { spec, settings, refresh, id });
 export const addApp = (spec: SourceSpec, id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('add_app', { spec, id, settings, signature });
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>

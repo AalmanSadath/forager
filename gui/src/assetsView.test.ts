@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { filterCounts, formatSize, sortCandidates, verdictText } from './assetsView';
 import type { CandidateView, Verdict } from './types';
 
-const c = (name: string, verdict: Verdict): CandidateView => ({ name, size: 0, format: null, verdict });
+const c = (name: string, verdict: Verdict): CandidateView => ({ name, size: 0, format: null, verdict, updates: null });
 
 describe('assets', () => {
   const list = [
@@ -31,6 +31,15 @@ describe('assets', () => {
     expect(verdictText(list[1], false)).toBe('Format not used here');
     expect(verdictText(list[1], true)).toBe('Not the chosen format');
     expect(verdictText(list[4], false)).toBe('Will be installed');
+  });
+
+  it('marks what updates each install of an installed app', () => {
+    const flatpak = { ...c('tool.flatpak', { kind: 'usable' }), updates: 'flatpak' as const };
+    const withInstall = [...list, flatpak];
+    expect(sortCandidates(withInstall)[0].name).toBe('tool.flatpak');
+    expect(verdictText(flatpak, false, true)).toBe('Updates the Flatpak install');
+    // The pick for a fresh install is just another option once something is installed.
+    expect(verdictText(list[4], false, true)).toBe('Also installable');
   });
 
   it('formats sizes, and hides unknown ones', () => {

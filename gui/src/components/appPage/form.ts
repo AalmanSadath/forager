@@ -82,7 +82,7 @@ export function signatureForm(d: SignatureDraft, app: AppView | null): Signature
  * The latest release as `settings` would see it, refreshed as the user types
  * (debounced; the release itself is cached on the Rust side).
  */
-export function usePreview(spec: SourceSpec | null, settings: SettingsInput) {
+export function usePreview(spec: SourceSpec | null, settings: SettingsInput, id: string | null = null) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -95,7 +95,7 @@ export function usePreview(spec: SourceSpec | null, settings: SettingsInput) {
       const ticket = ++latest.current;
       setLoading(true);
       ipc
-        .preview(spec, JSON.parse(key) as SettingsInput, refresh)
+        .preview(spec, JSON.parse(key) as SettingsInput, refresh, id)
         .then((p) => {
           if (ticket !== latest.current) return;
           setPreview(p);
@@ -109,7 +109,7 @@ export function usePreview(spec: SourceSpec | null, settings: SettingsInput) {
           if (ticket === latest.current) setLoading(false);
         });
     },
-    [spec, key],
+    [spec, key, id],
   );
 
   useEffect(() => {
