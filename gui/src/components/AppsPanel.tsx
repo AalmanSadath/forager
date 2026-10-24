@@ -63,7 +63,7 @@ export default function AppsPanel() {
       {apps.length === 0 ? (
         <div className="apps-empty">
           <BrandMark size={56} />
-          <p>No apps tracked yet. Add one by its GitHub, GitLab or Codeberg address.</p>
+          <p>No apps tracked yet. Add one by its GitHub, GitLab or Codeberg address, or a page of download links.</p>
           <button className="btn-primary" onClick={() => setPage({ kind: 'add' })}>+ Add App</button>
         </div>
       ) : (
