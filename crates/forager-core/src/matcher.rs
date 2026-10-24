@@ -7,8 +7,10 @@ use crate::platform::{KNOWN_ARCHES, Platform, arch_aliases};
 /// Picks the release asset that best fits the app's settings and the platform.
 ///
 /// Preference order: format (as ranked by the platform), then an asset naming
-/// this architecture over one naming none. Assets naming another architecture,
-/// debug packages and source packages are never picked.
+/// this architecture over one naming none. Assets naming another architecture
+/// or operating system, debug packages and source packages are never picked.
+/// A tarball must name Linux or this architecture, since one naming neither is
+/// usually a source archive.
 pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<(&'a Asset, Format)> {
     let filter = app.asset_filter.as_deref().map(Regex::new).transpose()?;
     let formats = match app.format {
@@ -20,11 +22,14 @@ pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) ->
         .assets
         .iter()
         .filter(|a| filter.as_ref().is_none_or(|re| re.is_match(&a.name)))
-        .filter(|a| !is_debug(&a.name))
+        .filter(|a| !is_debug(&a.name) && !names_other_os(&a.name))
         .filter_map(|a| {
             let format = Format::from_file_name(&a.name)?;
             let rank = formats.iter().position(|f| *f == format)?;
             let arch = arch_match(&a.name, platform.arch)?;
+            if format == Format::Tarball && !arch && !a.name.to_ascii_lowercase().contains("linux") {
+                return None;
+            }
             Some((a, format, (rank, !arch)))
         })
         .min_by_key(|(_, _, score)| *score)
@@ -55,6 +60,16 @@ fn contains_word(haystack: &str, word: &str) -> bool {
         let after = haystack[i + word.len()..].chars().next();
         !before.is_some_and(|c| c.is_ascii_alphanumeric()) && !after.is_some_and(|c| c.is_ascii_alphanumeric())
     })
+}
+
+fn names_other_os(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        "darwin", "macos", "osx", "mac", "apple", "windows", "win", "win32", "win64", "freebsd", "openbsd",
+        "netbsd", "android", "ios", "illumos", "solaris",
+    ]
+    .iter()
+    .any(|os| contains_word(&lower, os))
 }
 
 fn is_debug(name: &str) -> bool {
@@ -98,6 +113,7 @@ mod tests {
             asset_filter: None,
             format: None,
             prerelease: false,
+            bins: Vec::new(),
             installed: None,
         }
     }
@@ -149,5 +165,36 @@ mod tests {
         let release = release(&["tool-arm64.AppImage", "tool.AppImage"]);
         let (asset, _) = select_asset(&app(), &release, &platform(None)).unwrap();
         assert_eq!(asset.name, "tool.AppImage");
+    }
+
+    #[test]
+    fn picks_linux_tarball_for_this_arch() {
+        let release = release(&[
+            "tool-1.0.0.tar.gz",
+            "tool-1.0.0-x86_64-apple-darwin.tar.gz",
+            "tool-1.0.0-x86_64-pc-windows-msvc.tar.gz",
+            "tool-1.0.0-aarch64-unknown-linux-gnu.tar.gz",
+            "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz",
+            "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz.sha256",
+        ]);
+        let (asset, format) = select_asset(&app(), &release, &platform(Some(PackageManager::Dnf))).unwrap();
+        assert_eq!(asset.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
+        assert_eq!(format, Format::Tarball);
+    }
+
+    #[test]
+    fn rejects_tarball_naming_neither_linux_nor_arch() {
+        let release = release(&["tool-1.0.0.tar.gz", "tool-1.0.0-src.tar.xz"]);
+        assert!(select_asset(&app(), &release, &platform(None)).is_err());
+
+        let release = self::release(&["tool-linux.tar.xz"]);
+        assert!(select_asset(&app(), &release, &platform(None)).is_ok());
+    }
+
+    #[test]
+    fn prefers_appimage_over_tarball() {
+        let release = release(&["tool-linux-x86_64.tar.gz", "Tool-x86_64.AppImage"]);
+        let (asset, _) = select_asset(&app(), &release, &platform(None)).unwrap();
+        assert_eq!(asset.name, "Tool-x86_64.AppImage");
     }
 }

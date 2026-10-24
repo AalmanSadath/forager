@@ -1,7 +1,11 @@
 //! Hands downloaded packages to the system package manager.
 //!
 //! deb and rpm installs run through `pkexec`, so polkit asks the user for
-//! authorisation. AppImages need no root and are placed in `~/Applications`.
+//! authorisation. AppImages and tarballs need no root: AppImages are placed in
+//! `~/Applications`, tarballs are unpacked into `~/.local/opt` with their
+//! executables linked into `~/.local/bin`.
+
+mod tarball;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -9,11 +13,12 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::error::{Error, Result};
-use crate::model::{Format, Installed};
+use crate::model::{App, Format, Installed};
 use crate::platform::{self, PackageManager, Platform};
 
-/// Installs `file` and returns what is needed to update or remove it later.
-pub fn install(file: &Path, format: Format, app_id: &str, tag: &str, platform: &Platform) -> Result<Installed> {
+/// Installs `file` for `app` and returns what is needed to update or remove
+/// it later. `app.installed` is taken to be the version being replaced.
+pub fn install(file: &Path, format: Format, app: &App, tag: &str, platform: &Platform) -> Result<Installed> {
     let file = fs::canonicalize(file)?;
     let asset = file
         .file_name()
@@ -25,6 +30,7 @@ pub fn install(file: &Path, format: Format, app_id: &str, tag: &str, platform: &
         asset,
         package: None,
         path: None,
+        links: Vec::new(),
     };
 
     match format {
@@ -50,12 +56,23 @@ pub fn install(file: &Path, format: Format, app_id: &str, tag: &str, platform: &
             }
         }
         Format::AppImage => {
-            let dir = platform::appimage_dir().ok_or_else(|| Error::CommandFailed("no home directory".into()))?;
+            let dir = platform::appimage_dir().ok_or(Error::NoHome)?;
             fs::create_dir_all(&dir)?;
-            let target = dir.join(format!("{app_id}.AppImage"));
+            let target = dir.join(format!("{}.AppImage", app.id));
             fs::copy(&file, &target)?;
             fs::set_permissions(&target, fs::Permissions::from_mode(0o755))?;
             installed.path = Some(target);
+        }
+        Format::Tarball => {
+            let opt_dir = platform::opt_dir().ok_or(Error::NoHome)?;
+            let bin_dir = platform::bin_dir().ok_or(Error::NoHome)?;
+            let old_links = match &app.installed {
+                Some(previous) if previous.format == Format::Tarball => previous.links.as_slice(),
+                _ => &[],
+            };
+            let placed = tarball::install(&file, &app.id, &app.bins, &opt_dir, &bin_dir, old_links)?;
+            installed.path = Some(placed.dir);
+            installed.links = placed.links;
         }
     }
     Ok(installed)
@@ -76,6 +93,18 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
         },
+        (Format::Tarball, _, Some(dir)) => {
+            // The path comes from the config file; never delete outside ~/.local/opt.
+            let opt_dir = platform::opt_dir().ok_or(Error::NoHome)?;
+            if dir.parent() != Some(opt_dir.as_path()) {
+                return Err(Error::CommandFailed(format!(
+                    "refusing to remove {}: not in {}",
+                    dir.display(),
+                    opt_dir.display()
+                )));
+            }
+            tarball::uninstall(dir, &installed.links)
+        }
         _ => Err(Error::CommandFailed("install record is missing package name or path".into())),
     }
 }

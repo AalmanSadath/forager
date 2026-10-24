@@ -37,9 +37,9 @@ impl Platform {
     /// Formats this system can install, most preferred first.
     pub fn formats(&self) -> Vec<Format> {
         match self.package_manager {
-            Some(PackageManager::Dnf | PackageManager::Zypper) => vec![Format::Rpm, Format::AppImage],
-            Some(PackageManager::Apt) => vec![Format::Deb, Format::AppImage],
-            None => vec![Format::AppImage],
+            Some(PackageManager::Dnf | PackageManager::Zypper) => vec![Format::Rpm, Format::AppImage, Format::Tarball],
+            Some(PackageManager::Apt) => vec![Format::Deb, Format::AppImage, Format::Tarball],
+            None => vec![Format::AppImage, Format::Tarball],
         }
     }
 
@@ -74,4 +74,14 @@ pub fn has_command(name: &str) -> bool {
 /// `~/Applications`, where AppImages are placed.
 pub fn appimage_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join("Applications"))
+}
+
+/// `~/.local/opt`, where tarballs are unpacked.
+pub fn opt_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".local").join("opt"))
+}
+
+/// `~/.local/bin`, where executables from tarballs are linked.
+pub fn bin_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".local").join("bin"))
 }

@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format};
-use forager_core::platform::Platform;
+use forager_core::platform::{self, Platform};
 use forager_core::source::Source;
 use forager_core::store::{self, Store};
 use forager_core::{install, verify, version};
@@ -38,6 +38,10 @@ enum Command {
         /// Consider prereleases.
         #[arg(long)]
         prerelease: bool,
+        /// Executable to link from a tarball, relative to its top directory.
+        /// Repeat for several. Found automatically if not given.
+        #[arg(long = "bin", value_name = "PATH")]
+        bins: Vec<String>,
     },
     /// List tracked apps.
     List,
@@ -74,6 +78,7 @@ fn main() -> Result<()> {
             filter,
             format,
             prerelease,
+            bins,
         } => {
             let source = Source::from_url(&url)?;
             let id = id.unwrap_or_else(|| source.default_id());
@@ -86,6 +91,7 @@ fn main() -> Result<()> {
                 asset_filter: filter,
                 format,
                 prerelease,
+                bins,
                 installed: None,
             })?;
             store.save()?;
@@ -210,11 +216,21 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
         .into());
     }
 
-    let installed = install::install(&file, format, id, &release.tag, platform)?;
+    let installed = install::install(&file, format, store.get(id)?, &release.tag, platform)?;
     std::fs::remove_file(&file).ok();
+    let links = installed.links.clone();
     store.get_mut(id)?.installed = Some(installed);
     store.save()?;
     println!("{id}: installed {}", release.tag);
+    for link in &links {
+        println!("  linked: {}", link.display());
+    }
+    if !links.is_empty()
+        && let Some(bin_dir) = platform::bin_dir()
+        && !std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|p| p == bin_dir))
+    {
+        println!("  note:   {} is not on PATH", bin_dir.display());
+    }
     Ok(())
 }
 

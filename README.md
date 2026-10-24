@@ -9,7 +9,8 @@ but for the desktop.
 Early prototype. CLI only.
 
 - Sources: GitHub releases
-- Formats: `.rpm` (dnf, zypper), `.deb` (apt), AppImage (`~/Applications`)
+- Formats: `.rpm` (dnf, zypper), `.deb` (apt), AppImage (`~/Applications`),
+  tarballs (`~/.local/opt/<id>`, executables linked into `~/.local/bin`)
 - Verification: SHA-256 from GitHub's asset digest or a published
   `SHA256SUMS` / `checksums.txt` / `<asset>.sha256` file
 
@@ -25,7 +26,9 @@ forager remove drawio-desktop
 ```
 
 `add` options: `--id`, `--filter <regex>` to restrict asset names,
-`--format deb|rpm|appimage` to override format selection, `--prerelease`.
+`--format deb|rpm|appimage|tarball` to override format selection,
+`--prerelease`, `--bin <path>` (repeatable) to name the executables to link
+from a tarball, relative to its top directory.
 
 Tracked apps live in `~/.config/forager/apps.toml` (override with `--config`
 or `FORAGER_CONFIG`). Set `GITHUB_TOKEN` to raise the GitHub API limit from
@@ -34,10 +37,17 @@ or `FORAGER_CONFIG`). Set `GITHUB_TOKEN` to raise the GitHub API limit from
 ## How an asset is chosen
 
 1. Formats the system can install, in order: native package format first
-   (rpm on dnf/zypper systems, deb on apt systems), then AppImage.
+   (rpm on dnf/zypper systems, deb on apt systems), then AppImage, then
+   tarball.
 2. Assets naming this CPU architecture beat assets naming none; assets
-   naming another architecture are skipped.
-3. Debug and source packages are skipped.
+   naming another architecture or operating system are skipped.
+3. Debug and source packages are skipped, as are tarballs naming neither
+   Linux nor this architecture (usually source archives).
+
+A tarball's single top-level directory is unwrapped. Without `--bin`,
+Forager links the one executable in that directory or its `bin/`; if there
+are several, the one named after the app id. Files in `~/.local/bin` that
+Forager did not create are never replaced.
 
 ## Security
 
@@ -56,7 +66,6 @@ corrupted downloads, not a compromised release.
 
 ## Roadmap
 
-- Tarball backend (`~/.local/opt` + symlink into `~/.local/bin`)
 - Flatpak bundles, Arch packages (`pacman -U`)
 - GitLab, Codeberg/Forgejo and generic HTML sources
 - PackageKit over D-Bus instead of `pkexec` + native tools

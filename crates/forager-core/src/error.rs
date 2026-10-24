@@ -31,6 +31,12 @@ pub enum Error {
     },
     #[error("no package manager found for {0} packages")]
     NoPackageManager(&'static str),
+    #[error("no home directory")]
+    NoHome,
+    #[error("archive: {0}")]
+    Archive(String),
+    #[error("{} already exists and was not created by forager", .0.display())]
+    LinkConflict(PathBuf),
     #[error("command failed: {0}")]
     CommandFailed(String),
     #[error("app not tracked: {0}")]

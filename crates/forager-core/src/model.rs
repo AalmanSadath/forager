@@ -12,10 +12,12 @@ pub enum Format {
     Deb,
     Rpm,
     AppImage,
+    /// A tar archive, optionally compressed (gzip, bzip2, xz or zstd).
+    Tarball,
 }
 
 impl Format {
-    pub const ALL: [Format; 3] = [Format::Deb, Format::Rpm, Format::AppImage];
+    pub const ALL: [Format; 4] = [Format::Deb, Format::Rpm, Format::AppImage, Format::Tarball];
 
     pub fn from_file_name(name: &str) -> Option<Format> {
         let lower = name.to_ascii_lowercase();
@@ -25,11 +27,17 @@ impl Format {
             Some(Format::Rpm)
         } else if lower.ends_with(".appimage") {
             Some(Format::AppImage)
+        } else if TARBALL_SUFFIXES.iter().any(|suffix| lower.ends_with(suffix)) {
+            Some(Format::Tarball)
         } else {
             None
         }
     }
 }
+
+const TARBALL_SUFFIXES: [&str; 9] = [
+    ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar.zst", ".tzst",
+];
 
 impl fmt::Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,6 +45,7 @@ impl fmt::Display for Format {
             Format::Deb => "deb",
             Format::Rpm => "rpm",
             Format::AppImage => "appimage",
+            Format::Tarball => "tarball",
         })
     }
 }
@@ -48,7 +57,7 @@ impl std::str::FromStr for Format {
         Format::ALL
             .into_iter()
             .find(|f| f.to_string().eq_ignore_ascii_case(s))
-            .ok_or_else(|| format!("unknown format '{s}' (expected deb, rpm or appimage)"))
+            .ok_or_else(|| format!("unknown format '{s}' (expected deb, rpm, appimage or tarball)"))
     }
 }
 
@@ -83,6 +92,10 @@ pub struct App {
     pub format: Option<Format>,
     #[serde(default)]
     pub prerelease: bool,
+    /// Executables to link from a tarball, relative to its top directory.
+    /// Found automatically when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bins: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed: Option<Installed>,
 }
@@ -95,7 +108,10 @@ pub struct Installed {
     /// Package name as known to the package manager (deb/rpm).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
-    /// Install location for formats Forager places itself (AppImage).
+    /// Install location for formats Forager places itself (AppImage, tarball).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
+    /// Symlinks Forager created for a tarball's executables.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<PathBuf>,
 }
