@@ -6,12 +6,12 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::select_asset;
-use forager_core::model::{App, Format, Signature};
+use forager_core::model::{App, Format, Installed, Signature};
 use forager_core::platform::{self, Platform};
 use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
-use forager_core::update::{self, State};
+use forager_core::update::{self, InstallState, Plan, State};
 use forager_core::{host, install, timer};
 
 #[derive(Parser)]
@@ -131,7 +131,8 @@ enum Command {
         #[command(subcommand)]
         action: TimerAction,
     },
-    /// Stop tracking an app and uninstall it.
+    /// Stop tracking an app and uninstall it. With several installs (e.g. an
+    /// rpm and a Flatpak) it asks which ones to uninstall.
     Remove {
         id: String,
         /// Leave the installed package in place.
@@ -321,9 +322,10 @@ fn main() -> Result<()> {
                 println!("No apps tracked. Add one with `forager add <url>`.");
             }
             for app in &store.apps {
-                let state = match &app.installed {
-                    Some(i) => format!("{} ({})", i.tag, i.format),
-                    None => "not installed".into(),
+                let installs: Vec<String> = app.installs().map(|i| format!("{} ({})", i.tag, i.format)).collect();
+                let state = match installs.is_empty() {
+                    true => "not installed".into(),
+                    false => installs.join(", "),
                 };
                 println!("{:<20} {:<20} {}", app.id, state, app.source);
             }
@@ -352,21 +354,31 @@ fn main() -> Result<()> {
         Command::Timer { action } => timer(action, explicit_config)?,
         Command::Remove { id, keep_installed } => {
             let app = store.get(&id)?;
-            if let Some(installed) = &app.installed
-                && !keep_installed
-                && install::is_present(installed)
-            {
-                install::uninstall(installed, &Platform::detect())?;
+            let present: Vec<Installed> = app.installs().filter(|i| install::is_present(i)).cloned().collect();
+            let mut uninstall = Vec::new();
+            if !keep_installed {
+                let ask = present.len() > 1 && io::stdin().is_terminal();
+                for installed in present {
+                    if !ask || confirm(&format!("Uninstall the {} {}?", installed.format, installed.tag))? {
+                        uninstall.push(installed);
+                    }
+                }
+            }
+            let platform = Platform::detect();
+            for installed in &uninstall {
+                install::uninstall(installed, &platform)?;
             }
             let app = store.remove(&id)?;
             store.save()?;
-            let mut event = Event::new(&id, Kind::Removed, via);
-            event.from = app
-                .installed
-                .as_ref()
-                .filter(|_| !keep_installed)
-                .map(|i| i.tag.clone());
-            history::record(&event).ok();
+            if uninstall.is_empty() {
+                history::record(&Event::new(&id, Kind::Removed, via)).ok();
+            }
+            for installed in &uninstall {
+                let mut event = Event::new(&id, Kind::Removed, via);
+                event.from = Some(installed.tag.clone());
+                event.format = Some(installed.format);
+                history::record(&event).ok();
+            }
             if let Some(Signature::Gpg { keyring }) = &app.signature {
                 std::fs::remove_file(keyring).ok();
             }
@@ -393,8 +405,8 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
             }
         };
         // Installed or changed outside Forager: keep what the system reports.
-        if let Some(installed) = status.found.clone() {
-            store.apps[index].installed = Some(installed);
+        if let Some(installs) = status.found.clone() {
+            store.apps[index].set_installs(installs);
             found = true;
         }
         let app = &store.apps[index];
@@ -406,25 +418,24 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
         }
 
         let latest = &status.latest.tag;
-        let installed = app.installed.as_ref();
-        let tag = installed.map_or("", |i| i.tag.as_str());
-        let text = match status.state {
-            State::NotInstalled => format!("{latest} available, not installed"),
-            State::Missing => format!("missing (was {tag}), {latest} available"),
-            State::WrongFormat => format!(
-                "{tag} ({}) -> {latest} ({})",
-                installed.map_or(String::new(), |i| i.format.to_string()),
+        let text = match (status.state, status.installs.as_slice()) {
+            (State::NotInstalled, _) => format!("{latest} available, not installed"),
+            (State::WrongFormat, installs) => format!(
+                "{} ({}) -> {latest} ({})",
+                installs.first().map_or("", |i| i.installed.tag.as_str()),
+                installs
+                    .iter()
+                    .map(|i| i.installed.format.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 app.format.map_or(String::new(), |f| f.to_string())
             ),
-            State::Outdated => format!("{tag} -> {latest}"),
-            State::UpToDate => format!("{tag} (up to date)"),
-        };
-        let text = match installed.and_then(|i| i.package.as_deref().filter(|_| i.format.needs_root())) {
-            Some(package) => match install::repo_version(package, &platform) {
-                Some(version) => format!("{text} [distro: {version}]"),
-                None => text,
-            },
-            None => text,
+            (_, [one]) => describe_install(one, latest, &platform, false),
+            (_, installs) => installs
+                .iter()
+                .map(|i| describe_install(i, latest, &platform, true))
+                .collect::<Vec<_>>()
+                .join("; "),
         };
         let asset = match select_asset(app, &status.latest, &platform) {
             Ok((asset, _)) => asset.name.clone(),
@@ -459,6 +470,30 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
             .context("cannot show notification")?;
     }
     Ok(())
+}
+
+/// One install in `check`: `v1 (up to date)`, `v1 -> v2`, `missing (was v1)`,
+/// with the format when the app has several, and the distro's version of a
+/// system package.
+fn describe_install(install: &InstallState, latest: &str, platform: &Platform, with_format: bool) -> String {
+    let InstallState { installed, state } = install;
+    let tag = &installed.tag;
+    let format = installed.format;
+    let text = match (state, with_format) {
+        (State::Missing, false) => format!("missing (was {tag}), {latest} available"),
+        (State::Missing, true) => format!("missing {format} (was {tag})"),
+        (State::Outdated, false) => format!("{tag} -> {latest}"),
+        (State::Outdated, true) => format!("{tag} ({format}) -> {latest}"),
+        (_, false) => format!("{tag} (up to date)"),
+        (_, true) => format!("{tag} ({format}, up to date)"),
+    };
+    match installed.package.as_deref().filter(|_| format.needs_root()) {
+        Some(package) => match install::repo_version(package, platform) {
+            Some(version) => format!("{text} [distro: {version}]"),
+            None => text,
+        },
+        None => text,
+    }
 }
 
 /// Records each newly found update once, not again on every daily check.
@@ -564,46 +599,92 @@ fn update(store: &mut Store, ids: &[String], options: &UpdateOptions) -> Result<
 
     let mut failed = 0;
     for id in &ids {
-        if let Err(e) = update_one(store, id, &platform, options) {
-            eprintln!("{id}: {e:#}");
-            let mut event = Event::new(id, Kind::Failed, options.via);
-            event.message = Some(format!("{e:#}"));
-            history::record(&event).ok();
-            failed += 1;
+        match update_one(store, id, &platform, options) {
+            Ok(failures) => failed += failures,
+            Err(e) => {
+                eprintln!("{id}: {e:#}");
+                let mut event = Event::new(id, Kind::Failed, options.via);
+                event.message = Some(format!("{e:#}"));
+                history::record(&event).ok();
+                failed += 1;
+            }
         }
     }
     if failed > 0 {
-        bail!("{failed} of {} app(s) failed to update", ids.len());
+        bail!("{failed} update(s) failed");
     }
     Ok(())
 }
 
-fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &UpdateOptions) -> Result<()> {
+/// Updates every install of `id` that needs it, each in its own format.
+/// Returns how many of its updates failed; those are reported and recorded.
+fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &UpdateOptions) -> Result<usize> {
+    let app = store.get_mut(id)?;
+    let recorded = app.install_list();
+    let plans = update::plans(app, platform)?;
+    // Installed or changed outside Forager: keep what the system reports.
+    if app.install_list() != recorded {
+        store.save()?;
+    }
+    if plans.is_empty() {
+        let app = store.get(id)?;
+        match app.also_installed.is_empty() {
+            true => println!(
+                "{id}: {} is up to date",
+                app.installed.as_ref().map_or("", |i| i.tag.as_str())
+            ),
+            false => {
+                let installs: Vec<String> = app.installs().map(|i| format!("{} ({})", i.tag, i.format)).collect();
+                println!("{id}: {} are up to date", installs.join(", "));
+            }
+        }
+        return Ok(0);
+    }
+    let several = plans.len() > 1;
+    let mut failed = 0;
+    for plan in plans {
+        let (name, result) = match plan {
+            Ok(plan) => {
+                let name = match several {
+                    true => format!("{id} ({})", plan.format),
+                    false => id.to_string(),
+                };
+                let result = apply(store, id, &name, &plan, platform, options);
+                (name, result.map_err(|e| (e, Some(plan.format))))
+            }
+            Err(e) => (id.to_string(), Err((e.into(), None))),
+        };
+        if let Err((e, format)) = result {
+            eprintln!("{name}: {e:#}");
+            let mut event = Event::new(id, Kind::Failed, options.via);
+            event.message = Some(format!("{e:#}"));
+            event.format = format;
+            history::record(&event).ok();
+            failed += 1;
+        }
+    }
+    Ok(failed)
+}
+
+/// Downloads, verifies and installs one plan of `id`, printed as `name`.
+fn apply(
+    store: &mut Store,
+    id: &str,
+    name: &str,
+    plan: &Plan,
+    platform: &Platform,
+    options: &UpdateOptions,
+) -> Result<()> {
     let UpdateOptions {
         yes,
         allow_unverified,
         unprivileged_only,
         via,
     } = *options;
-    let app = store.get_mut(id)?;
-    let recorded = app.installed.clone();
-    let planned = update::plan(app, platform)?;
-    // Installed or changed outside Forager: keep what the system reports.
-    if app.installed != recorded {
-        store.save()?;
-    }
     let app = store.get(id)?;
-    let Some(plan) = planned else {
-        let tag = app.installed.as_ref().map_or("", |i| i.tag.as_str());
-        println!("{id}: {tag} is up to date");
-        return Ok(());
-    };
-    let replaces_root_install = app
-        .installed
-        .as_ref()
-        .is_some_and(|i| i.format != plan.format && i.format.needs_root());
+    let replaces_root_install = plan.replaces.iter().any(|i| i.format.needs_root());
     if unprivileged_only && (plan.format.needs_root() || replaces_root_install) {
-        println!("{id}: {} needs root, skipped", plan.release.tag);
+        println!("{name}: {} needs root, skipped", plan.release.tag);
         return Ok(());
     }
 
@@ -612,21 +693,21 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         (Some(tag), false) => tag.clone(),
         (None, _) => "not installed".into(),
     };
-    println!("{id}: {from} -> {}", plan.release.tag);
-    for line in update::summary(app, &plan) {
+    println!("{name}: {from} -> {}", plan.release.tag);
+    for line in update::summary(app, plan) {
         println!("  {:<8}{}", format!("{}:", line.label), line.value);
     }
     if plan.unverified() && yes && !allow_unverified {
         bail!("refusing unverified asset without --allow-unverified");
     }
     if !yes && !confirm("Install?")? {
-        println!("{id}: skipped");
+        println!("{name}: skipped");
         return Ok(());
     }
-    let first_install = app.installed.as_ref().is_none_or(|i| i.format != plan.format);
+    let first_install = app.install_of(plan.format).is_none();
 
     let mut line = ProgressLine::new();
-    let download = update::download(&plan, platform, &mut |p| line.show(p));
+    let download = update::download(plan, platform, &mut |p| line.show(p));
     line.finish();
     let download = download?;
     if let (Some(package), Some(version)) = (&download.package, &download.repo_version) {
@@ -634,11 +715,11 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         println!("          and this build may replace each other");
         // Asked once; later updates of the same package only show the note.
         if first_install && !yes && !confirm("Install anyway?")? {
-            println!("{id}: skipped");
+            println!("{name}: skipped");
             return Ok(());
         }
     }
-    let installed = update::install(store, id, &plan, &download, platform, &mut |p| line.show(p));
+    let installed = update::install(store, id, plan, &download, platform, &mut |p| line.show(p));
     line.finish();
     let installed = installed?;
     let kind = if plan.from.is_some() {
@@ -652,7 +733,7 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
     event.format = Some(plan.format);
     history::record(&event).ok();
     let links = installed.links;
-    println!("{id}: installed {}", plan.release.tag);
+    println!("{name}: installed {}", plan.release.tag);
     for link in &links {
         println!("  linked: {}", link.display());
     }

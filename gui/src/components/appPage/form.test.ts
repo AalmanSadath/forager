@@ -16,6 +16,7 @@ const app: AppView = {
   minisign_key: 'RWQkey',
   gpg_keyring: null,
   installed: null,
+  installs: [],
 };
 
 describe('settings form', () => {

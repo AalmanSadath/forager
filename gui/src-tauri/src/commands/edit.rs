@@ -261,27 +261,35 @@ pub async fn save_app(id: String, settings: SettingsInput, signature: SignatureF
     .await
 }
 
-/// Stops tracking `id`, uninstalling it first when `uninstall` is set.
+/// Stops tracking `id`, first uninstalling its installs in the `uninstall` formats.
 #[tauri::command]
-pub async fn remove_app(id: String, uninstall: bool) -> CmdResult<()> {
+pub async fn remove_app(id: String, uninstall: Vec<Format>) -> CmdResult<()> {
     blocking(move || {
         let mut store = load_store()?;
         let app = store.get(&id).map_err(|e| e.to_string())?;
-        let removed_tag = app.installed.as_ref().map(|i| i.tag.clone());
-        if let Some(installed) = &app.installed
-            && uninstall
-            && install::is_present(installed)
-        {
-            install::uninstall(installed, &Platform::detect()).map_err(|e| e.to_string())?;
+        let chosen: Vec<_> = app
+            .installs()
+            .filter(|i| uninstall.contains(&i.format) && install::is_present(i))
+            .cloned()
+            .collect();
+        let platform = Platform::detect();
+        for installed in &chosen {
+            install::uninstall(installed, &platform).map_err(|e| e.to_string())?;
         }
         let app = store.remove(&id).map_err(|e| e.to_string())?;
         store.save().map_err(|e| e.to_string())?;
         if let Some(Signature::Gpg { keyring }) = &app.signature {
             std::fs::remove_file(keyring).ok();
         }
-        let mut event = Event::new(&id, Kind::Removed, Via::Gui);
-        event.from = removed_tag.filter(|_| uninstall);
-        history::record(&event).ok();
+        if chosen.is_empty() {
+            history::record(&Event::new(&id, Kind::Removed, Via::Gui)).ok();
+        }
+        for installed in &chosen {
+            let mut event = Event::new(&id, Kind::Removed, Via::Gui);
+            event.from = Some(installed.tag.clone());
+            event.format = Some(installed.format);
+            history::record(&event).ok();
+        }
         Ok(())
     })
     .await

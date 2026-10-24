@@ -46,7 +46,9 @@ export default function AppCard({
           <span className={`dot dot-${model.dot}`} />
           <span className="card-title">{app.id}</span>
           <span className="app-card-tags">
-            {model.format && <span className="tag">{FORMAT_NAMES[model.format]}</span>}
+            {model.formats.map((f) => (
+              <span key={f} className="tag">{FORMAT_NAMES[f]}</span>
+            ))}
             {app.signature && <span className="tag tag-accent">signed</span>}
           </span>
         </div>

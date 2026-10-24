@@ -115,13 +115,16 @@ forager edit drawio-desktop --format appimage   # or --format auto, --filter, --
 forager remove drawio-desktop
 ```
 
-An app already installed as a deb (dpkg), rpm (dnf or zypper), Arch package
-(pacman) or Flatpak (user or system-wide), by hand, from the distribution or
-before it was added, is recognised by the name in its release files the
-first time it is checked or updated, and is not installed again. Its
-version is read from the package manager on every check, so upgrades and
-downgrades made outside Forager are seen. Updates stay in the format that
-is installed while the release still offers it.
+Forager looks for an app on every check, in every format its release
+offers that suits the system: deb (dpkg), rpm (dnf or zypper), Arch package
+(pacman) and Flatpak (user or system-wide). An install made by hand, from
+the distribution or before the app was added is recognised by the name in
+its release files and is not installed again, and its version is read from
+the package manager, so upgrades and downgrades made outside Forager are
+seen. An app installed in several formats at once, say an rpm and a
+Flatpak, is tracked in each, and each is updated in its own format;
+removing the app asks which to uninstall. If one is removed outside
+Forager while another remains, Forager follows the one that remains.
 
 The latest release is the newest one with a file for this system, so a
 project that also tags, say, Android builds in the same repository still

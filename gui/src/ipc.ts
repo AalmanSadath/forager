@@ -6,11 +6,12 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AboutInfo,
   AppView,
+  Format,
   GuiSettings,
   TimerState,
   DownloadedView,
   HistoryEvent,
-  PlanView,
+  PlanResult,
   ParsedSource,
   Preview,
   SettingsInput,
@@ -39,15 +40,16 @@ export const addApp = (spec: SourceSpec, id: string, settings: SettingsInput, si
   invoke<AppView>('add_app', { spec, id, settings, signature });
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('save_app', { id, settings, signature });
-export const removeApp = (id: string, uninstall: boolean) => invoke<void>('remove_app', { id, uninstall });
+/** Stops tracking `id`, first uninstalling its installs in these formats. */
+export const removeApp = (id: string, uninstall: Format[]) => invoke<void>('remove_app', { id, uninstall });
 
 // ── update ──────────────────────────────────────────────────────
-/** Null when the app is already up to date. */
-export const planUpdate = (id: string) => invoke<PlanView | null>('plan_update', { id });
+/** One plan per install that needs updating, each in its own format; empty when up to date. */
+export const planUpdate = (id: string) => invoke<PlanResult[]>('plan_update', { id });
 /** Progress arrives as `update-progress` events. */
-export const startUpdate = (id: string) => invoke<DownloadedView>('start_update', { id });
-export const finishUpdate = (id: string) => invoke<AppView>('finish_update', { id });
-export const cancelUpdate = (id: string) => invoke<void>('cancel_update', { id });
+export const startUpdate = (id: string, format: Format) => invoke<DownloadedView>('start_update', { id, format });
+export const finishUpdate = (id: string, format: Format) => invoke<AppView>('finish_update', { id, format });
+export const cancelUpdate = (id: string, format: Format) => invoke<void>('cancel_update', { id, format });
 
 // ── settings ────────────────────────────────────────────────────
 export const getGuiSettings = () => invoke<GuiSettings>('get_gui_settings');

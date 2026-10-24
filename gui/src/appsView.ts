@@ -30,12 +30,26 @@ export interface CardModel {
   label: string;
   /** The format shown on the card: installed, else what would be installed. */
   format: Format | null;
+  /** Every installed format, the preferred one first; `[format]` when none is installed. */
+  formats: Format[];
   /** The primary action, if one makes sense from the card. */
   action: 'update' | 'install' | 'reinstall' | 'switch' | null;
 }
 
 export function cardModel(app: AppView, entry: CheckEntry | undefined): CardModel {
-  const installed = app.installed;
+  return { ...baseModel(app, entry), formats: installedFormats(app, entry) };
+}
+
+function installedFormats(app: AppView, entry: CheckEntry | undefined): Format[] {
+  if (app.installs.length > 0) return app.installs.map((i) => i.format);
+  const format = entry?.status?.asset_format ?? app.format;
+  return format ? [format] : [];
+}
+
+function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel, 'formats'> {
+  // With several installs, the one needing attention is the one shown.
+  const attention = entry?.status?.installs.find((i) => i.state !== 'up_to_date');
+  const installed = attention ? { tag: attention.tag, format: attention.format } : app.installed;
   const status = entry?.status ?? null;
   const format = installed?.format ?? status?.asset_format ?? app.format;
   const busy = entry?.checking ?? false;
@@ -82,9 +96,9 @@ export function cardModel(app: AppView, entry: CheckEntry | undefined): CardMode
 /** A chip: one of the sections, or a format. */
 export type Chip = 'all' | Section | Format;
 
-/** Lower-cased words an app is found by: id, source, format. */
+/** Lower-cased words an app is found by: id, source, formats, package names. */
 function haystack(app: AppView, model: CardModel): string {
-  return [app.id, app.source, model.format ?? '', app.installed?.package ?? ''].join(' ').toLowerCase();
+  return [app.id, app.source, ...model.formats, ...app.installs.map((i) => i.package ?? '')].join(' ').toLowerCase();
 }
 
 /** Apps shown for a chip and a search, grouped into sections in order. */
@@ -97,7 +111,7 @@ export function groupApps(
   const words = search.toLowerCase().split(/\s+/).filter(Boolean);
   const items = apps
     .map((app) => ({ app, model: cardModel(app, entries[app.id]) }))
-    .filter(({ model }) => chip === 'all' || model.section === chip || model.format === chip)
+    .filter(({ model }) => chip === 'all' || model.section === chip || model.formats.includes(chip as Format))
     .filter(({ app, model }) => {
       const hay = haystack(app, model);
       return words.every((w) => hay.includes(w));
@@ -111,7 +125,7 @@ export function groupApps(
 /** Formats in use, for the chip row, in a fixed order. */
 export function formatsInUse(apps: AppView[], entries: Record<string, CheckEntry>): Format[] {
   const order: Format[] = ['rpm', 'deb', 'pacman', 'flatpak', 'appimage', 'tarball'];
-  const used = new Set(apps.map((a) => cardModel(a, entries[a.id]).format).filter((f): f is Format => f !== null));
+  const used = new Set(apps.flatMap((a) => cardModel(a, entries[a.id]).formats));
   return order.filter((f) => used.has(f));
 }
 

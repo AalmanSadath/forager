@@ -209,6 +209,7 @@ mod tests {
             bins: Vec::new(),
             signature: None,
             installed: None,
+            also_installed: Vec::new(),
         }
     }
 

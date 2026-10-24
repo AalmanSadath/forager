@@ -18,6 +18,7 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     gpg_keyring: null,
     installed: null,
     ...extra,
+    installs: extra.installs ?? (extra.installed ? [extra.installed] : []),
   };
 }
 
@@ -38,6 +39,7 @@ function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
       asset_error: null,
       repo_version: null,
       checked_at: 0,
+      installs: [],
       found: false,
     },
   };
@@ -79,6 +81,34 @@ describe('cardModel', () => {
   it('places an unchecked app by whether it is installed', () => {
     expect(cardModel(app('a', { installed: installed('1.0') }), undefined).section).toBe('installed');
     expect(cardModel(app('a'), undefined).section).toBe('not_installed');
+  });
+});
+
+describe('apps installed in several formats', () => {
+  const rpm = { ...installed('2.0', 'rpm'), package: 'tool' };
+  const flatpak = { ...installed('1.0', 'flatpak'), package: 'org.example.Tool' };
+  const both = app('tool', { installed: rpm, installs: [rpm, flatpak] });
+  const entry = (): CheckEntry => {
+    const e = status('outdated');
+    e.status!.installs = [
+      { format: 'rpm', tag: '2.0', state: 'up_to_date', repo_version: null },
+      { format: 'flatpak', tag: '1.0', state: 'outdated', repo_version: null },
+    ];
+    return e;
+  };
+
+  it('lists every format and shows the install that needs updating', () => {
+    const m = cardModel(both, entry());
+    expect(m.formats).toEqual(['rpm', 'flatpak']);
+    expect(m).toMatchObject({ section: 'updates', versions: '1.0 → 2.0', format: 'flatpak' });
+  });
+
+  it('is found by any of its formats and package names', () => {
+    const entries = { tool: entry() };
+    expect(groupApps([both], entries, 'flatpak', '')).toHaveLength(1);
+    expect(groupApps([both], entries, 'rpm', '')).toHaveLength(1);
+    expect(groupApps([both], entries, 'all', 'org.example')).toHaveLength(1);
+    expect(formatsInUse([both], entries)).toEqual(['rpm', 'flatpak']);
   });
 });
 

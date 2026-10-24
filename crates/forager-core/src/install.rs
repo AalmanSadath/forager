@@ -22,7 +22,8 @@ use crate::model::{App, Format, Installed};
 use crate::platform::{self, PackageManager, Platform};
 
 /// Installs `file` for `app` and returns what is needed to update or remove
-/// it later. `app.installed` is taken to be the version being replaced.
+/// it later. The app's install in the same format is taken to be the
+/// version being replaced.
 /// `progress` gets percentages from PackageKit installs.
 pub fn install(
     file: &Path,
@@ -82,10 +83,9 @@ pub fn install(
         Format::Tarball => {
             let opt_dir = platform::opt_dir().ok_or(Error::NoHome)?;
             let bin_dir = platform::bin_dir().ok_or(Error::NoHome)?;
-            let old_links = match &app.installed {
-                Some(previous) if previous.format == Format::Tarball => previous.links.as_slice(),
-                _ => &[],
-            };
+            let old_links = app
+                .install_of(Format::Tarball)
+                .map_or(&[][..], |previous| previous.links.as_slice());
             let placed = tarball::install(&file, &app.id, &app.bins, &opt_dir, &bin_dir, old_links)?;
             installed.path = Some(placed.dir);
             installed.links = placed.links;

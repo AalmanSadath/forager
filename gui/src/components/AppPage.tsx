@@ -3,7 +3,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
-import type { AppView } from '../types';
+import type { AppView, Format, InstalledView, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import SettingsSection from './appPage/SettingsSection';
 import SignatureSection from './appPage/SignatureSection';
@@ -53,7 +53,9 @@ function AppPageBody({ app }: { app: AppView }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
-  const [uninstall, setUninstall] = useState(true);
+  // Formats to uninstall when removing: every install unless unticked.
+  const [keep, setKeep] = useState<Format[]>([]);
+  const uninstall = app.installs.map((i) => i.format).filter((f) => !keep.includes(f));
 
   const input = useMemo(() => toInput(draft), [draft]);
   const { preview, error: previewError, loading, refresh } = usePreview(app.spec, input);
@@ -92,7 +94,7 @@ function AppPageBody({ app }: { app: AppView }) {
       await ipc.removeApp(app.id, uninstall);
       setPage({ kind: 'apps' });
       await loadApps();
-      toast('success', uninstall && app.installed ? `Removed and uninstalled ${app.id}.` : `Stopped tracking ${app.id}.`);
+      toast('success', uninstall.length > 0 ? `Removed and uninstalled ${app.id}.` : `Stopped tracking ${app.id}.`);
     } catch (e) {
       toast('error', String(e));
     }
@@ -148,34 +150,20 @@ function AppPageBody({ app }: { app: AppView }) {
           <section className="page-card">
             <h3>Status</h3>
             <dl className="facts">
-              <dt>Installed</dt>
-              <dd>
-                {app.installed ? (
-                  <>
-                    <span className="mono">{app.installed.tag}</span> · {FORMAT_NAMES[app.installed.format]}
-                  </>
-                ) : (
-                  'Not installed'
-                )}
-              </dd>
-              {app.installed?.package && (
+              {app.installs.length === 0 && (
                 <>
-                  <dt>Package</dt>
-                  <dd className="mono">{app.installed.package}</dd>
+                  <dt>Installed</dt>
+                  <dd>Not installed</dd>
                 </>
               )}
-              {app.installed?.path && (
-                <>
-                  <dt>Location</dt>
-                  <dd className="mono">{app.installed.path}</dd>
-                </>
-              )}
-              {app.installed && app.installed.links.length > 0 && (
-                <>
-                  <dt>Commands</dt>
-                  <dd className="mono">{app.installed.links.join(', ')}</dd>
-                </>
-              )}
+              {app.installs.map((installed) => (
+                <InstallFacts
+                  key={installed.format}
+                  installed={installed}
+                  several={app.installs.length > 1}
+                  state={status?.installs.find((i) => i.format === installed.format)?.state}
+                />
+              ))}
               <dt>Latest</dt>
               <dd>
                 {status ? <span className="mono">{status.latest_tag}</span> : entry?.error ? <span className="text-danger">{entry.error}</span> : 'Not checked yet'}
@@ -228,19 +216,65 @@ function AppPageBody({ app }: { app: AppView }) {
       {removing && (
         <ConfirmModal
           question={`Remove ${app.id}?`}
-          hint={app.installed?.format && ['rpm', 'deb', 'pacman'].includes(app.installed.format) && uninstall ? 'Uninstalling a system package asks for your password.' : undefined}
+          hint={uninstall.some((f) => ['rpm', 'deb', 'pacman'].includes(f)) ? 'Uninstalling a system package asks for your password.' : undefined}
           confirmLabel="Remove"
           onConfirm={remove}
           onCancel={() => setRemoving(false)}
         >
-          {app.installed && (
-            <label className="checkbox-row">
-              <input type="checkbox" checked={uninstall} onChange={(e) => setUninstall(e.target.checked)} />
-              <span>Also uninstall {app.installed.tag}</span>
+          {app.installs.map((installed) => (
+            <label key={installed.format} className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={!keep.includes(installed.format)}
+                onChange={(e) =>
+                  setKeep((k) => (e.target.checked ? k.filter((f) => f !== installed.format) : [...k, installed.format]))
+                }
+              />
+              <span>
+                Also uninstall {app.installs.length > 1 ? `the ${FORMAT_NAMES[installed.format]} ` : ''}
+                {installed.tag}
+              </span>
             </label>
-          )}
+          ))}
         </ConfirmModal>
       )}
     </div>
+  );
+}
+
+const INSTALL_STATES: Partial<Record<UpdateState, string>> = {
+  outdated: 'update available',
+  missing: 'removed outside Forager',
+  up_to_date: 'up to date',
+};
+
+/** One install in the Status card; with several, each is named by its format. */
+function InstallFacts({ installed, several, state }: { installed: InstalledView; several: boolean; state?: UpdateState }) {
+  return (
+    <>
+      <dt>{several ? FORMAT_NAMES[installed.format] : 'Installed'}</dt>
+      <dd>
+        <span className="mono">{installed.tag}</span>
+        {several ? (state && INSTALL_STATES[state] ? ` · ${INSTALL_STATES[state]}` : '') : ` · ${FORMAT_NAMES[installed.format]}`}
+      </dd>
+      {installed.package && (
+        <>
+          <dt>{several ? '' : 'Package'}</dt>
+          <dd className="mono">{installed.package}</dd>
+        </>
+      )}
+      {installed.path && (
+        <>
+          <dt>{several ? '' : 'Location'}</dt>
+          <dd className="mono">{installed.path}</dd>
+        </>
+      )}
+      {installed.links.length > 0 && (
+        <>
+          <dt>{several ? '' : 'Commands'}</dt>
+          <dd className="mono">{installed.links.join(', ')}</dd>
+        </>
+      )}
+    </>
   );
 }

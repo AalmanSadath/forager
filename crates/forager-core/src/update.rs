@@ -30,6 +30,9 @@ pub struct Plan {
     pub missing: bool,
     /// Signature check required by the app.
     pub signature: Option<SignatureCheck>,
+    /// Installs in other formats that this one replaces, removed once it is
+    /// in place: the app was pinned to another format.
+    pub replaces: Vec<Installed>,
 }
 
 impl Plan {
@@ -93,9 +96,7 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
         let value = "a missing runtime is fetched from the bundle's runtime repo (usually Flathub)".into();
         lines.push(line("note", value, Tone::Normal));
     }
-    if let Some(previous) = &app.installed
-        && previous.format != plan.format
-    {
+    for previous in &plan.replaces {
         let value = format!("replaces the {} install, which will be removed", previous.format);
         lines.push(line("note", value, Tone::Warn));
     }
@@ -130,19 +131,31 @@ impl State {
     }
 }
 
+/// One install of an app and how it compares with the latest release.
 #[derive(Debug, Clone)]
-pub struct Status {
+pub struct InstallState {
+    pub installed: Installed,
+    /// `Missing`, `Outdated` or `UpToDate`.
     pub state: State,
-    pub latest: Release,
-    /// The install as the package manager reports it, when that differs from
-    /// the record: a system package or Flatpak installed without Forager,
-    /// e.g. by hand before the app was tracked, or the recorded one since
-    /// upgraded or downgraded outside Forager. Already counted in `state`;
-    /// callers save it as the app's install.
-    pub found: Option<Installed>,
 }
 
-/// Fetches the latest release and compares it with the install.
+#[derive(Debug, Clone)]
+pub struct Status {
+    /// The app as a whole: not installed, installed in the wrong format, or
+    /// the worst of its installs.
+    pub state: State,
+    pub latest: Release,
+    /// Every install, as the system reports them, the preferred one first.
+    pub installs: Vec<InstallState>,
+    /// The installs as the system reports them, when they differ from the
+    /// record: one made without Forager (by hand, before the app was
+    /// tracked, or in another format next to it), one removed while another
+    /// remains, or one upgraded or downgraded outside Forager. Already
+    /// counted in `state`; callers save it with `App::set_installs`.
+    pub found: Option<Vec<Installed>>,
+}
+
+/// Fetches the latest release and compares it with the installs.
 pub fn status(app: &App) -> Result<Status> {
     status_in(app, app.source.releases()?)
 }
@@ -151,15 +164,43 @@ pub fn status(app: &App) -> Result<Status> {
 pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
     let platform = Platform::detect();
     let latest = latest(app, releases, &platform)?;
-    let found = observe(app, &latest, &platform);
-    let state = match found.as_ref().or(app.installed.as_ref()) {
-        None => State::NotInstalled,
-        Some(installed) if !install::is_present(installed) => State::Missing,
-        Some(installed) if app.format.is_some_and(|f| f != installed.format) => State::WrongFormat,
-        Some(installed) if version::is_newer(&installed.tag, &latest.tag) => State::Outdated,
-        Some(_) => State::UpToDate,
-    };
-    Ok(Status { state, latest, found })
+    let observed = observe(app, &latest, &platform);
+    let found = (observed != app.install_list()).then(|| observed.clone());
+    let installs: Vec<InstallState> = observed
+        .into_iter()
+        .map(|installed| {
+            let state = if !install::is_present(&installed) {
+                State::Missing
+            } else if version::is_newer(&installed.tag, &latest.tag) {
+                State::Outdated
+            } else {
+                State::UpToDate
+            };
+            InstallState { installed, state }
+        })
+        .collect();
+    let state = overall(app.format, &installs);
+    Ok(Status {
+        state,
+        latest,
+        installs,
+        found,
+    })
+}
+
+fn overall(pinned: Option<Format>, installs: &[InstallState]) -> State {
+    let has = |state| installs.iter().any(|i| i.state == state);
+    if installs.is_empty() {
+        State::NotInstalled
+    } else if pinned.is_some_and(|f| !installs.iter().any(|i| i.installed.format == f)) {
+        State::WrongFormat
+    } else if has(State::Missing) {
+        State::Missing
+    } else if has(State::Outdated) {
+        State::Outdated
+    } else {
+        State::UpToDate
+    }
 }
 
 /// The newest release the app takes (no prereleases unless it follows them)
@@ -178,11 +219,55 @@ pub fn latest(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<
         .unwrap_or(newest))
 }
 
-/// See `Status::found`.
-fn observe(app: &App, release: &Release, platform: &Platform) -> Option<Installed> {
-    let Some(recorded) = &app.installed else {
-        return find_existing(app, release, platform);
-    };
+/// The installs as the system has them: the recorded ones still present,
+/// at the version the package manager reports, and any found in other
+/// formats that suit the system. When none is present the record is kept,
+/// so the app shows as missing.
+fn observe(app: &App, release: &Release, platform: &Platform) -> Vec<Installed> {
+    let present = app
+        .installs()
+        .filter(|recorded| install::is_present(recorded))
+        .map(|recorded| current(app, recorded, release, platform).unwrap_or_else(|| recorded.clone()))
+        .collect();
+    let found = find_existing(app, release, platform);
+    combine(app.install_list(), present, found, &preference(app.format, platform))
+}
+
+/// Formats in order of preference: the pinned one, then the system's ranking.
+fn preference(pinned: Option<Format>, platform: &Platform) -> Vec<Format> {
+    pinned.into_iter().chain(platform.formats()).collect()
+}
+
+/// Puts installs in order of `preference`, the preferred one first.
+pub fn sort_installs(installs: &mut [Installed], pinned: Option<Format>, platform: &Platform) {
+    sort_by(installs, &preference(pinned, platform));
+}
+
+fn sort_by(installs: &mut [Installed], preference: &[Format]) {
+    installs.sort_by_key(|i| preference.iter().position(|f| *f == i.format).unwrap_or(usize::MAX));
+}
+
+fn combine(
+    recorded: Vec<Installed>,
+    mut present: Vec<Installed>,
+    found: Vec<Installed>,
+    preference: &[Format],
+) -> Vec<Installed> {
+    for found in found {
+        if !present.iter().any(|i| i.format == found.format) {
+            present.push(found);
+        }
+    }
+    if present.is_empty() {
+        return recorded;
+    }
+    sort_by(&mut present, preference);
+    present
+}
+
+/// A recorded system package or Flatpak at the version installed now, if
+/// that is another one.
+fn current(app: &App, recorded: &Installed, release: &Release, platform: &Platform) -> Option<Installed> {
     let package = recorded.package.as_deref()?;
     let actual = match recorded.format {
         Format::Flatpak => install::flatpak_version(package)?,
@@ -190,8 +275,19 @@ fn observe(app: &App, release: &Release, platform: &Platform) -> Option<Installe
         // Forager placed AppImages and tarballs itself; nothing else reports their version.
         _ => return None,
     };
-    let asset = select_asset(app, release, platform).ok().map(|(asset, _)| asset);
-    refreshed(recorded, actual, release, asset)
+    refreshed(
+        recorded,
+        actual,
+        release,
+        asset_in(app, release, platform, recorded.format),
+    )
+}
+
+/// The asset an update in `format` would install.
+fn asset_in<'a>(app: &App, release: &'a Release, platform: &Platform, format: Format) -> Option<&'a Asset> {
+    let mut in_format = app.clone();
+    in_format.format = Some(format);
+    select_asset(&in_format, release, platform).ok().map(|(asset, _)| asset)
 }
 
 /// The recorded install at the version actually installed, if that is
@@ -225,34 +321,41 @@ fn as_release(version: String, release: &Release, asset: Option<&Asset>) -> (Str
     }
 }
 
-/// A system package or Flatpak of the app installed without Forager, looked
-/// for among every asset of the release that suits this system, the one an
-/// update would choose first.
-fn find_existing(app: &App, release: &Release, platform: &Platform) -> Option<Installed> {
-    let mut usable: Vec<_> = matcher::candidates(app, release, platform)
-        .ok()?
+/// System packages and Flatpaks of the app, installed with or without
+/// Forager, looked for among every asset of the release that suits this
+/// system: at most one per format.
+fn find_existing(app: &App, release: &Release, platform: &Platform) -> Vec<Installed> {
+    let Ok(candidates) = matcher::candidates(app, release, platform) else {
+        return Vec::new();
+    };
+    let mut usable: Vec<_> = candidates
         .into_iter()
         .filter(|c| !matches!(c.verdict, Verdict::Rejected(_)))
         .collect();
     usable.sort_by_key(|c| c.verdict != Verdict::Chosen);
-    usable.into_iter().find_map(|candidate| {
-        let format = candidate.format?;
+    let mut found: Vec<Installed> = Vec::new();
+    for candidate in usable {
+        let Some(format) = candidate.format else { continue };
+        if found.iter().any(|i| i.format == format) {
+            continue;
+        }
         let names = install::package_guesses(&candidate.asset.name, format, &app.id);
-        let (package, version) = match format {
-            Format::Flatpak => {
-                let (id, version) = install::find_flatpak(&names)?;
+        let existing = match format {
+            Format::Flatpak => install::find_flatpak(&names).map(|(id, version)| {
                 // Flatpaks need not declare a version; an unknown one counts
                 // as older than any release.
                 (id, if version.is_empty() { "unknown".into() } else { version })
-            }
+            }),
             format if format.needs_root() => names
                 .into_iter()
-                .find_map(|name| Some((install::installed_version(&name, format)?, name)))
-                .map(|(version, name)| (name, version))?,
-            _ => return None,
+                .find_map(|name| Some((name.clone(), install::installed_version(&name, format)?))),
+            _ => None,
         };
-        Some(existing_install(version, package, format, candidate.asset, release))
-    })
+        if let Some((package, version)) = existing {
+            found.push(existing_install(version, package, format, candidate.asset, release));
+        }
+    }
+    found
 }
 
 fn existing_install(version: String, package: String, format: Format, asset: &Asset, release: &Release) -> Installed {
@@ -267,44 +370,73 @@ fn existing_install(version: String, package: String, format: Format, asset: &As
     }
 }
 
-/// The update for `app`, or `None` if it is up to date. An install that is
-/// missing, or in another format than the one the app is pinned to, counts
-/// as out of date. An install found on the system or at another version
-/// than recorded becomes the app's install (see `Status::found`), so the
-/// caller should save `app` when its install changed.
-pub fn plan(app: &mut App, platform: &Platform) -> Result<Option<Plan>> {
-    let Status {
-        state,
-        latest: release,
-        found,
-    } = status(app)?;
-    if found.is_some() {
-        app.installed = found;
+/// What updating `app` takes: nothing when it is up to date, else one plan
+/// per install that is out of date or missing, each in its own format; one
+/// in the chosen format when it is not installed, or in the pinned format
+/// when no install has it. A plan that cannot be made (a format the release
+/// no longer offers) is an error of its own, so the others still go ahead.
+///
+/// Installs found on the system or changed outside Forager become the
+/// app's (see `Status::found`), so the caller should save `app` when its
+/// installs changed.
+pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
+    let status = status(app)?;
+    if let Some(found) = status.found {
+        app.set_installs(found);
     }
-    if state == State::UpToDate {
-        return Ok(None);
+    let release = status.latest;
+    let app = &*app;
+    let make = |format: Option<Format>, current: Option<&InstallState>, replaces: Vec<Installed>| {
+        plan_one(app, &release, platform, format, current, replaces)
+    };
+    Ok(match status.state {
+        State::UpToDate => Vec::new(),
+        State::NotInstalled => vec![make(None, None, Vec::new())],
+        State::WrongFormat => vec![make(app.format, None, app.install_list())],
+        _ => status
+            .installs
+            .iter()
+            .filter(|i| i.state.needs_update())
+            .map(|i| make(Some(i.installed.format), Some(i), Vec::new()))
+            .collect(),
+    })
+}
+
+fn plan_one(
+    app: &App,
+    release: &Release,
+    platform: &Platform,
+    format: Option<Format>,
+    current: Option<&InstallState>,
+    replaces: Vec<Installed>,
+) -> Result<Plan> {
+    let mut target = app.clone();
+    if format.is_some() {
+        target.format = format;
     }
-    let missing = state == State::Missing;
-    let (asset, format) = select_asset(app, &release, platform)?;
+    let (asset, format) = select_asset(&target, release, platform)?;
     let asset = asset.clone();
-    let expected_sha256 = verify::expected_sha256(&asset, &release)?;
+    let expected_sha256 = verify::expected_sha256(&asset, release)?;
     let signature = match &app.signature {
         Some(signature) => Some(SignatureCheck {
-            signed: signature::find(signature, &asset, &release)?,
+            signed: signature::find(signature, &asset, release)?,
             signature: signature.clone(),
             source: app.source.clone(),
         }),
         None => None,
     };
-    Ok(Some(Plan {
-        from: app.installed.as_ref().map(|i| i.tag.clone()),
-        release,
+    Ok(Plan {
+        from: current
+            .map(|i| i.installed.tag.clone())
+            .or_else(|| replaces.first().map(|i| i.tag.clone())),
+        release: release.clone(),
         asset,
         format,
         expected_sha256,
-        missing,
+        missing: current.is_some_and(|i| i.state == State::Missing),
         signature,
-    }))
+        replaces,
+    })
 }
 
 /// Progress of `download` and `install`, for frontends to display.
@@ -375,9 +507,9 @@ fn check_sha256(plan: &Plan, actual: &str) -> Result<()> {
     }
 }
 
-/// Installs a download for app `id` and records it in `store`. An install in
-/// another format is removed afterwards, so a failed install never leaves
-/// the app missing.
+/// Installs a download for app `id` and records it in `store`, in place of
+/// any install in the same format. Installs the plan replaces are removed
+/// afterwards, so a failed install never leaves the app missing.
 pub fn install(
     store: &mut Store,
     id: &str,
@@ -386,7 +518,6 @@ pub fn install(
     platform: &Platform,
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Installed> {
-    let previous = store.get(id)?.installed.clone();
     let installed = install::install(
         &download.path,
         plan.format,
@@ -398,17 +529,28 @@ pub fn install(
             let _ = progress(Progress::Install { percent });
         },
     )?;
-    store.get_mut(id)?.installed = Some(installed.clone());
+    let app = store.get_mut(id)?;
+    let mut installs: Vec<Installed> = app.installs().filter(|i| i.format != plan.format).cloned().collect();
+    installs.push(installed.clone());
+    sort_installs(&mut installs, app.format, platform);
+    app.set_installs(installs);
     store.save()?;
 
-    if let Some(previous) = previous
-        && previous.format != installed.format
-        && install::is_present(&previous)
-    {
-        install::uninstall(&previous, platform).map_err(|source| Error::PreviousNotRemoved {
-            format: previous.format,
-            source: Box::new(source),
-        })?;
+    for previous in plan.replaces.iter().filter(|p| p.format != installed.format) {
+        if install::is_present(previous) {
+            install::uninstall(previous, platform).map_err(|source| Error::PreviousNotRemoved {
+                format: previous.format,
+                source: Box::new(source),
+            })?;
+        }
+        let app = store.get_mut(id)?;
+        let installs = app
+            .installs()
+            .filter(|i| i.format != previous.format)
+            .cloned()
+            .collect();
+        app.set_installs(installs);
+        store.save()?;
     }
     Ok(installed)
 }
@@ -437,7 +579,58 @@ mod tests {
             from: None,
             missing: false,
             signature: None,
+            replaces: Vec::new(),
         }
+    }
+
+    fn install(format: Format, tag: &str) -> Installed {
+        Installed {
+            tag: tag.into(),
+            format,
+            asset: String::new(),
+            package: Some("tool".into()),
+            path: None,
+            links: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn combines_recorded_and_found_installs() {
+        let order = [Format::Rpm, Format::Flatpak, Format::AppImage];
+        let rpm = install(Format::Rpm, "v1.0.0");
+        let flatpak = install(Format::Flatpak, "1.0.0");
+        // A Flatpak next to the recorded rpm is added after it.
+        let both = combine(
+            vec![rpm.clone()],
+            vec![rpm.clone()],
+            vec![flatpak.clone(), rpm.clone()],
+            &order,
+        );
+        assert_eq!(both, [rpm.clone(), flatpak.clone()]);
+        // Found in preference order even when the Flatpak was recorded first.
+        let sorted = combine(vec![flatpak.clone()], vec![flatpak.clone()], vec![rpm.clone()], &order);
+        assert_eq!(sorted, [rpm.clone(), flatpak.clone()]);
+        // The recorded rpm was removed but the Flatpak remains: follow it.
+        let switched = combine(vec![rpm.clone()], Vec::new(), vec![flatpak.clone()], &order);
+        assert_eq!(switched, [flatpak]);
+        // Nothing left: keep the record, so the app shows as missing.
+        assert_eq!(combine(vec![rpm.clone()], Vec::new(), Vec::new(), &order), [rpm]);
+    }
+
+    #[test]
+    fn overall_state_is_the_worst_install() {
+        let state = |installed: Installed, state| InstallState { installed, state };
+        let rpm = || install(Format::Rpm, "v1");
+        let flatpak = || install(Format::Flatpak, "v1");
+        assert_eq!(overall(None, &[]), State::NotInstalled);
+        let mixed = [state(rpm(), State::UpToDate), state(flatpak(), State::Outdated)];
+        assert_eq!(overall(None, &mixed), State::Outdated);
+        let fine = [state(rpm(), State::UpToDate), state(flatpak(), State::UpToDate)];
+        assert_eq!(overall(None, &fine), State::UpToDate);
+        assert_eq!(overall(Some(Format::Flatpak), &fine), State::UpToDate);
+        assert_eq!(overall(Some(Format::AppImage), &fine), State::WrongFormat);
+        let gone = [state(rpm(), State::Missing)];
+        assert_eq!(overall(None, &gone), State::Missing);
     }
 
     #[test]
@@ -543,22 +736,22 @@ mod tests {
 
     #[test]
     fn summary_flags_unverified_root_installs() {
-        let mut app = App::new(
+        let app = App::new(
             Source::GitHub {
                 owner: "o".into(),
                 repo: "tool".into(),
             },
             "tool".into(),
         );
-        app.installed = Some(Installed {
+        let mut plan = plan(Format::Rpm, None);
+        plan.replaces = vec![Installed {
             tag: "v0".into(),
             format: Format::AppImage,
             asset: "tool.AppImage".into(),
             package: None,
             path: None,
             links: Vec::new(),
-        });
-        let plan = plan(Format::Rpm, None);
+        }];
         assert!(plan.unverified());
         let lines = summary(&app, &plan);
         let tone = |label: &str, needle: &str| {

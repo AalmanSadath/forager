@@ -127,8 +127,13 @@ pub struct App {
     /// Key the app's assets must be signed with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<Signature>,
+    /// The install in the preferred format. Kept apart from the others so
+    /// configs stay readable by Forager versions that knew only one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed: Option<Installed>,
+    /// Installs in further formats, e.g. a Flatpak next to the rpm.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also_installed: Vec<Installed>,
 }
 
 impl App {
@@ -143,7 +148,30 @@ impl App {
             bins: Vec::new(),
             signature: None,
             installed: None,
+            also_installed: Vec::new(),
         }
+    }
+
+    /// Every install, the preferred one first.
+    pub fn installs(&self) -> impl Iterator<Item = &Installed> {
+        self.installed.iter().chain(&self.also_installed)
+    }
+
+    pub fn install_of(&self, format: Format) -> Option<&Installed> {
+        self.installs().find(|i| i.format == format)
+    }
+
+    /// Replaces the installs; the first becomes the preferred one, so pass
+    /// them in order of preference.
+    pub fn set_installs(&mut self, installs: Vec<Installed>) {
+        let mut installs = installs.into_iter();
+        self.installed = installs.next();
+        self.also_installed = installs.collect();
+    }
+
+    /// The installs as a list, the preferred one first.
+    pub fn install_list(&self) -> Vec<Installed> {
+        self.installs().cloned().collect()
     }
 
     /// Checks settings that come from the user: the id, which becomes part
@@ -213,6 +241,53 @@ pub struct Installed {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_configs_with_one_install_as_they_were() {
+        let text = r#"
+id = "tool"
+prerelease = false
+
+[source]
+kind = "github"
+owner = "o"
+repo = "tool"
+
+[installed]
+tag = "v1.0.0"
+format = "rpm"
+asset = "tool-1.0.0-1.x86_64.rpm"
+package = "tool"
+"#;
+        let app: App = toml::from_str(text).unwrap();
+        assert_eq!(app.installs().count(), 1);
+        assert!(!toml::to_string(&app).unwrap().contains("also_installed"));
+    }
+
+    #[test]
+    fn puts_the_first_install_first() {
+        let install = |format| Installed {
+            tag: "v1".into(),
+            format,
+            asset: String::new(),
+            package: None,
+            path: None,
+            links: Vec::new(),
+        };
+        let mut app = App::new(
+            crate::source::Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        app.set_installs(vec![install(Format::Rpm), install(Format::Flatpak)]);
+        assert_eq!(app.installed.as_ref().map(|i| i.format), Some(Format::Rpm));
+        assert_eq!(app.also_installed.len(), 1);
+        assert!(app.install_of(Format::Flatpak).is_some());
+        app.set_installs(Vec::new());
+        assert_eq!(app.installs().count(), 0);
+    }
 
     #[test]
     fn validates_ids() {

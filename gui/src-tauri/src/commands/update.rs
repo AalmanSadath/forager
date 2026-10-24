@@ -17,9 +17,14 @@ use tauri::{AppHandle, Emitter, State};
 use super::apps::AppView;
 use crate::state::{CmdResult, blocking, load_store};
 
-/// One update in progress per app id.
+/// One update in progress per install: app id and format, since an app
+/// installed as both an rpm and a Flatpak updates each in its own format.
 #[derive(Default)]
 pub struct Updates(Mutex<HashMap<String, Session>>);
+
+fn key(id: &str, format: Format) -> String {
+    format!("{id}/{format}")
+}
 
 struct Session {
     plan: Plan,
@@ -36,6 +41,13 @@ pub struct PlanView {
     pub lines: Vec<SummaryLine>,
     pub unverified: bool,
     pub needs_root: bool,
+}
+
+/// One planned update of an app, or why it cannot be made.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlanResult {
+    pub plan: Option<PlanView>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,61 +72,87 @@ pub struct ProgressEvent {
 
 pub const PROGRESS_EVENT: &str = "update-progress";
 
+/// What updating `id` takes: one plan per install that needs it, none when
+/// it is up to date. Each plan waits for `start_update` with its format.
 #[tauri::command]
-pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<Option<PlanView>> {
-    let key = id.clone();
+pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<Vec<PlanResult>> {
+    let key_id = id.clone();
     let planned = blocking(move || {
         let mut store = load_store()?;
         let app = store.get_mut(&id).map_err(|e| e.to_string())?;
-        let recorded = app.installed.clone();
-        let planned = update::plan(app, &Platform::detect()).map_err(|e| e.to_string())?;
+        let recorded = app.install_list();
+        let plans = update::plans(app, &Platform::detect()).map_err(|e| e.to_string())?;
         // Installed or changed outside Forager: keep what the system reports.
-        if app.installed != recorded {
+        if app.install_list() != recorded {
             store.save().map_err(|e| e.to_string())?;
         }
         let app = store.get(&id).map_err(|e| e.to_string())?;
-        let Some(plan) = planned else {
-            return Ok(None);
-        };
-        let view = PlanView {
-            from: plan.from.clone(),
-            to: plan.release.tag.clone(),
-            missing: plan.missing,
-            format: plan.format,
-            lines: update::summary(app, &plan),
-            unverified: plan.unverified(),
-            needs_root: plan.format.needs_root(),
-        };
-        Ok(Some((plan, view)))
+        Ok(plans
+            .into_iter()
+            .map(|plan| {
+                plan.map(|plan| {
+                    let view = PlanView {
+                        from: plan.from.clone(),
+                        to: plan.release.tag.clone(),
+                        missing: plan.missing,
+                        format: plan.format,
+                        lines: update::summary(app, &plan),
+                        unverified: plan.unverified(),
+                        needs_root: plan.format.needs_root(),
+                    };
+                    (plan, view)
+                })
+                .map_err(|e| e.to_string())
+            })
+            .collect::<Vec<_>>())
     })
     .await?;
-    Ok(planned.map(|(plan, view)| {
-        updates.0.lock().unwrap().insert(
-            key,
-            Session {
-                plan,
-                download: None,
-                cancel: Arc::new(AtomicBool::new(false)),
+    let mut sessions = updates.0.lock().unwrap();
+    Ok(planned
+        .into_iter()
+        .map(|planned| match planned {
+            Ok((plan, view)) => {
+                sessions.insert(
+                    key(&key_id, plan.format),
+                    Session {
+                        plan,
+                        download: None,
+                        cancel: Arc::new(AtomicBool::new(false)),
+                    },
+                );
+                PlanResult {
+                    plan: Some(view),
+                    error: None,
+                }
+            }
+            Err(error) => PlanResult {
+                plan: None,
+                error: Some(error),
             },
-        );
-        view
-    }))
+        })
+        .collect())
 }
 
 /// Downloads and verifies the planned asset, reporting progress, and keeps
 /// it for `finish_update`.
 #[tauri::command]
-pub async fn start_update(app: AppHandle, updates: State<'_, Updates>, id: String) -> CmdResult<DownloadedView> {
+pub async fn start_update(
+    app: AppHandle,
+    updates: State<'_, Updates>,
+    id: String,
+    format: Format,
+) -> CmdResult<DownloadedView> {
+    let session_key = key(&id, format);
     let (plan, cancel) = {
         let sessions = updates.0.lock().unwrap();
-        let session = sessions.get(&id).ok_or("no update planned for this app")?;
+        let session = sessions.get(&session_key).ok_or("no update planned for this app")?;
         (session.plan.clone(), session.cancel.clone())
     };
     let (handle, key) = (app.clone(), id.clone());
     let result = blocking(move || {
         let first_install = load_store()?
             .get(&key)
-            .map(|a| a.installed.as_ref().is_none_or(|i| i.format != plan.format))
+            .map(|a| a.install_of(plan.format).is_none())
             .unwrap_or(true);
         let download = update::download(&plan, &Platform::detect(), &mut |p| {
             emit_progress(&handle, &key, p);
@@ -137,7 +175,7 @@ pub async fn start_update(app: AppHandle, updates: State<'_, Updates>, id: Strin
                 repo_version: download.repo_version.clone(),
                 first_install,
             };
-            match sessions.get_mut(&id) {
+            match sessions.get_mut(&session_key) {
                 Some(session) => session.download = Some(download),
                 // Cancelled while finishing: dropping the download deletes it.
                 None => return Err("cancelled".into()),
@@ -145,9 +183,9 @@ pub async fn start_update(app: AppHandle, updates: State<'_, Updates>, id: Strin
             Ok(view)
         }
         Err(e) => {
-            sessions.remove(&id);
+            sessions.remove(&session_key);
             if e != "cancelled" {
-                record_failure(&id, &e);
+                record_failure(&id, format, &e);
             }
             Err(e)
         }
@@ -156,12 +194,17 @@ pub async fn start_update(app: AppHandle, updates: State<'_, Updates>, id: Strin
 
 /// Installs the downloaded asset and records it.
 #[tauri::command]
-pub async fn finish_update(app: AppHandle, updates: State<'_, Updates>, id: String) -> CmdResult<AppView> {
+pub async fn finish_update(
+    app: AppHandle,
+    updates: State<'_, Updates>,
+    id: String,
+    format: Format,
+) -> CmdResult<AppView> {
     let session = updates
         .0
         .lock()
         .unwrap()
-        .remove(&id)
+        .remove(&key(&id, format))
         .ok_or("no update downloaded for this app")?;
     let download = session.download.ok_or("the download has not finished")?;
     let plan = session.plan;
@@ -191,15 +234,15 @@ pub async fn finish_update(app: AppHandle, updates: State<'_, Updates>, id: Stri
     })
     .await;
     if let Err(e) = &result {
-        record_failure(&id, e);
+        record_failure(&id, format, e);
     }
     result
 }
 
 /// Stops a download in progress, or drops one waiting to be installed.
 #[tauri::command]
-pub fn cancel_update(updates: State<'_, Updates>, id: String) {
-    if let Some(session) = updates.0.lock().unwrap().remove(&id) {
+pub fn cancel_update(updates: State<'_, Updates>, id: String, format: Format) {
+    if let Some(session) = updates.0.lock().unwrap().remove(&key(&id, format)) {
         session.cancel.store(true, Ordering::Relaxed);
     }
 }
@@ -224,8 +267,9 @@ fn emit_progress(app: &AppHandle, id: &str, progress: Progress) {
     app.emit(PROGRESS_EVENT, event).ok();
 }
 
-fn record_failure(id: &str, message: &str) {
+fn record_failure(id: &str, format: Format, message: &str) {
     let mut event = Event::new(id, Kind::Failed, Via::Gui);
     event.message = Some(message.to_string());
+    event.format = Some(format);
     history::record(&event).ok();
 }

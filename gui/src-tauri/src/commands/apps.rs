@@ -27,7 +27,10 @@ pub struct AppView {
     pub signature: Option<String>,
     pub minisign_key: Option<String>,
     pub gpg_keyring: Option<PathBuf>,
+    /// The install in the preferred format.
     pub installed: Option<InstalledView>,
+    /// Every install, the preferred one first.
+    pub installs: Vec<InstalledView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,6 +78,7 @@ impl From<&App> for AppView {
                 _ => None,
             },
             installed: app.installed.as_ref().map(InstalledView::from),
+            installs: app.installs().map(InstalledView::from).collect(),
         }
     }
 }

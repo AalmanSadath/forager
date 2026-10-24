@@ -33,9 +33,20 @@ pub struct StatusView {
     pub repo_version: Option<String>,
     /// Seconds since the Unix epoch.
     pub checked_at: u64,
-    /// The install was found on the system, or at another version than
-    /// recorded, and saved, so the app list is out of date.
+    /// Each install and how it compares with the latest release.
+    pub installs: Vec<InstallStatusView>,
+    /// Installs were found on the system, removed, or at another version
+    /// than recorded, and saved, so the app list is out of date.
     pub found: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InstallStatusView {
+    pub format: Format,
+    pub tag: String,
+    pub state: State,
+    /// Version of the same package in the distro's repositories.
+    pub repo_version: Option<String>,
 }
 
 /// Payload of the `app-status` event: one app's result.
@@ -59,21 +70,31 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
             let found = status
                 .found
                 .clone()
-                .is_some_and(|installed| record_found(&app.id, app.installed.as_ref(), installed));
-            let app = &App {
-                installed: status.found.or(app.installed.clone()),
-                ..app.clone()
-            };
-            let (asset, asset_format, asset_error) = match select_asset(app, &status.latest, platform) {
+                .is_some_and(|installs| record_found(&app.id, &app.install_list(), installs));
+            let mut app = app.clone();
+            if let Some(installs) = status.found {
+                app.set_installs(installs);
+            }
+            let (asset, asset_format, asset_error) = match select_asset(&app, &status.latest, platform) {
                 Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
                 Err(e) => (None, None, Some(e.to_string())),
             };
-            let repo_version = app
-                .installed
-                .as_ref()
-                .filter(|i| i.format.needs_root())
-                .and_then(|i| i.package.as_deref())
-                .and_then(|p| install::repo_version(p, platform));
+            let installs: Vec<InstallStatusView> = status
+                .installs
+                .iter()
+                .map(|i| InstallStatusView {
+                    format: i.installed.format,
+                    tag: i.installed.tag.clone(),
+                    state: i.state,
+                    repo_version: i
+                        .installed
+                        .package
+                        .as_deref()
+                        .filter(|_| i.installed.format.needs_root())
+                        .and_then(|p| install::repo_version(p, platform)),
+                })
+                .collect();
+            let repo_version = installs.first().and_then(|i| i.repo_version.clone());
             StatusView {
                 state: status.state,
                 latest_tag: status.latest.tag,
@@ -84,6 +105,7 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
                 asset_error,
                 repo_version,
                 checked_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+                installs,
                 found,
             }
         });
@@ -98,14 +120,14 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
     }
 }
 
-/// Saves the install found on the system as the app's own, unless the
+/// Saves the installs found on the system as the app's own, unless the
 /// record changed since the check read it (another process installed).
-fn record_found(id: &str, checked: Option<&Installed>, found: Installed) -> bool {
+fn record_found(id: &str, checked: &[Installed], found: Vec<Installed>) -> bool {
     let Ok(mut store) = load_store() else {
         return false;
     };
     match store.get_mut(id) {
-        Ok(app) if app.installed.as_ref() == checked => app.installed = Some(found),
+        Ok(app) if app.install_list() == checked => app.set_installs(found),
         _ => return false,
     }
     store.save().is_ok()

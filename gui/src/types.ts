@@ -28,7 +28,10 @@ export interface AppView {
   signature: 'minisign' | 'gpg' | 'attestation' | null;
   minisign_key: string | null;
   gpg_keyring: string | null;
+  /** The install in the preferred format. */
   installed: InstalledView | null;
+  /** Every install, the preferred one first. */
+  installs: InstalledView[];
 }
 
 export interface SystemAppearance {
@@ -57,8 +60,17 @@ export interface StatusView {
   asset_error: string | null;
   repo_version: string | null;
   checked_at: number;
-  /** The install was found on the system, or at a new version, and saved. */
+  /** Each install and how it compares with the latest release. */
+  installs: InstallStatusView[];
+  /** Installs were found on the system, removed, or at a new version, and saved. */
   found: boolean;
+}
+
+export interface InstallStatusView {
+  format: Format;
+  tag: string;
+  state: UpdateState;
+  repo_version: string | null;
 }
 
 /** Payload of the `app-status` event. */
@@ -145,6 +157,12 @@ export interface PlanView {
   lines: SummaryLine[];
   unverified: boolean;
   needs_root: boolean;
+}
+
+/** One planned update of an app, or why it cannot be made. */
+export interface PlanResult {
+  plan: PlanView | null;
+  error: string | null;
 }
 
 export interface DownloadedView {
