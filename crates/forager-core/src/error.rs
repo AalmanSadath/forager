@@ -58,6 +58,8 @@ pub enum Error {
     PackageKit { code: u32, details: String },
     #[error("D-Bus: {0}")]
     DBus(#[from] zbus::Error),
+    #[error("cancelled")]
+    Cancelled,
     #[error("command failed: {0}")]
     CommandFailed(String),
     #[error("invalid app id '{0}': use letters, digits, '.', '_' and '-'")]

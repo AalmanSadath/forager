@@ -1,4 +1,5 @@
 use std::io::{self, BufRead, IsTerminal, Write};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -420,6 +421,8 @@ fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
                 pending.iter().map(|(id, _)| *id).collect::<Vec<_>>().join(", ")
             ))
             .icon("system-software-update")
+            // Clicking the notification opens the GUI, where one is installed.
+            .hint(notify_rust::Hint::DesktopEntry("io.github.aalmansadath.Forager".into()))
             .show()
             .context("cannot show notification")?;
     }
@@ -652,9 +655,9 @@ impl ProgressLine {
         }
     }
 
-    fn show(&mut self, progress: update::Progress) {
+    fn show(&mut self, progress: update::Progress) -> ControlFlow<()> {
         if !self.tty {
-            return;
+            return ControlFlow::Continue(());
         }
         let mib = |bytes: u64| bytes as f64 / 1048576.0;
         let text = match progress {
@@ -673,6 +676,7 @@ impl ProgressLine {
             io::stdout().flush().ok();
             self.shown = Some(text);
         }
+        ControlFlow::Continue(())
     }
 
     fn finish(&mut self) {

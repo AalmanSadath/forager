@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -57,8 +58,13 @@ pub(crate) fn find_in_checksums(text: &str, name: &str, single_file: bool) -> Op
 /// Downloads `asset` into `dir`, returning the file path and its SHA-256.
 /// Data goes to `<name>.part` first, so an interrupted download never
 /// leaves a file that looks complete.
-/// `progress` gets bytes received so far and the total, if known.
-pub fn download(asset: &Asset, dir: &Path, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<(PathBuf, String)> {
+/// `progress` gets bytes received so far and the total, if known; returning
+/// `Break` cancels the download with `Error::Cancelled`.
+pub fn download(
+    asset: &Asset,
+    dir: &Path,
+    progress: &mut dyn FnMut(u64, Option<u64>) -> ControlFlow<()>,
+) -> Result<(PathBuf, String)> {
     fs::create_dir_all(dir)?;
     let file_name = Path::new(&asset.name)
         .file_name()
@@ -82,7 +88,12 @@ pub fn download(asset: &Asset, dir: &Path, progress: &mut dyn FnMut(u64, Option<
 }
 
 /// Streams `url` into `path`, returning its SHA-256.
-fn fetch(url: &str, path: &Path, size: Option<u64>, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<String> {
+fn fetch(
+    url: &str,
+    path: &Path,
+    size: Option<u64>,
+    progress: &mut dyn FnMut(u64, Option<u64>) -> ControlFlow<()>,
+) -> Result<String> {
     let mut response = http::check(http::get(url).call()?)?;
     let total = response
         .headers()
@@ -104,7 +115,9 @@ fn fetch(url: &str, path: &Path, size: Option<u64>, progress: &mut dyn FnMut(u64
         hasher.update(&buf[..n]);
         file.write_all(&buf[..n])?;
         done += n as u64;
-        progress(done, total);
+        if progress(done, total).is_break() {
+            return Err(Error::Cancelled);
+        }
     }
     file.sync_all()?;
     Ok(hex::encode(hasher.finalize()))
@@ -125,6 +138,58 @@ mod tests {
             Some(HASH)
         );
         assert_eq!(find_in_checksums(&text, "missing.rpm", false), None);
+    }
+
+    /// Serves `body` once over HTTP on a local port and returns its URL.
+    fn serve_once(body: Vec<u8>) -> String {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/tool.tar.gz", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 2 {
+                line.clear();
+            }
+            let mut stream = stream;
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+            stream.write_all(head.as_bytes()).ok();
+            stream.write_all(&body).ok();
+        });
+        url
+    }
+
+    fn asset(url: String) -> Asset {
+        Asset {
+            name: "tool.tar.gz".into(),
+            url,
+            size: 0,
+            digest: None,
+        }
+    }
+
+    #[test]
+    fn downloads_with_progress_and_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut seen = None;
+        let (path, hash) = download(&asset(serve_once(b"test".to_vec())), dir.path(), &mut |done, total| {
+            seen = Some((done, total));
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+        assert_eq!(fs::read(path).unwrap(), b"test");
+        assert_eq!(hash, HASH);
+        assert_eq!(seen, Some((4, Some(4))));
+    }
+
+    #[test]
+    fn cancelled_download_leaves_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = serve_once(vec![0; 1 << 20]);
+        let result = download(&asset(url), dir.path(), &mut |_, _| ControlFlow::Break(()));
+        assert!(matches!(result, Err(Error::Cancelled)));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! then download, verify and install it.
 
 use std::fs;
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -209,7 +210,12 @@ impl Drop for Download {
 }
 
 /// Downloads the plan's asset and checks it against the expected SHA-256.
-pub fn download(plan: &Plan, platform: &Platform, progress: &mut dyn FnMut(Progress)) -> Result<Download> {
+/// `progress` may return `Break` to cancel (`Error::Cancelled`).
+pub fn download(
+    plan: &Plan,
+    platform: &Platform,
+    progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
+) -> Result<Download> {
     let (path, actual) = verify::download(&plan.asset, &store::download_dir(), &mut |done, total| {
         progress(Progress::Download { done, total })
     })?;
@@ -250,7 +256,7 @@ pub fn install(
     plan: &Plan,
     download: &Download,
     platform: &Platform,
-    progress: &mut dyn FnMut(Progress),
+    progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Installed> {
     let previous = store.get(id)?.installed.clone();
     let installed = install::install(
@@ -259,7 +265,10 @@ pub fn install(
         store.get(id)?,
         &plan.release.tag,
         platform,
-        &mut |percent| progress(Progress::Install { percent }),
+        // A package manager cannot be stopped halfway, so `Break` is ignored.
+        &mut |percent| {
+            let _ = progress(Progress::Install { percent });
+        },
     )?;
     store.get_mut(id)?.installed = Some(installed.clone());
     store.save()?;
