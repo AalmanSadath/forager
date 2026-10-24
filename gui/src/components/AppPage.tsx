@@ -5,6 +5,7 @@ import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
 import type { AppView, Format, InstalledView, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
+import VersionsSection from './appPage/VersionsSection';
 import SettingsSection from './appPage/SettingsSection';
 import SignatureSection from './appPage/SignatureSection';
 import {
@@ -88,6 +89,16 @@ function AppPageBody({ app }: { app: AppView }) {
     }
   };
 
+  const setSkipped = async (tag: string | null) => {
+    try {
+      await (tag ? ipc.skipRelease(app.id, tag) : ipc.unskipRelease(app.id));
+      await loadApps();
+      checkApps([app.id]);
+    } catch (e) {
+      toast('error', String(e));
+    }
+  };
+
   const remove = async () => {
     setRemoving(false);
     try {
@@ -135,6 +146,11 @@ function AppPageBody({ app }: { app: AppView }) {
                     : `Update to ${status?.latest_tag ?? 'latest'}`}
             </button>
           )}
+          {model.action === 'update' && !dirty && status && (
+            <button className="btn-secondary" onClick={() => setSkipped(status.latest_tag)} title="Do not offer this release; newer ones are">
+              Skip {status.latest_tag}
+            </button>
+          )}
           {dirty && (
             <button className="btn-primary" onClick={save} disabled={saving || !!preview?.filter_error}>
               {saving ? 'Saving…' : 'Save'}
@@ -164,6 +180,17 @@ function AppPageBody({ app }: { app: AppView }) {
                   state={status?.installs?.find((i) => i.format === installed.format)?.state}
                 />
               ))}
+              {app.skipped && status?.skipped && (
+                <>
+                  <dt>Skipped</dt>
+                  <dd>
+                    <span className="mono">{app.skipped}</span> ·{' '}
+                    <button className="link-btn" onClick={() => setSkipped(null)}>
+                      Offer it again
+                    </button>
+                  </dd>
+                </>
+              )}
               <dt>Latest</dt>
               <dd>
                 {status ? <span className="mono">{status.latest_tag}</span> : entry?.error ? <span className="text-danger">{entry.error}</span> : 'Not checked yet'}
@@ -203,6 +230,7 @@ function AppPageBody({ app }: { app: AppView }) {
         </div>
         <div className="page-column">
           <AssetsSection preview={preview} pinned={!!draft.format} loading={loading} error={previewError} onRefresh={refresh} />
+          <VersionsSection app={app} />
           <section className="page-card danger-zone">
             <div>
               <h3>Remove</h3>

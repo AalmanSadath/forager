@@ -14,6 +14,7 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     tag_filter: null,
     prerelease: false,
     bins: [],
+    skipped: null,
     signature: null,
     minisign_key: null,
     gpg_keyring: null,
@@ -41,6 +42,7 @@ function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
       repo_version: null,
       checked_at: 0,
       installs: [],
+      skipped: false,
       found: false,
     },
   };

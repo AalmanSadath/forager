@@ -22,6 +22,8 @@ const FILTER_INSTALLED: u64 = 1 << 2;
 /// `PK_TRANSACTION_FLAG_ENUM_ALLOW_REINSTALL` as a flag bit, so a missing
 /// install of the same version, or a format switch, can be repaired.
 const FLAG_ALLOW_REINSTALL: u64 = 1 << 4;
+/// `PK_TRANSACTION_FLAG_ENUM_ALLOW_DOWNGRADE`, for installing an older version.
+const FLAG_ALLOW_DOWNGRADE: u64 = 1 << 6;
 const EXIT_SUCCESS: u32 = 1;
 /// `PK_ERROR_ENUM_NOT_AUTHORIZED`: polkit refused, e.g. with no agent to ask.
 pub const ERROR_NOT_AUTHORIZED: u32 = 48;
@@ -43,10 +45,12 @@ pub fn available() -> bool {
             .is_ok_and(|names| names.iter().any(|n| n.as_str() == SERVICE))
 }
 
-/// Installs a local package file. `progress` gets percentages as they come.
-pub fn install_file(path: &std::path::Path, progress: &mut dyn FnMut(u32)) -> Result<()> {
+/// Installs a local package file, replacing a newer version when
+/// `downgrade` is set. `progress` gets percentages as they come.
+pub fn install_file(path: &std::path::Path, downgrade: bool, progress: &mut dyn FnMut(u32)) -> Result<()> {
     let path = path.to_string_lossy().into_owned();
-    Transaction::begin()?.run("InstallFiles", &(FLAG_ALLOW_REINSTALL, vec![path]), progress)?;
+    let flags = FLAG_ALLOW_REINSTALL | if downgrade { FLAG_ALLOW_DOWNGRADE } else { 0 };
+    Transaction::begin()?.run("InstallFiles", &(flags, vec![path]), progress)?;
     Ok(())
 }
 

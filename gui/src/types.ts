@@ -26,6 +26,8 @@ export interface AppView {
   tag_filter: string | null;
   prerelease: boolean;
   bins: string[];
+  /** A release the user chose not to install. */
+  skipped: string | null;
   signature: 'minisign' | 'gpg' | 'attestation' | null;
   minisign_key: string | null;
   gpg_keyring: string | null;
@@ -63,6 +65,8 @@ export interface StatusView {
   checked_at: number;
   /** Each install and how it compares with the latest release. */
   installs: InstallStatusView[];
+  /** The latest release is the skipped one. */
+  skipped: boolean;
   /** Installs were found on the system, removed, or at a new version, and saved. */
   found: boolean;
 }
@@ -162,6 +166,10 @@ export interface PlanView {
   lines: SummaryLine[];
   unverified: boolean;
   needs_root: boolean;
+  /** Older than the install it replaces. */
+  downgrade: boolean;
+  /** Release skipped once this is installed. */
+  skip_after: string | null;
   notes: string | null;
 }
 

@@ -12,7 +12,7 @@ use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, InstallState, Plan, State};
-use forager_core::{host, install, timer};
+use forager_core::{host, install, timer, version};
 
 #[derive(Parser)]
 #[command(
@@ -135,6 +135,29 @@ enum Command {
         #[arg(long)]
         unprivileged_only: bool,
     },
+    /// Install a particular release, e.g. to roll back to an older one. Going
+    /// back from the latest release skips it, so it is not offered again.
+    Install {
+        id: String,
+        /// The release's tag.
+        #[arg(long)]
+        tag: String,
+        /// Do not ask for confirmation.
+        #[arg(short, long)]
+        yes: bool,
+        /// Install assets that have no published checksum.
+        #[arg(long)]
+        allow_unverified: bool,
+    },
+    /// Do not offer a release (the latest by default) as an update. A newer
+    /// release is offered as usual.
+    Skip {
+        id: String,
+        #[arg(long)]
+        tag: Option<String>,
+    },
+    /// Offer the skipped release again.
+    Unskip { id: String },
     /// Show what Forager installed, updated and removed, newest first.
     History {
         /// Number of events to show.
@@ -393,6 +416,41 @@ fn main() -> Result<()> {
                 via,
             },
         )?,
+        Command::Install {
+            id,
+            tag,
+            yes,
+            allow_unverified,
+        } => {
+            let options = UpdateOptions {
+                yes,
+                allow_unverified,
+                unprivileged_only: false,
+                via,
+            };
+            let failed = run_plans(&mut store, &id, &Platform::detect(), &options, Some(&tag))?;
+            if failed > 0 {
+                bail!("{failed} install(s) failed");
+            }
+        }
+        Command::Skip { id, tag } => {
+            let app = store.get(&id)?;
+            let tag = match tag {
+                Some(tag) => tag,
+                None => update::latest(app, app.source.releases()?, &Platform::detect())?.tag,
+            };
+            store.get_mut(&id)?.skipped = Some(tag.clone());
+            store.save()?;
+            println!("{id}: {tag} skipped; newer releases are offered as usual.");
+        }
+        Command::Unskip { id } => {
+            let skipped = store.get_mut(&id)?.skipped.take();
+            store.save()?;
+            match skipped {
+                Some(tag) => println!("{id}: {tag} is offered again."),
+                None => println!("{id}: no release is skipped."),
+            }
+        }
         Command::Timer { action } => timer(action, explicit_config)?,
         Command::Remove { id, keep_installed } => {
             let app = store.get(&id)?;
@@ -478,6 +536,14 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
                 .map(|i| describe_install(i, latest, &platform, true))
                 .collect::<Vec<_>>()
                 .join("; "),
+        };
+        let behind = status
+            .installs
+            .iter()
+            .any(|i| version::is_newer(&i.installed.tag, latest));
+        let text = match status.skipped && behind {
+            true => format!("{} ({latest} skipped)", text.replace(" (up to date)", "")),
+            false => text,
         };
         let asset = match select_asset(app, &status.latest, &platform) {
             Ok((asset, _)) => asset.name.clone(),
@@ -641,7 +707,7 @@ fn update(store: &mut Store, ids: &[String], options: &UpdateOptions) -> Result<
 
     let mut failed = 0;
     for id in &ids {
-        match update_one(store, id, &platform, options) {
+        match run_plans(store, id, &platform, options, None) {
             Ok(failures) => failed += failures,
             Err(e) => {
                 eprintln!("{id}: {e:#}");
@@ -658,12 +724,22 @@ fn update(store: &mut Store, ids: &[String], options: &UpdateOptions) -> Result<
     Ok(())
 }
 
-/// Updates every install of `id` that needs it, each in its own format.
-/// Returns how many of its updates failed; those are reported and recorded.
-fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &UpdateOptions) -> Result<usize> {
+/// Updates every install of `id` that needs it, each in its own format, or
+/// moves every install to the release tagged `tag`. Returns how many of the
+/// installs failed; those are reported and recorded.
+fn run_plans(
+    store: &mut Store,
+    id: &str,
+    platform: &Platform,
+    options: &UpdateOptions,
+    tag: Option<&str>,
+) -> Result<usize> {
     let app = store.get_mut(id)?;
     let recorded = app.install_list();
-    let plans = update::plans(app, platform)?;
+    let plans = match tag {
+        Some(tag) => update::plans_for(app, platform, tag)?,
+        None => update::plans(app, platform)?,
+    };
     // Installed or changed outside Forager: keep what the system reports.
     if app.install_list() != recorded {
         store.save()?;
@@ -735,7 +811,8 @@ fn apply(
         (Some(tag), false) => tag.clone(),
         (None, _) => "not installed".into(),
     };
-    println!("{name}: {from} -> {}", plan.release.tag);
+    let older = if plan.downgrade { " (older)" } else { "" };
+    println!("{name}: {from} -> {}{older}", plan.release.tag);
     for line in update::summary(app, plan) {
         println!("  {:<8}{}", format!("{}:", line.label), line.value);
     }
@@ -776,6 +853,9 @@ fn apply(
     history::record(&event).ok();
     let links = installed.links;
     println!("{name}: installed {}", plan.release.tag);
+    if let Some(skipped) = &plan.skip_after {
+        println!("  note:   {skipped} is skipped; `forager unskip {id}` offers it again");
+    }
     for link in &links {
         println!("  linked: {}", link.display());
     }

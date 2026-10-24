@@ -41,6 +41,10 @@ pub struct PlanView {
     pub lines: Vec<SummaryLine>,
     pub unverified: bool,
     pub needs_root: bool,
+    /// The release is older than the install it replaces.
+    pub downgrade: bool,
+    /// Release skipped once this is installed.
+    pub skip_after: Option<String>,
     /// Release notes of the version to install.
     pub notes: Option<String>,
 }
@@ -75,15 +79,21 @@ pub struct ProgressEvent {
 pub const PROGRESS_EVENT: &str = "update-progress";
 
 /// What updating `id` takes: one plan per install that needs it, none when
-/// it is up to date. Each plan waits for `start_update` with its format.
+/// it is up to date; or, with `tag`, what moving every install to that
+/// release takes. Each plan waits for `start_update` with its format.
 #[tauri::command]
-pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<Vec<PlanResult>> {
+pub async fn plan_update(updates: State<'_, Updates>, id: String, tag: Option<String>) -> CmdResult<Vec<PlanResult>> {
     let key_id = id.clone();
     let planned = blocking(move || {
         let mut store = load_store()?;
         let app = store.get_mut(&id).map_err(|e| e.to_string())?;
         let recorded = app.install_list();
-        let plans = update::plans(app, &Platform::detect()).map_err(|e| e.to_string())?;
+        let platform = Platform::detect();
+        let plans = match &tag {
+            Some(tag) => update::plans_for(app, &platform, tag),
+            None => update::plans(app, &platform),
+        }
+        .map_err(|e| e.to_string())?;
         // Installed or changed outside Forager: keep what the system reports.
         if app.install_list() != recorded {
             store.save().map_err(|e| e.to_string())?;
@@ -101,6 +111,8 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String) -> CmdResult<V
                         lines: update::summary(app, &plan),
                         unverified: plan.unverified(),
                         needs_root: plan.format.needs_root(),
+                        downgrade: plan.downgrade,
+                        skip_after: plan.skip_after.clone(),
                         notes: plan.release.notes.clone(),
                     };
                     (plan, view)

@@ -12,6 +12,7 @@ import type {
   DownloadedView,
   HistoryEvent,
   PlanResult,
+  ReleaseView,
   ParsedSource,
   Preview,
   SettingsInput,
@@ -43,9 +44,15 @@ export const saveApp = (id: string, settings: SettingsInput, signature: Signatur
 /** Stops tracking `id`, first uninstalling its installs in these formats. */
 export const removeApp = (id: string, uninstall: Format[]) => invoke<void>('remove_app', { id, uninstall });
 
+/** The app's releases, newest first, as its settings see them. */
+export const listReleases = (id: string, refresh = false) => invoke<ReleaseView[]>('list_releases', { id, refresh });
+/** Stops offering `tag` (the latest release when null) as an update. */
+export const skipRelease = (id: string, tag: string | null) => invoke<AppView>('skip_release', { id, tag });
+export const unskipRelease = (id: string) => invoke<AppView>('unskip_release', { id });
+
 // ── update ──────────────────────────────────────────────────────
 /** One plan per install that needs updating, each in its own format; empty when up to date. */
-export const planUpdate = (id: string) => invoke<PlanResult[]>('plan_update', { id });
+export const planUpdate = (id: string, tag: string | null = null) => invoke<PlanResult[]>('plan_update', { id, tag });
 /** Progress arrives as `update-progress` events. */
 export const startUpdate = (id: string, format: Format) => invoke<DownloadedView>('start_update', { id, format });
 export const finishUpdate = (id: string, format: Format) => invoke<AppView>('finish_update', { id, format });

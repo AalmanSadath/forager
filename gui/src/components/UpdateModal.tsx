@@ -24,7 +24,7 @@ type Unit = { id: string; plan: PlanView | null; error?: string };
  * at a time with progress. An app installed in several formats (an rpm and a
  * Flatpak) has one update per format. Mirrors the CLI's `update` prompts.
  */
-export default function UpdateModal({ ids }: { ids: string[] }) {
+export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: string | null }) {
   const close = useAppStore((s) => s.closeUpdate);
   const loadApps = useAppStore((s) => s.loadApps);
   const checkApps = useAppStore((s) => s.checkApps);
@@ -47,7 +47,7 @@ export default function UpdateModal({ ids }: { ids: string[] }) {
       const out: Unit[] = [];
       for (const id of ids) {
         try {
-          const results = await ipc.planUpdate(id);
+          const results = await ipc.planUpdate(id, tag);
           if (results.length === 0) out.push({ id, plan: null });
           for (const r of results) out.push({ id, plan: r.plan, error: r.error ?? undefined });
         } catch (e) {
@@ -62,7 +62,7 @@ export default function UpdateModal({ ids }: { ids: string[] }) {
     return () => {
       live = false;
     };
-  }, [ids]);
+  }, [ids, tag]);
 
   const runnable = plans.filter((p) => p.plan);
   // Named by format too when an app has more than one update.
@@ -131,7 +131,11 @@ export default function UpdateModal({ ids }: { ids: string[] }) {
 
   // Installing something new is not an update, and the title should say so.
   const firstInstall = single && plans[0]?.plan && !plans[0].plan.from;
-  const title = single ? `${firstInstall ? 'Install' : 'Update'} ${ids[0]}` : `Update ${ids.length} apps`;
+  const title = tag
+    ? `Install ${ids[0]} ${tag}`
+    : single
+      ? `${firstInstall ? 'Install' : 'Update'} ${ids[0]}`
+      : `Update ${ids.length} apps`;
   const blocking = phase.kind === 'working';
 
   return (
@@ -151,7 +155,11 @@ export default function UpdateModal({ ids }: { ids: string[] }) {
                 <>
                   <p className="plan-versions mono">
                     {plan.missing ? `${plan.from} (missing)` : (plan.from ?? 'not installed')} → {plan.to} · {FORMAT_NAMES[plan.format]}
+                    {plan.downgrade && ' · older'}
                   </p>
+                  {plan.skip_after && (
+                    <p className="form-hint">{plan.skip_after} will be skipped, so it is not offered again; newer releases are.</p>
+                  )}
                   <dl className="plan-lines">
                     {plan.lines
                       .filter((l) => single || l.tone !== 'normal')

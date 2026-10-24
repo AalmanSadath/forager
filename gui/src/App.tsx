@@ -23,6 +23,7 @@ export default function App() {
   const checks = useAppStore((s) => s.checks);
 
   const updating = useAppStore((s) => s.updating);
+  const updateTag = useAppStore((s) => s.updateTag);
   const applyProgress = useAppStore((s) => s.applyProgress);
   useEffect(() => {
     const unlisten = listen<ProgressEvent>('update-progress', (e) => applyProgress(e.payload));
@@ -73,7 +74,7 @@ export default function App() {
         ) : (
           <AppsPanel />
         )}
-        {updating && <UpdateModal key={updating.join(',')} ids={updating} />}
+        {updating && <UpdateModal key={`${updating.join(',')}@${updateTag ?? ''}`} ids={updating} tag={updateTag} />}
         <Toasts />
       </main>
     </div>

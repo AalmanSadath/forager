@@ -35,6 +35,8 @@ pub struct StatusView {
     pub checked_at: u64,
     /// Each install and how it compares with the latest release.
     pub installs: Vec<InstallStatusView>,
+    /// The latest release is the skipped one.
+    pub skipped: bool,
     /// Installs were found on the system, removed, or at another version
     /// than recorded, and saved, so the app list is out of date.
     pub found: bool,
@@ -106,6 +108,7 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
                 repo_version,
                 checked_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
                 installs,
+                skipped: status.skipped,
                 found,
             }
         });

@@ -130,6 +130,10 @@ pub struct App {
     /// Found automatically when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bins: Vec<String>,
+    /// A release the user chose not to install: while it is the latest, the
+    /// app counts as up to date. A newer release is offered as usual.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
     /// Key the app's assets must be signed with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<Signature>,
@@ -153,6 +157,7 @@ impl App {
             format: None,
             prerelease: false,
             bins: Vec::new(),
+            skipped: None,
             signature: None,
             installed: None,
             also_installed: Vec::new(),

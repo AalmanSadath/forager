@@ -114,6 +114,10 @@ forager update drawio-desktop --yes
 forager edit drawio-desktop --format appimage   # or --format auto, --filter, --bin, --prerelease
 forager edit bifrossh --tag-filter '^v'         # follow only v… releases, not android-v…
 forager remove drawio-desktop
+forager notes drawio-desktop             # release notes of the latest release (or --tag)
+forager skip drawio-desktop              # do not offer the latest release; newer ones are
+forager unskip drawio-desktop
+forager install drawio-desktop --tag v24.0.0   # roll back; skips the release rolled back from
 ```
 
 Forager looks for an app on every check, in every format its release

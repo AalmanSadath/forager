@@ -119,6 +119,18 @@ pub struct ReleaseView {
     pub notes: Option<String>,
 }
 
+impl From<&Release> for ReleaseView {
+    fn from(release: &Release) -> ReleaseView {
+        ReleaseView {
+            tag: release.tag.clone(),
+            name: release.name.clone(),
+            published_at: release.published_at.clone(),
+            prerelease: release.prerelease,
+            notes: release.notes.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CandidateView {
     pub name: String,
@@ -149,17 +161,7 @@ pub async fn preview(
     // A new pattern changes which links are releases, so it is part of the source.
     let mut app = App::new(spec, "preview".into());
     settings.apply(&mut app)?;
-    let spec = app.source.clone();
-    let cached = (!refresh).then(|| cache.get(&spec)).flatten();
-    let releases = match cached {
-        Some(releases) => releases,
-        None => {
-            let source = spec.clone();
-            let releases = blocking(move || source.releases().map_err(|e| e.to_string())).await?;
-            cache.put(&spec, releases.clone());
-            releases
-        }
-    };
+    let releases = releases_of(&cache, &app.source, refresh).await?;
 
     let filter_error = app
         .asset_filter
@@ -190,13 +192,7 @@ pub async fn preview(
         })
         .collect();
     Ok(Preview {
-        release: ReleaseView {
-            tag: release.tag.clone(),
-            name: release.name.clone(),
-            published_at: release.published_at.clone(),
-            prerelease: release.prerelease,
-            notes: release.notes.clone(),
-        },
+        release: ReleaseView::from(&release),
         candidates,
         filter_error,
         tag_filter_error,
@@ -255,6 +251,67 @@ pub async fn add_app(
         apply_signature(&mut app, &signature)?;
         let view = AppView::from(&app);
         store.add(app).map_err(|e| e.to_string())?;
+        store.save().map_err(|e| e.to_string())?;
+        Ok(view)
+    })
+    .await
+}
+
+/// Releases of `source`, from the cache unless `refresh` is set.
+async fn releases_of(cache: &ReleaseCache, source: &Source, refresh: bool) -> CmdResult<Vec<Release>> {
+    if let Some(releases) = (!refresh).then(|| cache.get(source)).flatten() {
+        return Ok(releases);
+    }
+    let fetch = source.clone();
+    let releases = blocking(move || fetch.releases().map_err(|e| e.to_string())).await?;
+    cache.put(source, releases.clone());
+    Ok(releases)
+}
+
+/// The app's releases, newest first, as its settings see them: tags its tag
+/// filter accepts, and prereleases only if it follows them.
+#[tauri::command]
+pub async fn list_releases(cache: State<'_, ReleaseCache>, id: String, refresh: bool) -> CmdResult<Vec<ReleaseView>> {
+    let app = blocking(move || load_store()?.get(&id).cloned().map_err(|e| e.to_string())).await?;
+    let tags = app.tag_filter.as_deref().and_then(|f| regex::Regex::new(f).ok());
+    Ok(releases_of(&cache, &app.source, refresh)
+        .await?
+        .into_iter()
+        .filter(|r| app.prerelease || !r.prerelease)
+        .filter(|r| tags.as_ref().is_none_or(|re| re.is_match(&r.tag)))
+        .map(|r| ReleaseView::from(&r))
+        .collect())
+}
+
+/// Stops offering `tag` (the latest release when `None`) as an update.
+#[tauri::command]
+pub async fn skip_release(cache: State<'_, ReleaseCache>, id: String, tag: Option<String>) -> CmdResult<AppView> {
+    let tag = match tag {
+        Some(tag) => tag,
+        None => {
+            let key = id.clone();
+            let app = blocking(move || load_store()?.get(&key).cloned().map_err(|e| e.to_string())).await?;
+            let releases = releases_of(&cache, &app.source, false).await?;
+            update::latest(&app, releases, &Platform::detect())
+                .map_err(|e| e.to_string())?
+                .tag
+        }
+    };
+    set_skipped(id, Some(tag)).await
+}
+
+/// Offers the skipped release again.
+#[tauri::command]
+pub async fn unskip_release(id: String) -> CmdResult<AppView> {
+    set_skipped(id, None).await
+}
+
+async fn set_skipped(id: String, tag: Option<String>) -> CmdResult<AppView> {
+    blocking(move || {
+        let mut store = load_store()?;
+        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
+        app.skipped = tag;
+        let view = AppView::from(&*app);
         store.save().map_err(|e| e.to_string())?;
         Ok(view)
     })

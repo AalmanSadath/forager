@@ -33,6 +33,8 @@ pub enum Error {
     },
     #[error("no release found")]
     NoRelease,
+    #[error("no release tagged {0}")]
+    ReleaseNotFound(String),
     #[error("no asset in release {tag} matches this system")]
     NoMatchingAsset { tag: String },
     #[error("checksum mismatch for {asset}: expected {expected}, got {actual}")]

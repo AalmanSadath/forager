@@ -212,3 +212,9 @@
 .markdown pre { background: var(--bg-mid); padding: 8px; border-radius: 6px; overflow-x: auto; }
 .markdown a { color: var(--accent); }
 .markdown-img { color: var(--text-muted); }
+
+/* Versions: one row per release, to roll back or move to another. */
+.version-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.version-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.version-row:last-child { border-bottom: none; }
+.version-date { flex: 1; color: var(--text-muted); font-size: 13px; }

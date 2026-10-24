@@ -22,7 +22,7 @@ use crate::model::{App, Format, Installed};
 use crate::platform::{self, PackageManager, Platform};
 
 /// Installs `file` for `app` and returns what is needed to update or remove
-/// it later. The app's install in the same format is taken to be the
+/// it later. `downgrade` lets the package manager replace a newer version. The app's install in the same format is taken to be the
 /// version being replaced.
 /// `progress` gets percentages from PackageKit installs.
 pub fn install(
@@ -30,6 +30,7 @@ pub fn install(
     format: Format,
     app: &App,
     tag: &str,
+    downgrade: bool,
     platform: &Platform,
     progress: &mut dyn FnMut(u32),
 ) -> Result<Installed> {
@@ -49,18 +50,32 @@ pub fn install(
 
     installed.package = package_name(&file, format)?;
     match format {
-        Format::Rpm => system_install(&file, progress, || match platform.package_manager {
-            Some(PackageManager::Dnf) => run(pkexec(["dnf", "install", "-y"]).arg(&file)),
+        Format::Rpm => system_install(&file, downgrade, progress, || match platform.package_manager {
+            Some(PackageManager::Dnf) => {
+                let action = if downgrade { "downgrade" } else { "install" };
+                run(pkexec(["dnf", action, "-y"]).arg(&file))
+            }
             Some(PackageManager::Zypper) => {
-                run(pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]).arg(&file))
+                let mut command = pkexec(["zypper", "--non-interactive", "install", "--allow-unsigned-rpm"]);
+                if downgrade {
+                    command.arg("--oldpackage");
+                }
+                run(command.arg(&file))
             }
             _ => Err(Error::NoPackageManager("rpm")),
         })?,
-        Format::Deb => system_install(&file, progress, || match platform.package_manager {
-            Some(PackageManager::Apt) => run(pkexec(["apt-get", "install", "-y"]).arg(&file)),
+        Format::Deb => system_install(&file, downgrade, progress, || match platform.package_manager {
+            Some(PackageManager::Apt) => {
+                let mut command = pkexec(["apt-get", "install", "-y"]);
+                if downgrade {
+                    command.arg("--allow-downgrades");
+                }
+                run(command.arg(&file))
+            }
             _ => Err(Error::NoPackageManager("deb")),
         })?,
-        Format::Pacman => system_install(&file, progress, || match platform.package_manager {
+        // pacman -U installs an older package as readily as a newer one.
+        Format::Pacman => system_install(&file, downgrade, progress, || match platform.package_manager {
             Some(PackageManager::Pacman) => run(pkexec(["pacman", "-U", "--noconfirm"]).arg(&file)),
             _ => Err(Error::NoPackageManager("pacman")),
         })?,
@@ -336,9 +351,14 @@ pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
 /// with `fallback` (the native tool under pkexec). Also falls back when
 /// polkit refuses PackageKit, as happens without a graphical authentication
 /// agent (e.g. over SSH); pkexec can then ask on the terminal.
-fn system_install(file: &Path, progress: &mut dyn FnMut(u32), fallback: impl FnOnce() -> Result<()>) -> Result<()> {
+fn system_install(
+    file: &Path,
+    downgrade: bool,
+    progress: &mut dyn FnMut(u32),
+    fallback: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     if packagekit::available() {
-        match packagekit::install_file(file, progress) {
+        match packagekit::install_file(file, downgrade, progress) {
             Err(Error::PackageKit {
                 code: packagekit::ERROR_NOT_AUTHORIZED,
                 ..

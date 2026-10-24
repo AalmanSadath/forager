@@ -13,6 +13,7 @@ const app: AppView = {
   tag_filter: null,
   prerelease: false,
   bins: ['bin/tool', 'bin/helper'],
+  skipped: null,
   signature: 'minisign',
   minisign_key: 'RWQkey',
   gpg_keyring: null,

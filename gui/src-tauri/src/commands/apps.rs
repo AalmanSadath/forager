@@ -24,6 +24,8 @@ pub struct AppView {
     pub tag_filter: Option<String>,
     pub prerelease: bool,
     pub bins: Vec<String>,
+    /// A release the user chose not to install.
+    pub skipped: Option<String>,
     /// `minisign`, `gpg` or `attestation` when a signature is required.
     pub signature: Option<String>,
     pub minisign_key: Option<String>,
@@ -70,6 +72,7 @@ impl From<&App> for AppView {
             tag_filter: app.tag_filter.clone(),
             prerelease: app.prerelease,
             bins: app.bins.clone(),
+            skipped: app.skipped.clone(),
             signature: app.signature.as_ref().map(|s| s.to_string()),
             minisign_key: match &app.signature {
                 Some(Signature::Minisign { public_key }) => Some(public_key.clone()),

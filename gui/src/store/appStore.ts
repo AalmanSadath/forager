@@ -37,7 +37,9 @@ interface AppStore {
 
   /** Apps the update dialog is working on; null when it is closed. */
   updating: string[] | null;
-  openUpdate: (ids: string[]) => void;
+  /** A release to install instead of the latest (a rollback); null for updates. */
+  updateTag: string | null;
+  openUpdate: (ids: string[], tag?: string) => void;
   closeUpdate: () => void;
   /** 0..1 per app while it downloads or installs; null when unknown. */
   progress: Record<string, number | null>;
@@ -142,8 +144,9 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   updating: null,
-  openUpdate: (ids) => set({ updating: ids }),
-  closeUpdate: () => set({ updating: null }),
+  updateTag: null,
+  openUpdate: (ids, tag) => set({ updating: ids, updateTag: tag ?? null }),
+  closeUpdate: () => set({ updating: null, updateTag: null }),
   progress: {},
   applyProgress: (e) => {
     const fraction =

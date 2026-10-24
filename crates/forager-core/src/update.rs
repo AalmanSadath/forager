@@ -33,6 +33,11 @@ pub struct Plan {
     /// Installs in other formats that this one replaces, removed once it is
     /// in place: the app was pinned to another format.
     pub replaces: Vec<Installed>,
+    /// The release is older than the install it replaces.
+    pub downgrade: bool,
+    /// Release to mark as skipped once this is installed: rolling back to an
+    /// older release skips the latest, so it is not offered again at once.
+    pub skip_after: Option<String>,
 }
 
 impl Plan {
@@ -153,6 +158,9 @@ pub struct Status {
     /// remains, or one upgraded or downgraded outside Forager. Already
     /// counted in `state`; callers save it with `App::set_installs`.
     pub found: Option<Vec<Installed>>,
+    /// The latest release is the one the user skipped, so installs older
+    /// than it count as up to date.
+    pub skipped: bool,
 }
 
 /// Fetches the latest release and compares it with the installs.
@@ -166,15 +174,13 @@ pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
     let latest = latest(app, releases, &platform)?;
     let observed = observe(app, &latest, &platform);
     let found = (observed != app.install_list()).then(|| observed.clone());
+    let skipped = app.skipped.as_deref() == Some(latest.tag.as_str());
     let installs: Vec<InstallState> = observed
         .into_iter()
         .map(|installed| {
-            let state = if !install::is_present(&installed) {
-                State::Missing
-            } else if version::is_newer(&installed.tag, &latest.tag) {
-                State::Outdated
-            } else {
-                State::UpToDate
+            let state = match install::is_present(&installed) {
+                true => compare(&installed.tag, &latest.tag, skipped),
+                false => State::Missing,
             };
             InstallState { installed, state }
         })
@@ -185,7 +191,17 @@ pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
         latest,
         installs,
         found,
+        skipped,
     })
+}
+
+/// A present install at `tag` against the latest release; older counts as
+/// up to date when the user skipped the latest.
+fn compare(tag: &str, latest: &str, skipped: bool) -> State {
+    match version::is_newer(tag, latest) && !skipped {
+        true => State::Outdated,
+        false => State::UpToDate,
+    }
 }
 
 fn overall(pinned: Option<Format>, installs: &[InstallState]) -> State {
@@ -389,7 +405,7 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
     let release = status.latest;
     let app = &*app;
     let make = |format: Option<Format>, current: Option<&InstallState>, replaces: Vec<Installed>| {
-        plan_one(app, &release, platform, format, current, replaces)
+        plan_one(app, &release, platform, format, current, replaces, None)
     };
     Ok(match status.state {
         State::UpToDate => Vec::new(),
@@ -404,6 +420,34 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
     })
 }
 
+/// Plans installing the release tagged `tag` instead of the latest: every
+/// install moves to it in its own format (one install in the chosen format
+/// when there is none). Going back from the latest release skips it.
+pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Result<Plan>>> {
+    let releases = app.source.releases()?;
+    let target = releases
+        .iter()
+        .find(|r| r.tag == tag)
+        .cloned()
+        .ok_or_else(|| Error::ReleaseNotFound(tag.to_string()))?;
+    let status = status_in(app, releases)?;
+    if let Some(found) = status.found {
+        app.set_installs(found);
+    }
+    let app = &*app;
+    let skip_after = version::is_newer(&target.tag, &status.latest.tag).then(|| status.latest.tag.clone());
+    let make = |format: Option<Format>, current: Option<&InstallState>| {
+        plan_one(app, &target, platform, format, current, Vec::new(), skip_after.clone())
+    };
+    Ok(match status.installs.as_slice() {
+        [] => vec![make(None, None)],
+        installs => installs
+            .iter()
+            .map(|i| make(Some(i.installed.format), Some(i)))
+            .collect(),
+    })
+}
+
 fn plan_one(
     app: &App,
     release: &Release,
@@ -411,6 +455,7 @@ fn plan_one(
     format: Option<Format>,
     current: Option<&InstallState>,
     replaces: Vec<Installed>,
+    skip_after: Option<String>,
 ) -> Result<Plan> {
     let mut target = app.clone();
     if format.is_some() {
@@ -437,7 +482,9 @@ fn plan_one(
         expected_sha256,
         missing: current.is_some_and(|i| i.state == State::Missing),
         signature,
+        downgrade: current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag)),
         replaces,
+        skip_after,
     })
 }
 
@@ -525,6 +572,7 @@ pub fn install(
         plan.format,
         store.get(id)?,
         &plan.release.tag,
+        plan.downgrade,
         platform,
         // A package manager cannot be stopped halfway, so `Break` is ignored.
         &mut |percent| {
@@ -536,6 +584,9 @@ pub fn install(
     installs.push(installed.clone());
     sort_installs(&mut installs, app.format, platform);
     app.set_installs(installs);
+    if plan.skip_after.is_some() {
+        app.skipped = plan.skip_after.clone();
+    }
     store.save()?;
 
     for previous in plan.replaces.iter().filter(|p| p.format != installed.format) {
@@ -583,6 +634,8 @@ mod tests {
             missing: false,
             signature: None,
             replaces: Vec::new(),
+            downgrade: false,
+            skip_after: None,
         }
     }
 
@@ -595,6 +648,61 @@ mod tests {
             path: None,
             links: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_skipped_release_is_not_an_update() {
+        assert_eq!(compare("v1.0", "v1.1", false), State::Outdated);
+        assert_eq!(compare("v1.0", "v1.1", true), State::UpToDate);
+        assert_eq!(compare("v1.1", "v1.1", false), State::UpToDate);
+    }
+
+    #[test]
+    fn rolling_back_downgrades_and_skips_the_latest() {
+        let release = Release {
+            tag: "v1.0.0".into(),
+            name: None,
+            prerelease: false,
+            published_at: None,
+            notes: None,
+            assets: vec![Asset {
+                name: "tool-1.0.0-1.x86_64.rpm".into(),
+                url: String::new(),
+                size: 0,
+                digest: None,
+            }],
+        };
+        let platform = Platform {
+            arch: "x86_64",
+            package_manager: Some(crate::platform::PackageManager::Dnf),
+            flatpak: false,
+        };
+        let app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        let current = InstallState {
+            installed: install(Format::Rpm, "v1.1.0"),
+            state: State::UpToDate,
+        };
+        let plan = plan_one(
+            &app,
+            &release,
+            &platform,
+            Some(Format::Rpm),
+            Some(&current),
+            Vec::new(),
+            Some("v1.1.0".into()),
+        )
+        .unwrap();
+        assert!(plan.downgrade);
+        assert_eq!(plan.from.as_deref(), Some("v1.1.0"));
+        assert_eq!(plan.skip_after.as_deref(), Some("v1.1.0"));
+        let fresh = plan_one(&app, &release, &platform, None, None, Vec::new(), None).unwrap();
+        assert!(!fresh.downgrade);
     }
 
     #[test]
