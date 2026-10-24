@@ -40,6 +40,10 @@ forager timer status
 forager timer disable
 ```
 
+`forager history` lists what was installed, updated, removed or failed, and
+updates the timer found, from the CLI, the timer and the GUI alike
+(`~/.local/state/forager/history.jsonl`).
+
 The timer reads `GITHUB_TOKEN` and other variables from `~/.config/forager/env`.
 `update --unprivileged-only` skips anything that needs root, so the timer
 never asks for a password.

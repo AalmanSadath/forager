@@ -4,8 +4,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("http: {0}")]
+    #[error(transparent)]
     Http(#[from] ureq::Error),
+    #[error("project not found: {0}")]
+    ProjectNotFound(String),
     #[error("invalid response: {0}")]
     Json(#[from] serde_json::Error),
     #[error("io: {0}")]

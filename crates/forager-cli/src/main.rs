@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format, Signature};
 use forager_core::platform::{self, Platform};
@@ -22,6 +23,10 @@ struct Cli {
     /// Path to the tracked apps file.
     #[arg(long, global = true, env = "FORAGER_CONFIG")]
     config: Option<PathBuf>,
+
+    /// Set by the background timer so its actions show as its own in the history.
+    #[arg(long, global = true, hide = true)]
+    from_timer: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -107,6 +112,12 @@ enum Command {
         #[arg(long)]
         unprivileged_only: bool,
     },
+    /// Show what Forager installed, updated and removed, newest first.
+    History {
+        /// Number of events to show.
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: usize,
+    },
     /// Manage the daily background check (a systemd user timer).
     Timer {
         #[command(subcommand)]
@@ -174,6 +185,7 @@ struct UpdateOptions {
     yes: bool,
     allow_unverified: bool,
     unprivileged_only: bool,
+    via: Via,
 }
 
 /// `--format` value for `edit`: a format, or `auto` to remove the pin.
@@ -195,6 +207,7 @@ impl std::str::FromStr for FormatPin {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let explicit_config = cli.config.clone();
+    let via = if cli.from_timer { Via::Timer } else { Via::Cli };
     let path = cli.config.unwrap_or_else(Store::default_path);
     let mut store = Store::load_waiting(&path, || eprintln!("Waiting for another forager process to finish..."))?;
 
@@ -293,7 +306,12 @@ fn main() -> Result<()> {
                 println!("{:<20} {:<20} {}", app.id, state, app.source);
             }
         }
-        Command::Check { notify, quiet } => check(&store, notify, quiet)?,
+        Command::Check { notify, quiet } => check(&store, notify, quiet, via)?,
+        Command::History { limit } => {
+            for event in history::read(limit)?.iter().rev() {
+                println!("{}", describe_event(event));
+            }
+        }
         Command::Update {
             ids,
             yes,
@@ -306,6 +324,7 @@ fn main() -> Result<()> {
                 yes,
                 allow_unverified,
                 unprivileged_only,
+                via,
             },
         )?,
         Command::Timer { action } => timer(action, explicit_config)?,
@@ -319,6 +338,13 @@ fn main() -> Result<()> {
             }
             let app = store.remove(&id)?;
             store.save()?;
+            let mut event = Event::new(&id, Kind::Removed, via);
+            event.from = app
+                .installed
+                .as_ref()
+                .filter(|_| !keep_installed)
+                .map(|i| i.tag.clone());
+            history::record(&event).ok();
             if let Some(Signature::Gpg { keyring }) = &app.signature {
                 std::fs::remove_file(keyring).ok();
             }
@@ -328,7 +354,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn check(store: &Store, notify: bool, quiet: bool) -> Result<()> {
+fn check(store: &Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
     let platform = Platform::detect();
     let mut pending = Vec::new();
     for app in &store.apps {
@@ -344,7 +370,7 @@ fn check(store: &Store, notify: bool, quiet: bool) -> Result<()> {
             }
         };
         if status.state.needs_update() {
-            pending.push(app.id.as_str());
+            pending.push((app.id.as_str(), status.latest.tag.clone()));
         }
         if quiet {
             continue;
@@ -378,6 +404,9 @@ fn check(store: &Store, notify: bool, quiet: bool) -> Result<()> {
         println!("{:<20} {:<30} {}", app.id, text, asset);
     }
 
+    if notify {
+        record_updates_found(store, &pending, via);
+    }
     if notify && !pending.is_empty() {
         let summary = match pending.len() {
             1 => "1 update available".to_string(),
@@ -386,12 +415,81 @@ fn check(store: &Store, notify: bool, quiet: bool) -> Result<()> {
         notify_rust::Notification::new()
             .appname("Forager")
             .summary(&summary)
-            .body(&format!("{}\nRun `forager update` to install.", pending.join(", ")))
+            .body(&format!(
+                "{}\nRun `forager update` to install.",
+                pending.iter().map(|(id, _)| *id).collect::<Vec<_>>().join(", ")
+            ))
             .icon("system-software-update")
             .show()
             .context("cannot show notification")?;
     }
     Ok(())
+}
+
+/// Records each newly found update once, not again on every daily check.
+fn record_updates_found(store: &Store, pending: &[(&str, String)], via: Via) {
+    let recent = history::read(500).unwrap_or_default();
+    for (id, tag) in pending {
+        let seen = recent
+            .iter()
+            .any(|e| e.app == *id && e.kind == Kind::UpdatesFound && e.to.as_deref() == Some(tag.as_str()));
+        if seen {
+            continue;
+        }
+        let mut event = Event::new(id, Kind::UpdatesFound, via);
+        event.from = store
+            .get(id)
+            .ok()
+            .and_then(|a| a.installed.as_ref())
+            .map(|i| i.tag.clone());
+        event.to = Some(tag.clone());
+        history::record(&event).ok();
+    }
+}
+
+fn describe_event(event: &Event) -> String {
+    let what = match event.kind {
+        Kind::Installed => "installed",
+        Kind::Updated => "updated",
+        Kind::Removed => "removed",
+        Kind::Failed => "failed",
+        Kind::UpdatesFound => "update found",
+    };
+    let versions = match (&event.from, &event.to) {
+        (Some(from), Some(to)) => format!(" {from} -> {to}"),
+        (None, Some(to)) => format!(" {to}"),
+        (Some(from), None) => format!(" {from}"),
+        (None, None) => String::new(),
+    };
+    let format = event.format.map_or(String::new(), |f| format!(" ({f})"));
+    let message = event.message.as_deref().map_or(String::new(), |m| format!(": {m}"));
+    let via = match event.via {
+        Via::Cli => "",
+        Via::Gui => " [gui]",
+        Via::Timer => " [timer]",
+    };
+    format!(
+        "{}  {:<16} {what}{versions}{format}{via}{message}",
+        utc_time(event.time),
+        event.app
+    )
+}
+
+/// `YYYY-MM-DD HH:MM UTC`, without a date library.
+fn utc_time(secs: u64) -> String {
+    let days = (secs / 86400) as i64;
+    let (hour, minute) = (secs % 86400 / 3600, secs % 3600 / 60);
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02} UTC")
 }
 
 fn timer(action: TimerAction, config: Option<PathBuf>) -> Result<()> {
@@ -433,6 +531,9 @@ fn update(store: &mut Store, ids: &[String], options: &UpdateOptions) -> Result<
     for id in &ids {
         if let Err(e) = update_one(store, id, &platform, options) {
             eprintln!("{id}: {e:#}");
+            let mut event = Event::new(id, Kind::Failed, options.via);
+            event.message = Some(format!("{e:#}"));
+            history::record(&event).ok();
             failed += 1;
         }
     }
@@ -447,6 +548,7 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
         yes,
         allow_unverified,
         unprivileged_only,
+        via,
     } = *options;
     let app = store.get(id)?;
     let Some(plan) = update::plan(app, platform)? else {
@@ -497,6 +599,16 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, options: &Update
     let installed = update::install(store, id, &plan, &download, platform, &mut |p| line.show(p));
     line.finish();
     let installed = installed?;
+    let kind = if plan.from.is_some() {
+        Kind::Updated
+    } else {
+        Kind::Installed
+    };
+    let mut event = Event::new(id, kind, via);
+    event.from = plan.from.clone();
+    event.to = Some(plan.release.tag.clone());
+    event.format = Some(plan.format);
+    history::record(&event).ok();
     let links = installed.links;
     println!("{id}: installed {}", plan.release.tag);
     for link in &links {
@@ -576,4 +688,16 @@ fn confirm(question: &str) -> Result<bool> {
     let mut answer = String::new();
     io::stdin().lock().read_line(&mut answer)?;
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_utc_times() {
+        assert_eq!(utc_time(0), "1970-01-01 00:00 UTC");
+        assert_eq!(utc_time(951_782_400), "2000-02-29 00:00 UTC");
+        assert_eq!(utc_time(1_792_800_000 + 3_660), "2026-10-24 01:01 UTC");
+    }
 }

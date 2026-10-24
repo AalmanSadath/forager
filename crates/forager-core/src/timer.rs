@@ -31,6 +31,8 @@ pub fn service_unit(settings: &Settings) -> String {
     if let Some(config) = &settings.config {
         base.extend(["--config".to_string(), config.to_string_lossy().into_owned()]);
     }
+    // Marks what the timer does as the timer's in the history.
+    base.push("--from-timer".to_string());
     let command = |args: &[&str]| {
         base.iter()
             .map(String::as_str)
@@ -156,11 +158,9 @@ mod tests {
     #[test]
     fn service_runs_check_with_quoted_config() {
         let unit = service_unit(&settings(false));
-        assert!(
-            unit.contains(
-                "ExecStart=/usr/bin/forager --config \"/home/me/My Apps/100%%.toml\" check --notify --quiet\n"
-            )
-        );
+        assert!(unit.contains(
+            "ExecStart=/usr/bin/forager --config \"/home/me/My Apps/100%%.toml\" --from-timer check --notify --quiet\n"
+        ));
         assert!(!unit.contains("--unprivileged-only"));
     }
 

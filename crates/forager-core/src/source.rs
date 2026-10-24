@@ -122,10 +122,14 @@ impl Source {
     /// Newest release, skipping prereleases unless `prerelease` is set.
     pub fn latest_release(&self, prerelease: bool) -> Result<Release> {
         let releases = match self {
-            Source::GitHub { owner, repo } => github::releases(owner, repo)?,
-            Source::GitLab { host, path } => gitlab::releases(host, path)?,
-            Source::Forgejo { host, owner, repo } => forgejo::releases(host, owner, repo)?,
-        };
+            Source::GitHub { owner, repo } => github::releases(owner, repo),
+            Source::GitLab { host, path } => gitlab::releases(host, path),
+            Source::Forgejo { host, owner, repo } => forgejo::releases(host, owner, repo),
+        }
+        .map_err(|e| match e {
+            Error::Http(ureq::Error::StatusCode(404)) => Error::ProjectNotFound(self.to_string()),
+            e => e,
+        })?;
         releases
             .into_iter()
             .find(|r| prerelease || !r.prerelease)
