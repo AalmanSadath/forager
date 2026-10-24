@@ -1,1 +1,108 @@
-/* The apps grid: search, chips, sections and cards. */
+/* The apps grid, after BifroSSH's hosts.css. */
+
+.apps-panel { padding-top: 16px; }
+.apps-panel .panel-title-row { margin-bottom: 12px; }
+
+.apps-search {
+  flex: 1;
+  min-width: 160px;
+  max-width: 360px;
+  margin-left: auto;
+}
+
+.apps-section + .apps-section { margin-top: 20px; }
+
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.app-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.app-card:hover {
+  border-color: var(--text-dim);
+  background: var(--bg-mid);
+}
+
+.app-card-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  background: var(--bg-chip);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.app-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* Tags give way before the name does, as on BifroSSH's host cards. */
+.app-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  flex: 0 1000 auto;
+  min-width: 0;
+  height: 16px;
+  overflow: hidden;
+}
+
+/* Shown on hover and keyboard focus, so the grid stays calm at rest. */
+.app-card-action {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.app-card:hover .app-card-action,
+.app-card:focus-within .app-card-action,
+.app-card-action:focus-visible {
+  opacity: 1;
+}
+
+/* An update in progress, along the card's bottom edge. */
+.app-card-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.apps-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 80px 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+.apps-empty svg { color: var(--accent); }

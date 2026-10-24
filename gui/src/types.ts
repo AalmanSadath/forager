@@ -38,3 +38,24 @@ export interface GuiSettings {
   /** `#rrggbb`, or null to follow the desktop. */
   accent_color: string | null;
 }
+
+export type UpdateState = 'not_installed' | 'missing' | 'wrong_format' | 'outdated' | 'up_to_date';
+
+export interface StatusView {
+  state: UpdateState;
+  latest_tag: string;
+  latest_name: string | null;
+  published_at: string | null;
+  asset: string | null;
+  asset_format: Format | null;
+  asset_error: string | null;
+  repo_version: string | null;
+  checked_at: number;
+}
+
+/** Payload of the `app-status` event. */
+export interface StatusEvent {
+  id: string;
+  status: StatusView | null;
+  error: string | null;
+}

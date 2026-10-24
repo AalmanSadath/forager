@@ -15,6 +15,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::apps::list_apps,
+            commands::check::check_apps,
             commands::system::system_appearance,
         ])
         .run(tauri::generate_context!())

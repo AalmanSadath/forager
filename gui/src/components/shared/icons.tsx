@@ -127,6 +127,6 @@ export const FORMAT_NAMES: Record<Format, string> = {
   rpm: 'rpm',
   pacman: 'Arch',
   appimage: 'AppImage',
-  tarball: 'tarball',
+  tarball: 'Tarball',
   flatpak: 'Flatpak',
 };
