@@ -115,6 +115,10 @@ pub struct App {
     /// Regex an asset name must match.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_filter: Option<String>,
+    /// Regex a release tag must match, for repositories that publish
+    /// several products (`android-v1.0` next to `v2.3`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag_filter: Option<String>,
     /// Force a format instead of picking the best one for the system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<Format>,
@@ -143,6 +147,7 @@ impl App {
             id,
             source,
             asset_filter: None,
+            tag_filter: None,
             format: None,
             prerelease: false,
             bins: Vec::new(),
@@ -175,10 +180,10 @@ impl App {
     }
 
     /// Checks settings that come from the user: the id, which becomes part
-    /// of file paths, and the asset filter regex.
+    /// of file paths, and the filter regexes.
     pub fn validate(&self) -> crate::Result<()> {
         validate_id(&self.id)?;
-        if let Some(filter) = &self.asset_filter {
+        for filter in [&self.asset_filter, &self.tag_filter].into_iter().flatten() {
             regex::Regex::new(filter)?;
         }
         Ok(())

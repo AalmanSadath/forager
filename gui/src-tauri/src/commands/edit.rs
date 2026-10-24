@@ -86,6 +86,9 @@ pub fn parse_source(url: String, forge: Option<String>, pattern: Option<String>)
 pub struct SettingsInput {
     pub format: Option<Format>,
     pub asset_filter: Option<String>,
+    /// Regex a release tag must match.
+    #[serde(default)]
+    pub tag_filter: Option<String>,
     pub prerelease: bool,
     pub bins: Vec<String>,
     /// New download pattern, for an app tracked from a web page.
@@ -100,6 +103,7 @@ impl SettingsInput {
         }
         app.format = self.format;
         app.asset_filter = self.asset_filter.clone().filter(|f| !f.is_empty());
+        app.tag_filter = self.tag_filter.clone().filter(|f| !f.is_empty());
         app.prerelease = self.prerelease;
         app.bins = self.bins.iter().filter(|b| !b.trim().is_empty()).cloned().collect();
         Ok(())
@@ -128,6 +132,8 @@ pub struct Preview {
     pub candidates: Vec<CandidateView>,
     /// The filter does not compile; candidates are shown without it.
     pub filter_error: Option<String>,
+    /// The tag filter does not compile; releases are shown without it.
+    pub tag_filter_error: Option<String>,
 }
 
 /// What the latest release looks like under `settings`. Fetches the release
@@ -162,6 +168,14 @@ pub async fn preview(
     if filter_error.is_some() {
         app.asset_filter = None;
     }
+    let tag_filter_error = app
+        .tag_filter
+        .as_deref()
+        .and_then(|f| regex::Regex::new(f).err())
+        .map(|e| e.to_string());
+    if tag_filter_error.is_some() {
+        app.tag_filter = None;
+    }
     let platform = Platform::detect();
     let release = update::latest(&app, releases, &platform).map_err(|e| e.to_string())?;
     let candidates = matcher::candidates(&app, &release, &platform)
@@ -183,6 +197,7 @@ pub async fn preview(
         },
         candidates,
         filter_error,
+        tag_filter_error,
     })
 }
 

@@ -112,6 +112,7 @@ forager check            # show installed vs latest and the asset that would be 
 forager update           # install or upgrade every tracked app (asks first)
 forager update drawio-desktop --yes
 forager edit drawio-desktop --format appimage   # or --format auto, --filter, --bin, --prerelease
+forager edit bifrossh --tag-filter '^v'         # follow only v… releases, not android-v…
 forager remove drawio-desktop
 ```
 

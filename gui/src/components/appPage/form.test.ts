@@ -10,6 +10,7 @@ const app: AppView = {
   forge: 'github',
   format: 'tarball',
   asset_filter: 'musl',
+  tag_filter: null,
   prerelease: false,
   bins: ['bin/tool', 'bin/helper'],
   signature: 'minisign',
@@ -24,13 +25,15 @@ describe('settings form', () => {
     expect(toInput(draftOf(app))).toEqual({
       format: 'tarball',
       asset_filter: 'musl',
+      tag_filter: null,
       prerelease: false,
       bins: ['bin/tool', 'bin/helper'],
       pattern: null,
     });
-    expect(toInput({ format: '', filter: '  ', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ' })).toEqual({
+    expect(toInput({ format: '', filter: '  ', tagFilter: ' ^v ', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ' })).toEqual({
       format: null,
       asset_filter: null,
+      tag_filter: '^v',
       prerelease: true,
       bins: ['a', 'b'],
       pattern: 'x$',

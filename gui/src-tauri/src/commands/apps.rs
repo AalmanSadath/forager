@@ -21,6 +21,7 @@ pub struct AppView {
     /// Pinned format, or None for automatic.
     pub format: Option<Format>,
     pub asset_filter: Option<String>,
+    pub tag_filter: Option<String>,
     pub prerelease: bool,
     pub bins: Vec<String>,
     /// `minisign`, `gpg` or `attestation` when a signature is required.
@@ -66,6 +67,7 @@ impl From<&App> for AppView {
             forge: app.source.forge(),
             format: app.format,
             asset_filter: app.asset_filter.clone(),
+            tag_filter: app.tag_filter.clone(),
             prerelease: app.prerelease,
             bins: app.bins.clone(),
             signature: app.signature.as_ref().map(|s| s.to_string()),

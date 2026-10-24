@@ -203,15 +203,17 @@ fn overall(pinned: Option<Format>, installs: &[InstallState]) -> State {
     }
 }
 
-/// The newest release the app takes (no prereleases unless it follows them)
-/// with an asset for this system. Projects that also publish other builds
+/// The newest release the app takes (its tag matching the app's tag filter,
+/// no prereleases unless it follows them) with an asset for this system. Projects that also publish other builds
 /// from the same repository, e.g. `android-v1.0` next to `v2.3`, would
 /// otherwise have their newest release be one with nothing to install.
 /// Falls back to the newest release, so the reason it has nothing shows.
 pub fn latest(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<Release> {
+    let tags = app.tag_filter.as_deref().map(regex::Regex::new).transpose()?;
     let mut eligible = releases
         .into_iter()
         .filter(|r| app.prerelease || !r.prerelease)
+        .filter(|r| tags.as_ref().is_none_or(|re| re.is_match(&r.tag)))
         .peekable();
     let newest = eligible.peek().cloned().ok_or(Error::NoRelease)?;
     Ok(eligible
@@ -695,6 +697,17 @@ mod tests {
         assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.0.0");
         app.prerelease = true;
         assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.1.0-rc.1");
+        // Following only `android-…` tags finds nothing to install, but still names that release.
+        app.tag_filter = Some("^android-".into());
+        assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "android-v0.3.0");
+        app.tag_filter = Some("^v".into());
+        assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.1.0-rc.1");
+        app.tag_filter = Some("^nothing".into());
+        assert!(matches!(
+            latest(&app, releases.clone(), &platform),
+            Err(Error::NoRelease)
+        ));
+        app.tag_filter = None;
         // Nothing fits at all: the newest release, to show why.
         app.prerelease = false;
         app.asset_filter = Some("nothing".into());

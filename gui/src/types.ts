@@ -23,6 +23,7 @@ export interface AppView {
   forge: Forge;
   format: Format | null;
   asset_filter: string | null;
+  tag_filter: string | null;
   prerelease: boolean;
   bins: string[];
   signature: 'minisign' | 'gpg' | 'attestation' | null;
@@ -99,6 +100,7 @@ export interface ParsedSource {
 export interface SettingsInput {
   format: Format | null;
   asset_filter: string | null;
+  tag_filter: string | null;
   prerelease: boolean;
   bins: string[];
   /** For web-page sources: the download link pattern. */
@@ -134,6 +136,7 @@ export interface Preview {
   release: ReleaseView;
   candidates: CandidateView[];
   filter_error: string | null;
+  tag_filter_error: string | null;
 }
 
 export type SignatureForm =

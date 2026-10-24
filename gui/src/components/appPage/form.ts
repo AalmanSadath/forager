@@ -6,6 +6,8 @@ import type { AppView, Format, Preview, SettingsInput, SignatureForm, SourceSpec
 export interface SettingsDraft {
   format: Format | '';
   filter: string;
+  /** Regex a release tag must match. */
+  tagFilter: string;
   prerelease: boolean;
   /** Comma-separated paths. */
   bins: string;
@@ -13,12 +15,13 @@ export interface SettingsDraft {
   pattern: string;
 }
 
-export const EMPTY_DRAFT: SettingsDraft = { format: '', filter: '', prerelease: false, bins: '', pattern: '' };
+export const EMPTY_DRAFT: SettingsDraft = { format: '', filter: '', tagFilter: '', prerelease: false, bins: '', pattern: '' };
 
 export function draftOf(app: AppView): SettingsDraft {
   return {
     format: app.format ?? '',
     filter: app.asset_filter ?? '',
+    tagFilter: app.tag_filter ?? '',
     prerelease: app.prerelease,
     bins: app.bins.join(', '),
     pattern: app.spec.kind === 'html' ? (app.spec.pattern ?? '') : '',
@@ -29,6 +32,7 @@ export function toInput(d: SettingsDraft): SettingsInput {
   return {
     format: d.format || null,
     asset_filter: d.filter.trim() || null,
+    tag_filter: d.tagFilter.trim() || null,
     prerelease: d.prerelease,
     bins: d.bins
       .split(',')

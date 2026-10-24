@@ -11,6 +11,7 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     forge: 'github',
     format: null,
     asset_filter: null,
+    tag_filter: null,
     prerelease: false,
     bins: [],
     signature: null,

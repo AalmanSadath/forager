@@ -204,6 +204,7 @@ mod tests {
                 repo: "tool".into(),
             },
             asset_filter: None,
+            tag_filter: None,
             format: None,
             prerelease: false,
             bins: Vec::new(),

@@ -74,6 +74,24 @@ export default function SettingsSection({
           </p>
         )}
       </div>
+      <div className="form-group">
+        <label htmlFor="tag-filter">Release names</label>
+        <input
+          id="tag-filter"
+          className={`mono${preview?.tag_filter_error ? ' input-invalid' : ''}`}
+          placeholder="Regular expression, e.g. ^v"
+          value={draft.tagFilter}
+          onChange={(e) => set({ tagFilter: e.target.value })}
+          spellCheck={false}
+        />
+        {preview?.tag_filter_error ? (
+          <p className="form-hint form-hint-error">{preview.tag_filter_error}</p>
+        ) : (
+          <p className="form-hint">
+            Only releases whose tag matches are followed, for projects that also tag other builds, such as android-v1.0.
+          </p>
+        )}
+      </div>
       {tarball && (
         <div className="form-group">
           <label htmlFor="bins">Executables</label>
