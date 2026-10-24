@@ -22,8 +22,12 @@ forager add https://github.com/jgraph/drawio-desktop
 forager check            # show installed vs latest and the asset that would be used
 forager update           # install or upgrade every tracked app (asks first)
 forager update drawio-desktop --yes
+forager edit drawio-desktop --format appimage   # or --format auto, --filter, --bin, --prerelease
 forager remove drawio-desktop
 ```
+
+`edit` changes an app's settings; a new format is installed (and the old
+install removed) on the next `update`.
 
 `add` options: `--id`, `--filter <regex>` to restrict asset names,
 `--format deb|rpm|appimage|tarball` to override format selection,

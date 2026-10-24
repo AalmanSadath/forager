@@ -47,6 +47,29 @@ enum Command {
         #[arg(long = "bin", value_name = "PATH")]
         bins: Vec<String>,
     },
+    /// Change how a tracked app is installed. Takes effect on the next `update`.
+    Edit {
+        id: String,
+        /// Package format to pin, or `auto` to pick the best one for this system.
+        #[arg(long, value_name = "FORMAT")]
+        format: Option<FormatPin>,
+        /// Regex an asset name must match.
+        #[arg(long, conflicts_with = "clear_filter")]
+        filter: Option<String>,
+        /// Remove the asset filter.
+        #[arg(long)]
+        clear_filter: bool,
+        /// Executable to link from a tarball, replacing the current list.
+        /// Repeat for several.
+        #[arg(long = "bin", value_name = "PATH", conflicts_with = "clear_bins")]
+        bins: Vec<String>,
+        /// Find a tarball's executables automatically again.
+        #[arg(long)]
+        clear_bins: bool,
+        /// Whether to consider prereleases.
+        #[arg(long, value_name = "BOOL")]
+        prerelease: Option<bool>,
+    },
     /// List tracked apps.
     List,
     /// Check tracked apps for new releases.
@@ -68,6 +91,22 @@ enum Command {
         #[arg(long)]
         keep_installed: bool,
     },
+}
+
+/// `--format` value for `edit`: a format, or `auto` to remove the pin.
+#[derive(Clone)]
+struct FormatPin(Option<Format>);
+
+impl std::str::FromStr for FormatPin {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("auto") {
+            Ok(FormatPin(None))
+        } else {
+            s.parse().map(|f| FormatPin(Some(f)))
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -100,6 +139,45 @@ fn main() -> Result<()> {
             })?;
             store.save()?;
             println!("Tracking {id}. Run `forager update {id}` to install it.");
+        }
+        Command::Edit {
+            id,
+            format,
+            filter,
+            clear_filter,
+            bins,
+            clear_bins,
+            prerelease,
+        } => {
+            if format.is_none()
+                && filter.is_none()
+                && !clear_filter
+                && bins.is_empty()
+                && !clear_bins
+                && prerelease.is_none()
+            {
+                bail!("nothing to change, see `forager edit --help`");
+            }
+            if let Some(filter) = &filter {
+                regex::Regex::new(filter).context("invalid --filter")?;
+            }
+            let app = store.get_mut(&id)?;
+            if let Some(FormatPin(format)) = format {
+                app.format = format;
+            }
+            if filter.is_some() || clear_filter {
+                app.asset_filter = filter;
+            }
+            if !bins.is_empty() || clear_bins {
+                app.bins = bins;
+            }
+            if let Some(prerelease) = prerelease {
+                app.prerelease = prerelease;
+            }
+            let settings = describe(app);
+            store.save()?;
+            println!("{id}:\n{settings}");
+            println!("Changes apply on the next `forager update {id}`.");
         }
         Command::List => {
             if store.apps.is_empty() {
@@ -239,6 +317,18 @@ fn update_one(store: &mut Store, id: &str, platform: &Platform, yes: bool, allow
         println!("  note:   {} is not on PATH", bin_dir.display());
     }
     Ok(())
+}
+
+fn describe(app: &App) -> String {
+    let format = app.format.map_or("auto".to_string(), |f| f.to_string());
+    let filter = app.asset_filter.as_deref().unwrap_or("none");
+    let bins = if app.bins.is_empty() {
+        "auto".to_string()
+    } else {
+        app.bins.join(", ")
+    };
+    let prerelease = if app.prerelease { "yes" } else { "no" };
+    format!("  format:     {format}\n  filter:     {filter}\n  bins:       {bins}\n  prerelease: {prerelease}")
 }
 
 fn confirm(question: &str) -> Result<bool> {
