@@ -58,6 +58,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.3" date="2026-10-25">
+      <description>
+        <p>Apps installed in several formats at once, such as an rpm and a Flatpak, are tracked in each format and updated in their own format. Installs are looked for on every check, and removing an app asks which installs to uninstall.</p>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-10-25">
       <description>
         <p>Apps installed outside Forager are recognised on Debian, Ubuntu, Fedora, openSUSE and Arch, as system packages or Flatpaks (user or system-wide), and their installed version is read again on every check.</p>
