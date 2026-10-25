@@ -58,6 +58,18 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.6" date="2026-10-25">
+      <description>
+        <ul>
+          <li>Adopt an AppImage downloaded by hand: Forager reads the project from its update information, moves it to ~/Applications and keeps it updated.</li>
+          <li>Apps from SourceForge, SourceHut, Jenkins jobs and direct links to a file.</li>
+          <li>Tracked-only apps report new releases without being installed.</li>
+          <li>Export and import the tracked apps, and share one as a forager:// link that opens the Add page.</li>
+          <li>JSON output for list, check and history; shell completions and man pages; tarball apps get the man pages and completions they ship.</li>
+          <li>Right-clicking the Add page's address field pastes the clipboard.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-10-25">
       <description>
         <p>The window opens on machines where WebKitGTK's DMA-BUF renderer fails at startup, such as NVIDIA's driver under Wayland, in every package and not only the Flatpak.</p>
