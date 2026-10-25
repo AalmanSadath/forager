@@ -106,7 +106,13 @@ pub fn install(
             let old_links = app
                 .install_of(Format::Tarball)
                 .map_or(&[][..], |previous| previous.links.as_slice());
-            let placed = tarball::install(&file, &app.id, &app.bins, &opt_dir, &bin_dir, old_links)?;
+            let data_dir = platform::data_dir().ok_or(Error::NoHome)?;
+            let dirs = tarball::Dirs {
+                opt: &opt_dir,
+                bin: &bin_dir,
+                data: &data_dir,
+            };
+            let placed = tarball::install(&file, &app.id, &app.bins, &dirs, old_links)?;
             replace_menu_entry(app);
             installed.desktop = desktop::for_tarball(&app.id, &placed.dir, &placed.links).unwrap_or_default();
             installed.path = Some(placed.dir);

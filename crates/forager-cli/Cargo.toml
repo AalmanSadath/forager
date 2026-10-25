@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
 forager-core = { version = "0.1.5", path = "../forager-core" }
 notify-rust = "4.18.2"
 regex = "1.13.1"

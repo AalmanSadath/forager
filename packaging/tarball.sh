@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds forager-<version>-<arch>-linux.tar.gz from the release binaries in
-# target/release: both programs, the desktop entry, icons, AppStream data and
+# target/release: both programs, the desktop entry, icons, AppStream data,
+# shell completions and man pages, and
 # an install.sh that copies them into ~/.local (or another prefix).
 #
 # Usage: packaging/tarball.sh [output-dir]     (default target/dist)
@@ -29,6 +30,8 @@ for size in 32 64 128; do
 done
 install -Dm644 "$root/gui/src-tauri/icons/128x128@2x.png" "$dir/share/icons/hicolor/256x256/apps/$id.png"
 install -Dm644 "$root/gui/src-tauri/icons/icon.svg" "$dir/share/icons/hicolor/scalable/apps/$id.svg"
+"$root/packaging/gen-docs.sh" "$root/target/release/forager" "$work/docs"
+cp -R "$work/docs/." "$dir/share/"
 install -m644 "$root/README.md" "$root/LICENSE" "$dir/"
 
 cat > "$dir/install.sh" <<'INSTALL'

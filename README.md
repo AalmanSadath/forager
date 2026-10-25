@@ -152,6 +152,10 @@ They are written as `forager-<id>` in `~/.local/share/applications` and
 Forager made entries, run `forager menu-entries`, or use "Add menu entries"
 on the Apps page.
 
+Shell completions and man pages come with the deb, rpm, Arch package and
+tarball. For other installs, `forager completions bash|zsh|fish` prints the
+script.
+
 Background checks run from a systemd user timer:
 
 ```sh
@@ -215,6 +219,12 @@ A tarball's single top-level directory is unwrapped. Without `--bin`,
 Forager links the one executable in that directory or its `bin/`; if there
 are several, the one named after the app id. Files in `~/.local/bin` that
 Forager did not create are never replaced.
+
+Man pages and shell completions a tarball ships for its executables (a
+`share/` tree, or files such as `doc/rg.1` and `complete/_rg`) are linked
+into `~/.local/share/man` and the bash, zsh and fish completion directories
+under `~/.local/share`; zsh needs `fpath+=~/.local/share/zsh/site-functions`
+in `~/.zshrc`. Files there that Forager did not create are left alone.
 
 ## System packages
 

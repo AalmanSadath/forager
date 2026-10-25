@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format, Installed, Signature};
@@ -182,6 +182,12 @@ enum Command {
         #[command(subcommand)]
         action: TimerAction,
     },
+    /// Print a shell completion script, e.g.
+    /// `forager completions bash > ~/.local/share/bash-completion/completions/forager`.
+    Completions { shell: clap_complete::Shell },
+    /// Write man pages for forager and each subcommand into a directory.
+    #[command(hide = true)]
+    Man { dir: PathBuf },
     /// Stop tracking an app and uninstall it. With several installs (e.g. an
     /// rpm and a Flatpak) it asks which ones to uninstall.
     Remove {
@@ -267,6 +273,16 @@ impl std::str::FromStr for FormatPin {
 fn main() -> Result<()> {
     host::use_host_dirs();
     let cli = Cli::parse();
+    // These need no config, so they work without a home directory and do
+    // not wait for another forager process.
+    match &cli.command {
+        Command::Completions { shell } => {
+            clap_complete::generate(*shell, &mut Cli::command(), "forager", &mut io::stdout());
+            return Ok(());
+        }
+        Command::Man { dir } => return write_man_pages(dir),
+        _ => {}
+    }
     let explicit_config = cli.config.clone();
     let via = if cli.from_timer { Via::Timer } else { Via::Cli };
     let path = cli.config.unwrap_or_else(Store::default_path);
@@ -495,6 +511,7 @@ fn main() -> Result<()> {
             }
         }
         Command::Timer { action } => timer(action, explicit_config)?,
+        Command::Completions { .. } | Command::Man { .. } => unreachable!("handled before the config is loaded"),
         Command::Remove { id, keep_installed } => {
             let app = store.get(&id)?;
             let present: Vec<Installed> = app.installs().filter(|i| install::is_present(i)).cloned().collect();
@@ -527,6 +544,28 @@ fn main() -> Result<()> {
             }
             println!("Removed {id}.");
         }
+    }
+    Ok(())
+}
+
+/// `forager.1`, and `forager-<subcommand>.1` for each visible subcommand.
+fn write_man_pages(dir: &std::path::Path) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let command = Cli::command();
+    let mut pages = vec![("forager".to_string(), command.clone())];
+    for sub in command.get_subcommands().filter(|c| !c.is_hide_set()) {
+        let name = format!("forager-{}", sub.get_name());
+        pages.push((
+            name.clone(),
+            sub.clone()
+                .display_name(name.clone())
+                .bin_name(format!("forager {}", sub.get_name())),
+        ));
+    }
+    for (name, page) in pages {
+        let mut out = Vec::new();
+        clap_mangen::Man::new(page).render(&mut out)?;
+        std::fs::write(dir.join(format!("{name}.1")), out)?;
     }
     Ok(())
 }

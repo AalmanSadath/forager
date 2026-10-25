@@ -17,18 +17,20 @@ pub struct Placed {
     pub links: Vec<PathBuf>,
 }
 
+/// Where a tarball's links go: executables into `bin`, man pages and shell
+/// completions it ships into `data` (`~/.local/share` in normal use).
+pub struct Dirs<'a> {
+    pub opt: &'a Path,
+    pub bin: &'a Path,
+    pub data: &'a Path,
+}
+
 /// Installs `file` as app `id`. `bins` names the executables to link,
 /// relative to the archive's top directory; when empty they are found
 /// automatically. `old_links` are the links made by the previous install,
 /// removed if this version no longer provides them.
-pub fn install(
-    file: &Path,
-    id: &str,
-    bins: &[String],
-    opt_dir: &Path,
-    bin_dir: &Path,
-    old_links: &[PathBuf],
-) -> Result<Placed> {
+pub fn install(file: &Path, id: &str, bins: &[String], dirs: &Dirs, old_links: &[PathBuf]) -> Result<Placed> {
+    let (opt_dir, bin_dir) = (dirs.opt, dirs.bin);
     fs::create_dir_all(opt_dir)?;
     fs::create_dir_all(bin_dir)?;
     let target = opt_dir.join(id);
@@ -47,6 +49,12 @@ pub fn install(
             return Err(e);
         }
     };
+    let names: Vec<String> = executables
+        .iter()
+        .filter_map(|e| e.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .collect();
+    let extras = plan_extras(find_extras(&root, &names), &target, dirs.data, old_links);
 
     let old = opt_dir.join(format!(".{id}.old"));
     remove_dir_if_exists(&old)?;
@@ -66,14 +74,167 @@ pub fn install(
     }
     remove_dir_if_exists(&old)?;
 
-    for stale in old_links.iter().filter(|l| !links.contains(l)) {
+    let mut placed = links.clone();
+    for stale in old_links
+        .iter()
+        .filter(|l| !links.contains(l) && !extras.iter().any(|(_, e)| e == *l))
+    {
         remove_link(stale)?;
     }
     for (link, rel) in links.iter().zip(&executables) {
         remove_link(link)?;
         symlink(target.join(rel), link)?;
     }
-    Ok(Placed { dir: target, links })
+    // Man pages and completions are extras: one that cannot be linked does
+    // not fail the install.
+    for (rel, link) in extras {
+        let made = link.parent().map_or(Ok(()), fs::create_dir_all).and_then(|()| {
+            remove_link(&link).map_err(std::io::Error::other)?;
+            symlink(target.join(&rel), &link)
+        });
+        if made.is_ok() {
+            placed.push(link);
+        }
+    }
+    Ok(Placed {
+        dir: target,
+        links: placed,
+    })
+}
+
+/// Directories, relative to the archive's top, where projects put shell
+/// completions loose (ripgrep's `complete/`, `completions/bash/` and the like).
+const COMPLETION_DIRS: [&str; 9] = [
+    "",
+    "complete",
+    "completion",
+    "completions",
+    "autocomplete",
+    "contrib/completions",
+    "shell-completions",
+    "doc",
+    "docs",
+];
+
+/// Man pages and shell completions in an unpacked tarball: each file,
+/// relative to `root`, with where it belongs under the data directory.
+/// Loose files count only when named after one of the linked executables,
+/// `names`; a `share/` tree counts as it is.
+fn find_extras(root: &Path, names: &[String]) -> Vec<(PathBuf, PathBuf)> {
+    let mut found: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut add = |rel: PathBuf, dest: PathBuf| {
+        if is_file(&root.join(&rel)) && !found.iter().any(|(_, d)| *d == dest) {
+            found.push((rel, dest));
+        }
+    };
+    let files = |dir: &Path| -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(root.join(dir))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+
+    // A share/ tree, as installed.
+    for (dir, dest) in [
+        ("share/bash-completion/completions", "bash-completion/completions"),
+        ("share/zsh/site-functions", "zsh/site-functions"),
+        ("share/zsh/vendor-completions", "zsh/site-functions"),
+        ("share/fish/vendor_completions.d", "fish/vendor_completions.d"),
+        ("share/fish/completions", "fish/vendor_completions.d"),
+    ] {
+        for file in files(Path::new(dir)) {
+            add(Path::new(dir).join(&file), Path::new(dest).join(&file));
+        }
+    }
+    for section in 1..=8 {
+        let dir = format!("share/man/man{section}");
+        for file in files(Path::new(&dir)) {
+            if man_section(&file) == Some(section) {
+                add(
+                    Path::new(&dir).join(&file),
+                    Path::new(&format!("man/man{section}")).join(&file),
+                );
+            }
+        }
+    }
+
+    // Loose files named after an executable.
+    let ours = |file: &str| {
+        names
+            .iter()
+            .any(|n| file == n || file.starts_with(&format!("{n}.")) || file.starts_with(&format!("{n}-")))
+    };
+    for dir in ["", "doc", "docs", "man", "share/man"] {
+        for file in files(Path::new(dir)) {
+            if let Some(section) = man_section(&file).filter(|_| ours(&file)) {
+                add(
+                    Path::new(dir).join(&file),
+                    Path::new(&format!("man/man{section}")).join(&file),
+                );
+            }
+        }
+    }
+    for dir in COMPLETION_DIRS.iter().map(Path::new) {
+        for name in names {
+            for (file, dest) in [
+                (format!("{name}.bash"), format!("bash-completion/completions/{name}")),
+                (
+                    format!("{name}.bash-completion"),
+                    format!("bash-completion/completions/{name}"),
+                ),
+                (format!("bash/{name}"), format!("bash-completion/completions/{name}")),
+                (
+                    format!("bash/{name}.bash"),
+                    format!("bash-completion/completions/{name}"),
+                ),
+                (format!("_{name}"), format!("zsh/site-functions/_{name}")),
+                (format!("zsh/_{name}"), format!("zsh/site-functions/_{name}")),
+                (format!("{name}.fish"), format!("fish/vendor_completions.d/{name}.fish")),
+                (
+                    format!("fish/{name}.fish"),
+                    format!("fish/vendor_completions.d/{name}.fish"),
+                ),
+            ] {
+                add(dir.join(file), PathBuf::from(dest));
+            }
+        }
+    }
+    found
+}
+
+/// The section of a man page file name: 1 for `rg.1` or `rg.1.gz`.
+fn man_section(file: &str) -> Option<u32> {
+    let base = file.strip_suffix(".gz").unwrap_or(file);
+    let (stem, ext) = base.rsplit_once('.')?;
+    let section = ext.parse().ok().filter(|s| (1..=8).contains(s))?;
+    (!stem.is_empty()).then_some(section)
+}
+
+/// Link paths under `data_dir` for the extras that can have one: anything
+/// already there that Forager did not create for this app is left alone.
+fn plan_extras(
+    extras: Vec<(PathBuf, PathBuf)>,
+    target: &Path,
+    data_dir: &Path,
+    old_links: &[PathBuf],
+) -> Vec<(PathBuf, PathBuf)> {
+    extras
+        .into_iter()
+        .map(|(rel, dest)| (rel, data_dir.join(dest)))
+        .filter(|(_, link)| {
+            let ours = old_links.contains(link) || fs::read_link(link).is_ok_and(|to| to.starts_with(target));
+            ours || fs::symlink_metadata(link).is_err()
+        })
+        .collect()
+}
+
+/// A regular file, not a symlink, which could point outside the tree.
+fn is_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
 }
 
 /// Removes the links (only those still pointing into `dir`) and `dir` itself.
@@ -266,8 +427,18 @@ mod tests {
             file
         }
 
+        fn data(&self) -> PathBuf {
+            self.tmp.path().join("share")
+        }
+
         fn install(&self, file: &Path, bins: &[String], old_links: &[PathBuf]) -> Result<Placed> {
-            install(file, "tool", bins, &self.opt(), &self.bin(), old_links)
+            let (opt, bin, data) = (self.opt(), self.bin(), self.data());
+            let dirs = Dirs {
+                opt: &opt,
+                bin: &bin,
+                data: &data,
+            };
+            install(file, "tool", bins, &dirs, old_links)
         }
     }
 
@@ -358,6 +529,62 @@ mod tests {
         let file = f.archive("v1", &[("tool", true)]);
         let result = f.install(&file, &["../../bin/sh".to_string()], &[]);
         assert!(matches!(result, Err(Error::Archive(_))));
+    }
+
+    #[test]
+    fn links_man_pages_and_completions() {
+        let f = Fixture::new();
+        let file = f.archive(
+            "v1",
+            &[
+                ("tool-1.0/tool", true),
+                ("tool-1.0/doc/tool.1", false),
+                ("tool-1.0/doc/other.1", false),
+                ("tool-1.0/complete/tool.bash", false),
+                ("tool-1.0/complete/_tool", false),
+                ("tool-1.0/complete/tool.fish", false),
+                ("tool-1.0/share/man/man5/tool.conf.5.gz", false),
+            ],
+        );
+        fs::create_dir_all(f.data().join("fish/vendor_completions.d")).unwrap();
+        fs::write(f.data().join("fish/vendor_completions.d/tool.fish"), "mine").unwrap();
+        let placed = f.install(&file, &[], &[]).unwrap();
+
+        let data = f.data();
+        let expected = [
+            data.join("man/man5/tool.conf.5.gz"),
+            data.join("man/man1/tool.1"),
+            data.join("bash-completion/completions/tool"),
+            data.join("zsh/site-functions/_tool"),
+        ];
+        assert_eq!(placed.links[1..], expected);
+        assert_eq!(
+            fs::read_link(data.join("man/man1/tool.1")).unwrap(),
+            f.opt().join("tool/doc/tool.1")
+        );
+        // Not named after the executable, and a file of the user's own.
+        assert!(fs::symlink_metadata(data.join("man/man1/other.1")).is_err());
+        assert_eq!(
+            fs::read_to_string(data.join("fish/vendor_completions.d/tool.fish")).unwrap(),
+            "mine"
+        );
+
+        // An update that no longer ships one drops its link; uninstall the rest.
+        let v2 = f.archive("v2", &[("tool-2.0/tool", true), ("tool-2.0/doc/tool.1", false)]);
+        let second = f.install(&v2, &[], &placed.links).unwrap();
+        assert_eq!(second.links, [f.bin().join("tool"), data.join("man/man1/tool.1")]);
+        assert!(fs::symlink_metadata(data.join("zsh/site-functions/_tool")).is_err());
+        uninstall(&second.dir, &second.links).unwrap();
+        assert!(fs::symlink_metadata(data.join("man/man1/tool.1")).is_err());
+    }
+
+    #[test]
+    fn reads_man_sections() {
+        assert_eq!(man_section("rg.1"), Some(1));
+        assert_eq!(man_section("tool.conf.5.gz"), Some(5));
+        assert_eq!(man_section("tool.9"), None);
+        assert_eq!(man_section("README"), None);
+        assert_eq!(man_section(".1"), None);
     }
 
     #[test]

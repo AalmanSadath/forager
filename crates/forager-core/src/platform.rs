@@ -99,6 +99,12 @@ pub fn bin_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".local").join("bin"))
 }
 
+/// `~/.local/share`, where a tarball's man pages and shell completions are
+/// linked.
+pub fn data_dir() -> Option<PathBuf> {
+    dirs::data_dir()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
