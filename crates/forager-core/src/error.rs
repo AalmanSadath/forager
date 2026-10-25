@@ -37,6 +37,8 @@ pub enum Error {
     ReleaseNotFound(String),
     #[error("{0} is tracked only; Forager does not install it")]
     TrackOnly(String),
+    #[error("not a Forager export file: {0}")]
+    InvalidExport(String),
     #[error("no asset in release {tag} matches this system")]
     NoMatchingAsset { tag: String },
     #[error("checksum mismatch for {asset}: expected {expected}, got {actual}")]

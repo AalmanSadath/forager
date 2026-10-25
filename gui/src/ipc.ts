@@ -21,6 +21,7 @@ import type {
   SignatureForm,
   SourceSpec,
   StartRequest,
+  ImportResult,
   SystemAppearance,
 } from './types';
 
@@ -82,3 +83,9 @@ export const aboutInfo = () => invoke<AboutInfo>('about_info');
 // ── system ──────────────────────────────────────────────────────
 export const systemAppearance = () => invoke<SystemAppearance>('system_appearance');
 export const startRequest = () => invoke<StartRequest | null>('start_request');
+/** Writes every tracked app's settings to `path`; returns how many. */
+export const exportApps = (path: string) => invoke<number>('export_apps', { path });
+/** Tracks the apps in an export file that are not tracked yet. */
+export const importApps = (path: string) => invoke<ImportResult[]>('import_apps', { path });
+/** A forager://add?… link with the app's settings. */
+export const appLink = (id: string) => invoke<string>('app_link', { id });

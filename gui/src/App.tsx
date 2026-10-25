@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { countUpdates } from './appsView';
-import type { ProgressEvent, StatusEvent } from './types';
+import type { ProgressEvent, StartRequest, StatusEvent } from './types';
 import * as ipc from './ipc';
 import { useAppStore } from './store/appStore';
 import { useAppChrome } from './useAppChrome';
@@ -43,14 +43,26 @@ export default function App() {
   // Load, then check everything once at start, and open what the command
   // line asked for.
   const setPage = useAppStore((s) => s.setPage);
+  const openRequest = useCallback(
+    (req: StartRequest) => {
+      if (req.kind === 'add') setPage({ kind: 'add', url: req.url, link: req.link ?? undefined });
+      else setPage({ kind: 'app', id: req.id });
+    },
+    [setPage],
+  );
   useEffect(() => {
     useAppStore.getState().loadSettings();
     loadApps().then(() => useAppStore.getState().checkStale());
-    ipc.startRequest().then((req) => {
-      if (req?.kind === 'add') setPage({ kind: 'add', url: req.url });
-      else if (req?.kind === 'open') setPage({ kind: 'app', id: req.id });
-    });
-  }, [loadApps, setPage]);
+    ipc.startRequest().then((req) => req && openRequest(req));
+  }, [loadApps, setPage, openRequest]);
+
+  // A link clicked, or `forager-gui add`, while the window is open.
+  useEffect(() => {
+    const unlisten = listen<StartRequest>('start-request', (e) => openRequest(e.payload));
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [openRequest]);
 
   // Coming back to the window re-checks what has gone stale meanwhile.
   useEffect(() => {
@@ -70,7 +82,7 @@ export default function App() {
         ) : page.kind === 'app' ? (
           <AppPage id={page.id} />
         ) : page.kind === 'add' ? (
-          <AddAppPage initialUrl={page.url} />
+          <AddAppPage key={JSON.stringify(page)} initialUrl={page.url} link={page.link} />
         ) : (
           <AppsPanel />
         )}

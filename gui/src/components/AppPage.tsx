@@ -99,6 +99,15 @@ function AppPageBody({ app }: { app: AppView }) {
     }
   };
 
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(await ipc.appLink(app.id));
+      toast('success', 'Link copied.');
+    } catch (e) {
+      toast('error', String(e));
+    }
+  };
+
   const markSeen = async () => {
     try {
       await ipc.markSeen(app.id, status?.latest_tag ?? null);
@@ -234,7 +243,12 @@ function AppPageBody({ app }: { app: AppView }) {
                 </>
               )}
               <dt>Source</dt>
-              <dd>{FORGE_NAMES[app.forge]}</dd>
+              <dd>
+                {FORGE_NAMES[app.forge]} ·{' '}
+                <button className="link-btn" onClick={copyLink} title="A forager:// link that opens these settings on the Add page">
+                  Copy link
+                </button>
+              </dd>
               {status && (
                 <>
                   <dt>Checked</dt>

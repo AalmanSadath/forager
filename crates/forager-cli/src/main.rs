@@ -12,7 +12,7 @@ use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, InstallState, Plan, State};
-use forager_core::{host, install, timer, version};
+use forager_core::{host, install, share, timer, version};
 
 #[derive(Parser)]
 #[command(
@@ -35,7 +35,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Track an app by its project URL.
+    /// Track an app by its project URL, or by a `forager://add?…` link.
     Add {
         url: String,
         /// API the host speaks, for hosts other than github.com, codeberg.org
@@ -196,6 +196,21 @@ enum Command {
         #[command(subcommand)]
         action: TimerAction,
     },
+    /// Write every tracked app's settings to a file (standard output if
+    /// none is given), to track them on another machine with `import`.
+    Export { file: Option<PathBuf> },
+    /// Track the apps in a file written by `export`, those not tracked yet.
+    Import {
+        file: PathBuf,
+        /// Then install them, as `update` would.
+        #[arg(long)]
+        install: bool,
+        /// With --install: do not ask for confirmation.
+        #[arg(long, requires = "install")]
+        yes: bool,
+    },
+    /// Print a link that opens Forager's Add page with an app's settings.
+    Link { id: String },
     /// Print a shell completion script, e.g.
     /// `forager completions bash > ~/.local/share/bash-completion/completions/forager`.
     Completions { shell: clap_complete::Shell },
@@ -316,19 +331,29 @@ fn main() -> Result<()> {
             track_only,
             signature,
         } => {
-            let source = match (forge, pattern) {
-                (Some(Forge::Html) | None, Some(pattern)) => Source::html(&url, &pattern)?,
-                (_, Some(_)) => bail!("--pattern is only for web pages (--forge html)"),
-                (forge, None) => Source::from_url(&url, forge)?,
+            // A `forager://add?…` link brings its own settings; options given
+            // here win.
+            let link = url
+                .starts_with("forager:")
+                .then(|| share::parse_link(&url))
+                .transpose()?;
+            let source = match (&link, forge, pattern) {
+                (Some(link), None, None) => link.source()?,
+                (Some(_), _, _) => bail!("--forge and --pattern do not go with a forager:// link"),
+                (None, Some(Forge::Html) | None, Some(pattern)) => Source::html(&url, &pattern)?,
+                (None, _, Some(_)) => bail!("--pattern is only for web pages (--forge html)"),
+                (None, forge, None) => Source::from_url(&url, forge)?,
             };
-            let id = id.unwrap_or_else(|| source.default_id());
+            let link = link.unwrap_or_default();
+            let id = id.or(link.id).unwrap_or_else(|| source.default_id());
             let mut app = App::new(source, id.clone());
-            app.asset_filter = filter;
-            app.tag_filter = tag_filter;
-            app.format = format;
-            app.prerelease = prerelease;
-            app.bins = bins;
-            app.track_only = track_only;
+            app.asset_filter = filter.or(link.asset_filter);
+            app.tag_filter = tag_filter.or(link.tag_filter);
+            app.format = format.or(link.format);
+            app.prerelease = prerelease || link.prerelease;
+            app.bins = if bins.is_empty() { link.bins } else { bins };
+            app.track_only = track_only || link.track_only;
+            let track_only = app.track_only;
             app.validate()?;
             if store.get(&id).is_ok() {
                 bail!("app already tracked: {id}");
@@ -553,6 +578,43 @@ fn main() -> Result<()> {
         }
         Command::Timer { action } => timer(action, explicit_config)?,
         Command::Completions { .. } | Command::Man { .. } => unreachable!("handled before the config is loaded"),
+        Command::Export { file } => {
+            let text = share::export(&store)?;
+            match file {
+                Some(file) => {
+                    std::fs::write(&file, text).with_context(|| format!("cannot write {}", file.display()))?;
+                    eprintln!("Exported {} apps to {}.", store.apps.len(), file.display());
+                }
+                None => print!("{text}"),
+            }
+        }
+        Command::Import { file, install, yes } => {
+            let text = std::fs::read_to_string(&file).with_context(|| format!("cannot read {}", file.display()))?;
+            let results = share::import(&mut store, &text)?;
+            store.save()?;
+            let mut added = Vec::new();
+            for (id, result) in results {
+                match result {
+                    Ok(()) => {
+                        println!("{id}: tracked");
+                        added.push(id);
+                    }
+                    Err(e) => println!("{id}: skipped, {e}"),
+                }
+            }
+            if install && !added.is_empty() {
+                let options = UpdateOptions {
+                    yes,
+                    allow_unverified: false,
+                    unprivileged_only: false,
+                    via,
+                };
+                update(&mut store, &added, &options)?;
+            } else if !added.is_empty() {
+                println!("Run `forager update` to install them.");
+            }
+        }
+        Command::Link { id } => println!("{}", share::link(store.get(&id)?)),
         Command::Remove { id, keep_installed } => {
             let app = store.get(&id)?;
             let present: Vec<Installed> = app.installs().filter(|i| install::is_present(i)).cloned().collect();

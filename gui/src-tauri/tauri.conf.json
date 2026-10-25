@@ -43,6 +43,7 @@
     "longDescription": "Tracks apps on GitHub, GitLab and Codeberg, picks the release asset that fits this system, verifies it, and installs it with the system package manager, as a Flatpak, an AppImage or a tarball.",
     "linux": {
       "deb": {
+        "desktopTemplate": "forager.desktop.hbs",
         "files": {
           "/usr/bin/forager": "../../target/release/forager",
           "/usr/share/bash-completion/completions": "../../target/release/share/bash-completion/completions",
@@ -56,6 +57,7 @@
         ]
       },
       "rpm": {
+        "desktopTemplate": "forager.desktop.hbs",
         "files": {
           "/usr/bin/forager": "../../target/release/forager",
           "/usr/share/bash-completion/completions": "../../target/release/share/bash-completion/completions",
@@ -76,6 +78,13 @@
     },
     "copyright": "Copyright © 2026 Aalman Sadath. GPL-3.0-or-later.",
     "license": "GPL-3.0-or-later"
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["forager"]
+      }
+    }
   },
   "mainBinaryName": "forager-gui"
 }

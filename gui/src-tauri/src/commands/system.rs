@@ -1,4 +1,5 @@
 use crate::appearance::{self, SystemAppearance};
+use forager_core::share::{self, AddRequest};
 
 /// Desktop colour scheme and accent, read through the portal.
 #[tauri::command]
@@ -9,17 +10,31 @@ pub async fn system_appearance() -> SystemAppearance {
 }
 
 /// What the app was asked to open from its command line:
-/// `forager-gui add <url>` or `forager-gui open <id>`.
+/// `forager-gui add <url>`, `forager-gui open <id>`, or a `forager://add?…`
+/// link, which brings the settings to start from.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StartRequest {
-    Add { url: String },
+    Add { url: String, link: Option<AddRequest> },
     Open { id: String },
 }
 
+/// Event carrying a `StartRequest` from a second launch, e.g. a link
+/// clicked while Forager is open.
+pub const START_EVENT: &str = "start-request";
+
 pub fn parse_start_args(args: &[String]) -> Option<StartRequest> {
+    if let Some(link) = args.iter().find_map(|a| share::parse_link(a).ok()) {
+        return Some(StartRequest::Add {
+            url: link.url.clone(),
+            link: Some(link),
+        });
+    }
     match args {
-        [cmd, url, ..] if cmd == "add" => Some(StartRequest::Add { url: url.clone() }),
+        [cmd, url, ..] if cmd == "add" => Some(StartRequest::Add {
+            url: url.clone(),
+            link: None,
+        }),
         [cmd, id, ..] if cmd == "open" => Some(StartRequest::Open { id: id.clone() }),
         _ => None,
     }
@@ -40,7 +55,11 @@ mod tests {
         let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert!(matches!(
             parse_start_args(&args(&["add", "https://github.com/o/r"])),
-            Some(StartRequest::Add { url }) if url == "https://github.com/o/r"
+            Some(StartRequest::Add { url, link: None }) if url == "https://github.com/o/r"
+        ));
+        assert!(matches!(
+            parse_start_args(&args(&["forager://add?url=https://github.com/o/r&track_only=1"])),
+            Some(StartRequest::Add { url, link: Some(link) }) if url == "https://github.com/o/r" && link.track_only
         ));
         assert!(
             matches!(parse_start_args(&args(&["open", "ripgrep"])), Some(StartRequest::Open { id }) if id == "ripgrep")

@@ -169,6 +169,30 @@ Shell completions and man pages come with the deb, rpm, Arch package and
 tarball. For other installs, `forager completions bash|zsh|fish` prints the
 script.
 
+To move apps to another machine, or share one:
+
+```sh
+forager export apps.toml          # every app's source, settings and signing keys
+forager import apps.toml          # on another machine; --install installs them too
+forager link node                 # forager://add?url=…&forge=html&pattern=…&bin=bin%2Fnode
+forager add 'forager://add?url=https://github.com/o/tool&filter=musl'
+```
+
+An export holds no installs; apps already on the other machine are found on
+its next check. Settings → Apps in the app does the same. A `forager://add`
+link opens the Add page with the app's settings filled in (the app page's
+"Copy link" makes one), for the user to check and confirm; nothing is
+installed from a link, and links never carry signing keys. To offer one
+from a project's README:
+
+```markdown
+[Track with Forager](forager://add?url=https%3A%2F%2Fgithub.com%2Fowner%2Frepo)
+```
+
+The link parameters are `url`, and optionally `forge`, `pattern`, `id`,
+`filter`, `tag_filter`, `format`, `bin` (repeatable), `prerelease=1` and
+`track_only=1`.
+
 Background checks run from a systemd user timer:
 
 ```sh

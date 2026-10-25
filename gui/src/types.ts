@@ -98,7 +98,26 @@ export interface StatusEvent {
   error: string | null;
 }
 
-export type StartRequest = { kind: 'add'; url: string } | { kind: 'open'; id: string };
+/** What a `forager://add?…` link asks to add, and the settings to start from. */
+export interface AddRequest {
+  url: string;
+  forge: string | null;
+  pattern: string | null;
+  id: string | null;
+  asset_filter: string | null;
+  tag_filter: string | null;
+  format: Format | null;
+  bins: string[];
+  prerelease: boolean;
+  track_only: boolean;
+}
+
+export type StartRequest = { kind: 'add'; url: string; link: AddRequest | null } | { kind: 'open'; id: string };
+
+export interface ImportResult {
+  id: string;
+  error: string | null;
+}
 
 export interface SourceInfo {
   spec: SourceSpec;

@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import * as ipc from '../ipc';
 import { restoreChecks, type CheckEntry } from '../appsView';
-import type { AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
+import type { AddRequest, AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
 import { NO_APPEARANCE } from './theme';
 
 /** Which page fills the window. An app's page is a full page, not a drawer. */
 export type Page =
   | { kind: 'apps' }
   | { kind: 'app'; id: string }
-  | { kind: 'add'; url?: string }
+  | { kind: 'add'; url?: string; link?: AddRequest }
   | { kind: 'activity' }
   | { kind: 'settings' };
 

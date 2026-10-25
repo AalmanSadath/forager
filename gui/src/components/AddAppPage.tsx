@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
-import type { SourceInfo } from '../types';
+import type { AddRequest, SourceInfo } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import SettingsSection from './appPage/SettingsSection';
 import SignatureSection from './appPage/SignatureSection';
@@ -13,7 +13,7 @@ import { BackIcon, FORGE_NAMES } from './shared/icons';
  * which asset would be installed, adjust, then track it. Same layout as an
  * app's own page.
  */
-export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
+export default function AddAppPage({ initialUrl, link }: { initialUrl?: string; link?: AddRequest }) {
   const setPage = useAppStore((s) => s.setPage);
   const loadApps = useAppStore((s) => s.loadApps);
   const checkApps = useAppStore((s) => s.checkApps);
@@ -23,11 +23,11 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
   const [url, setUrl] = useState(initialUrl ?? '');
   const [unknownHost, setUnknownHost] = useState<string | null>(null);
   // What the address is: worked out from the host, or said by the user.
-  const [kind, setKind] = useState<'auto' | 'gitlab' | 'forgejo' | 'html' | 'jenkins' | 'direct'>('auto');
-  const [pattern, setPattern] = useState('');
+  const [kind, setKind] = useState<Kind>(() => kindOf(link?.forge));
+  const [pattern, setPattern] = useState(link?.pattern ?? '');
   const [info, setInfo] = useState<SourceInfo | null>(null);
   const [id, setId] = useState('');
-  const [draft, setDraft] = useState<SettingsDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<SettingsDraft>(() => (link ? draftOfLink(link) : EMPTY_DRAFT));
   const [signature, setSignature] = useState<SignatureDraft>({ kind: 'none', minisignKey: '', gpgFile: '' });
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -48,7 +48,7 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
       const parsed = await ipc.parseSource(url.trim(), kind === 'auto' ? null : kind, kind === 'html' ? pattern : null);
       setUnknownHost(parsed.unknown_host);
       setInfo(parsed.info);
-      if (parsed.info) setId(parsed.info.default_id);
+      if (parsed.info) setId(link?.id ?? parsed.info.default_id);
     } catch (err) {
       setInfo(null);
       setError(String(err));
@@ -122,6 +122,12 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
         </select>
         <button className="btn-secondary" type="submit" disabled={!url.trim()}>Look up</button>
       </form>
+      {link && (
+        <p className="form-hint">
+          Opened from a forager:// link. Check the address and settings before tracking the app; a signing key, if it
+          has one, comes from the project, never from a link.
+        </p>
+      )}
       {kind === 'html' && (
         <div className="form-group pattern-field">
           <input
@@ -179,4 +185,27 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
       )}
     </div>
   );
+}
+
+type Kind = 'auto' | 'gitlab' | 'forgejo' | 'html' | 'jenkins' | 'direct';
+
+/** The source menu's choice for a link's `forge`; others are found from the address. */
+function kindOf(forge: string | null | undefined): Kind {
+  return forge === 'gitlab' || forge === 'forgejo' || forge === 'html' || forge === 'jenkins' || forge === 'direct'
+    ? forge
+    : 'auto';
+}
+
+/** The settings form as a link fills it in. */
+function draftOfLink(link: AddRequest): SettingsDraft {
+  return {
+    ...EMPTY_DRAFT,
+    format: link.format ?? '',
+    filter: link.asset_filter ?? '',
+    tagFilter: link.tag_filter ?? '',
+    prerelease: link.prerelease,
+    bins: link.bins.join(', '),
+    pattern: link.pattern ?? '',
+    trackOnly: link.track_only,
+  };
 }

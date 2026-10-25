@@ -2,12 +2,14 @@ import { useState } from 'react';
 import AppearanceSection from './settings/AppearanceSection';
 import BackgroundSection from './settings/BackgroundSection';
 import TokensSection from './settings/TokensSection';
+import AppsSection from './settings/AppsSection';
 import AboutSection from './settings/AboutSection';
 
 const SECTIONS = [
   { key: 'appearance', label: 'Appearance', body: <AppearanceSection /> },
   { key: 'background', label: 'Background', body: <BackgroundSection /> },
   { key: 'tokens', label: 'Tokens', body: <TokensSection /> },
+  { key: 'apps', label: 'Apps', body: <AppsSection /> },
   { key: 'about', label: 'About', body: <AboutSection /> },
 ] as const;
 
