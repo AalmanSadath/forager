@@ -776,6 +776,13 @@
     },
     {
         "type": "file",
+        "url": "https://registry.npmjs.org/@tauri-apps/plugin-clipboard-manager/-/plugin-clipboard-manager-2.5.0.tgz",
+        "sha512": "7626d4cb59ca5116035d132f8cd93875e01b4d9e633d0f30084e27a25b79c678abc96817438b0ad869055e85e51db45d3f37d9a6d663f790512df6a503b9bfd9",
+        "dest-filename": "d4cb59ca5116035d132f8cd93875e01b4d9e633d0f30084e27a25b79c678abc96817438b0ad869055e85e51db45d3f37d9a6d663f790512df6a503b9bfd9",
+        "dest": "flatpak-node/npm-cache/_cacache/content-v2/sha512/76/26"
+    },
+    {
+        "type": "file",
         "url": "https://registry.npmjs.org/@tauri-apps/plugin-dialog/-/plugin-dialog-2.8.3.tgz",
         "sha512": "1ddff205f936479bf6305af3ff4540ad25de87cc4a2cb5c6ba7a92893b5c1ca9f5ccd67068aba3b80d154b052f35fc02e210e81753ef792fa004335ede71eca7",
         "dest-filename": "f205f936479bf6305af3ff4540ad25de87cc4a2cb5c6ba7a92893b5c1ca9f5ccd67068aba3b80d154b052f35fc02e210e81753ef792fa004335ede71eca7",
@@ -3126,6 +3133,12 @@
         "contents": "5acd94467e7e4ffe6f9eefac82427f971731bc91\t{\"key\": \"make-fetch-happen:request-cache:https://registry.npmjs.org/character-entities-legacy/-/character-entities-legacy-3.0.0.tgz\", \"integrity\": \"sha512-RpPp0asT/6ufRm//AJVwpViZbGM/MkjQFxJccQRHmISF/22NBtsHqAWmL+/pmkPWoIUJdWyeVleTl1wydHATVQ==\", \"time\": 0, \"size\": 3544, \"metadata\": {\"url\": \"https://registry.npmjs.org/character-entities-legacy/-/character-entities-legacy-3.0.0.tgz\", \"reqHeaders\": {}, \"resHeaders\": {}}}",
         "dest-filename": "56650f5bc12796ecded6466ff19c2602e55fd11754affb78cb918f3f98e8",
         "dest": "flatpak-node/npm-cache/_cacache/index-v5/7a/a1"
+    },
+    {
+        "type": "inline",
+        "contents": "5acdcdf0b05ee334c68503d67153e063284b3ec3\t{\"key\": \"make-fetch-happen:request-cache:https://registry.npmjs.org/@tauri-apps/plugin-clipboard-manager/-/plugin-clipboard-manager-2.5.0.tgz\", \"integrity\": \"sha512-dibUy1nKURYDXRMvjNk4deAbTZ5jPQ8wCE4nolt5xniryWgXQ4sK2GkFXoXlHbRdPzfZptZj95BRLfalA7m/2Q==\", \"time\": 0, \"size\": 3725, \"metadata\": {\"url\": \"https://registry.npmjs.org/@tauri-apps/plugin-clipboard-manager/-/plugin-clipboard-manager-2.5.0.tgz\", \"reqHeaders\": {}, \"resHeaders\": {}}}",
+        "dest-filename": "490369fbb9184ddc1c282f46c8a4aeb319898a6d6924a40a411b68262c6b",
+        "dest": "flatpak-node/npm-cache/_cacache/index-v5/aa/76"
     },
     {
         "type": "inline",

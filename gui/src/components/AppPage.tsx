@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
@@ -101,7 +102,7 @@ function AppPageBody({ app }: { app: AppView }) {
 
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(await ipc.appLink(app.id));
+      await writeText(await ipc.appLink(app.id));
       toast('success', 'Link copied.');
     } catch (e) {
       toast('error', String(e));

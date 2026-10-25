@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import type { AddRequest, AppImageFile, SourceInfo } from '../types';
@@ -122,6 +123,16 @@ export default function AddAppPage({
             setUrl(e.target.value);
             setUnknownHost(null);
           }}
+          // Right-click pastes the address copied from the browser.
+          onContextMenu={async (e) => {
+            e.preventDefault();
+            const text = (await readText().catch(() => null))?.trim();
+            if (text) {
+              setUrl(text);
+              setUnknownHost(null);
+            }
+          }}
+          title="Right-click to paste"
           spellCheck={false}
         />
         <select
