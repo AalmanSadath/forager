@@ -47,9 +47,10 @@ pub struct Candidate<'a> {
 /// Assets naming another architecture or operating system, debug packages
 /// and source packages are never picked.
 /// A tarball must name Linux or this architecture, since one naming neither is
-/// usually a source archive.
+/// usually a source archive; a direct link's file is the one the user chose.
 pub fn candidates<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<Vec<Candidate<'a>>> {
     let filter = app.asset_filter.as_deref().map(Regex::new).transpose()?;
+    let direct = matches!(app.source, crate::source::Source::Direct { .. });
     let formats = match app.format {
         Some(format) => vec![format],
         // Updates stay in the format already installed when it still suits
@@ -73,7 +74,7 @@ pub fn candidates<'a>(app: &App, release: &'a Release, platform: &Platform) -> R
         .enumerate()
         .map(|(index, asset)| {
             let format = Format::from_file_name(&asset.name);
-            let verdict = match judge(asset, format, filter.as_ref(), &formats, platform) {
+            let verdict = match judge(asset, format, filter.as_ref(), &formats, platform, direct) {
                 Ok(score) => {
                     if best.is_none_or(|(_, best_score)| score < best_score) {
                         best = Some((index, score));
@@ -98,6 +99,7 @@ fn judge(
     filter: Option<&Regex>,
     formats: &[Format],
     platform: &Platform,
+    direct: bool,
 ) -> std::result::Result<(usize, bool), Reason> {
     let format = format.ok_or(Reason::NotPackage)?;
     if filter.is_some_and(|re| !re.is_match(&asset.name)) {
@@ -114,7 +116,7 @@ fn judge(
         .position(|f| *f == format)
         .ok_or(Reason::FormatNotWanted)?;
     let arch = arch_match(&asset.name, platform.arch).ok_or(Reason::OtherArch)?;
-    if format == Format::Tarball && !arch && !asset.name.to_ascii_lowercase().contains("linux") {
+    if format == Format::Tarball && !arch && !direct && !asset.name.to_ascii_lowercase().contains("linux") {
         return Err(Reason::SourceArchive);
     }
     Ok((rank, !arch))
@@ -240,6 +242,21 @@ mod tests {
     fn pick(app: &App, pm: Option<PackageManager>) -> String {
         let release = release(ASSETS);
         select_asset(app, &release, &platform(pm)).unwrap().0.name.clone()
+    }
+
+    #[test]
+    fn a_direct_links_tarball_need_not_name_linux() {
+        let tarball = release(&["discord-0.0.80.tar.gz"]);
+        let mut direct = app();
+        assert!(select_asset(&direct, &tarball, &platform(None)).is_err());
+        direct.source = Source::Direct {
+            url: "https://discord.com/api/download".into(),
+        };
+        let (asset, format) = select_asset(&direct, &tarball, &platform(None)).unwrap();
+        assert_eq!(
+            (asset.name.as_str(), format),
+            ("discord-0.0.80.tar.gz", Format::Tarball)
+        );
     }
 
     #[test]

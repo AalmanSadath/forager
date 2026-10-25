@@ -30,6 +30,10 @@ pub fn get(url: &str) -> RequestBuilder<WithoutBody> {
     AGENT.get(url)
 }
 
+pub fn head(url: &str) -> RequestBuilder<WithoutBody> {
+    AGENT.head(url)
+}
+
 /// Turns error statuses into errors. 304 passes through for conditional
 /// requests; a GitHub rate-limit response becomes `Error::RateLimited`.
 pub fn check(response: Response<Body>) -> Result<Response<Body>> {

@@ -1,7 +1,7 @@
 /** Shapes the Rust side sends, mirroring `src-tauri/src/commands/*.rs`. */
 
 export type Format = 'deb' | 'rpm' | 'appimage' | 'tarball' | 'flatpak' | 'pacman';
-export type Forge = 'github' | 'gitlab' | 'forgejo' | 'html';
+export type Forge = 'github' | 'gitlab' | 'forgejo' | 'html' | 'sourceforge' | 'sourcehut' | 'jenkins' | 'direct';
 
 export interface InstalledView {
   tag: string;

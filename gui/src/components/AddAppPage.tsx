@@ -23,7 +23,7 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
   const [url, setUrl] = useState(initialUrl ?? '');
   const [unknownHost, setUnknownHost] = useState<string | null>(null);
   // What the address is: worked out from the host, or said by the user.
-  const [kind, setKind] = useState<'auto' | 'gitlab' | 'forgejo' | 'html'>('auto');
+  const [kind, setKind] = useState<'auto' | 'gitlab' | 'forgejo' | 'html' | 'jenkins' | 'direct'>('auto');
   const [pattern, setPattern] = useState('');
   const [info, setInfo] = useState<SourceInfo | null>(null);
   const [id, setId] = useState('');
@@ -99,7 +99,7 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
       <form className="lookup-row" onSubmit={lookUp}>
         <input
           autoFocus
-          placeholder="https://github.com/owner/repo, a GitLab project or a Codeberg repository"
+          placeholder="A GitHub, GitLab, Codeberg, SourceForge or SourceHut project, or a link to the file"
           value={url}
           onChange={(e) => {
             setUrl(e.target.value);
@@ -117,6 +117,8 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
           <option value="gitlab">GitLab</option>
           <option value="forgejo">Forgejo / Gitea</option>
           <option value="html">Web page with links</option>
+          <option value="jenkins">Jenkins job</option>
+          <option value="direct">Direct link to the file</option>
         </select>
         <button className="btn-secondary" type="submit" disabled={!url.trim()}>Look up</button>
       </form>
@@ -138,7 +140,8 @@ export default function AddAppPage({ initialUrl }: { initialUrl?: string }) {
       )}
       {unknownHost && !info && (
         <p className="form-hint">
-          Forager does not know what {unknownHost} runs. Choose GitLab, Forgejo / Gitea, or a web page, then look up again.
+          Forager does not know what {unknownHost} runs. Choose GitLab, Forgejo / Gitea, Jenkins, a web page or a
+          direct link, then look up again.
         </p>
       )}
       {error && <p className="form-error">{error}</p>}

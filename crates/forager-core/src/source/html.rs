@@ -9,11 +9,9 @@ use url::Url;
 
 use crate::error::{Error, Result};
 use crate::model::{Asset, Release};
-use crate::{http, verify, version};
+use crate::{http, verify};
 
 static HREF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)href\s*=\s*["']([^"'#]+)"#).unwrap());
-/// A version in a file name: `1.2`, `1.2.3`, `2024.10.1`.
-static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+(?:\.\d+)+").unwrap());
 
 /// Files next to an asset that verify it.
 const SIDECARS: [&str; 5] = [".sha256", ".sha256sum", ".minisig", ".asc", ".sig"];
@@ -74,16 +72,15 @@ pub(super) fn parse(page: &str, html: &str, pattern: &str) -> Result<Vec<Release
         let Some(tag) = caps
             .name("version")
             .map(|m| m.as_str().to_string())
-            .or_else(|| NUMBER.find(&name).map(|m| m.as_str().to_string()))
+            .or_else(|| super::version_in(&name))
         else {
             continue;
         };
         let release = match releases.iter_mut().position(|r| r.tag == tag) {
             Some(i) => &mut releases[i],
             None => {
-                let lower = tag.to_ascii_lowercase();
                 releases.push(Release {
-                    prerelease: ["alpha", "beta", "rc", "pre", "dev"].iter().any(|p| lower.contains(p)),
+                    prerelease: super::looks_prerelease(&tag),
                     tag: tag.clone(),
                     name: None,
                     published_at: None,
@@ -102,11 +99,7 @@ pub(super) fn parse(page: &str, html: &str, pattern: &str) -> Result<Vec<Release
         release.assets.push(asset(name, url));
     }
 
-    // Newest first, by version where the tags parse as one.
-    releases.sort_by(|a, b| match (version::parse_tag(&a.tag), version::parse_tag(&b.tag)) {
-        (Some(x), Some(y)) => y.cmp(&x),
-        _ => b.tag.cmp(&a.tag),
-    });
+    super::sort_newest_first(&mut releases);
     Ok(releases)
 }
 

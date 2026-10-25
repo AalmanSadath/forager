@@ -1,7 +1,8 @@
 # Forager
 
-Install and update desktop Linux apps straight from their GitHub, GitLab
-and Codeberg releases, using the system package manager. Think
+Install and update desktop Linux apps straight from their GitHub, GitLab,
+Codeberg, SourceForge and SourceHut releases, using the system package
+manager. Think
 [Obtainium](https://github.com/ImranR98/Obtainium), but for the desktop.
 
 ![The apps grid](docs/screenshots/apps.png)
@@ -116,6 +117,10 @@ forager add https://gitlab.com/gitlab-org/cli --id glab
 forager add https://git.example.org/team/tool --forge forgejo   # self-hosted
 forager add https://nodejs.org/dist/latest/ --forge html \
     --pattern 'node-v[0-9.]+-linux-x64\.tar\.xz$' --bin bin/node     # a download page
+forager add https://sourceforge.net/projects/smplayer --format appimage
+forager add https://git.sr.ht/~emersion/kanshi --track-only
+forager add https://ci.example.org/job/tool/                    # a Jenkins job's archived files
+forager add https://zoom.us/client/latest/zoom_x86_64.rpm       # a link straight to the file
 forager check            # show installed vs latest and the asset that would be used
 forager check --json     # the same as JSON, for scripts and status bars (also list, history)
 forager update           # install or upgrade every tracked app (asks first)
@@ -184,14 +189,24 @@ never asks for a password.
 `edit` changes an app's settings; a new format is installed (and the old
 install removed) on the next `update`.
 
-`add` options: `--id`, `--forge gitlab|forgejo` for hosts Forager does not
-recognise, `--forge html --pattern <regex>` for a web page of download links
+`add` options: `--id`, `--forge gitlab|forgejo|jenkins|direct` for
+addresses Forager does not recognise, `--forge html --pattern <regex>` for a web page of download links
 (links whose full address matches are the downloads; the version is a
 `(?P<version>...)` group, or else the first dotted number in the file name),
 `--filter <regex>` to restrict asset names,
 `--format deb|rpm|pacman|appimage|tarball|flatpak` to override format selection,
 `--prerelease`, `--bin <path>` (repeatable) to name the executables to link
 from a tarball, relative to its top directory.
+
+Besides the forges, Forager reads SourceForge projects (their file feed,
+one release per folder), SourceHut repositories (tags and the files
+attached to them), Jenkins jobs (each successful build with archived files,
+tagged `build-<number>`; public jobs only) and direct links to a file. A
+direct link's version is the one in the name or folder of the file it
+leads to, else the file's date, so a link that always serves the latest
+build still shows its updates; one with no file name in the address needs
+`--forge direct`. SourceForge publishes only MD5 sums, so its downloads
+count as unverified unless the project signs them.
 
 Tracked apps live in `~/.config/forager/apps.toml` (override with `--config`
 or `FORAGER_CONFIG`). Set `GITHUB_TOKEN` to raise the GitHub API limit from

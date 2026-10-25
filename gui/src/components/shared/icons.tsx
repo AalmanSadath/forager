@@ -121,6 +121,10 @@ export const FORGE_NAMES: Record<Forge, string> = {
   gitlab: 'GitLab',
   forgejo: 'Forgejo',
   html: 'Web page',
+  sourceforge: 'SourceForge',
+  sourcehut: 'SourceHut',
+  jenkins: 'Jenkins',
+  direct: 'Direct link',
 };
 
 export const FORMAT_NAMES: Record<Format, string> = {
