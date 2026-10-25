@@ -24,6 +24,17 @@ const SIZES: [&str; 8] = [
     "scalable", "512x512", "256x256", "192x192", "128x128", "96x96", "64x64", "48x48",
 ];
 
+/// The `.desktop` file inside the AppImage at `path`, if it has one. Fails
+/// when `path` is not a type 2 AppImage.
+pub fn appimage_entry(path: &Path) -> Result<Option<String>> {
+    Ok(AppImage::open(path)?.desktop_entry())
+}
+
+/// A key's value in a menu entry's `[Desktop Entry]` group.
+pub fn entry_field(entry: &str, key: &str) -> Option<String> {
+    field(entry, key)
+}
+
 /// The menu entry and icon of an AppImage at `appimage`.
 pub fn for_appimage(id: &str, appimage: &Path) -> Result<Vec<PathBuf>> {
     let image = AppImage::open(appimage)?;

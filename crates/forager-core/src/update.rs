@@ -3,7 +3,8 @@
 
 use std::fs;
 use std::ops::ControlFlow;
-use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -637,6 +638,68 @@ pub fn install(
         app.set_installs(installs);
         store.save()?;
     }
+    Ok(installed)
+}
+
+/// Tracks `app` with an AppImage the user already has at `file` as its
+/// install, as if Forager had installed it: the file goes to
+/// `~/Applications/<id>.AppImage` (moved, or copied when `keep` is set or
+/// it is a file the desktop portal handed over) and gets a menu entry.
+/// `version` is the AppImage's own; the release of that version names the
+/// install when the source has one. Saves `store`.
+pub fn adopt(store: &mut Store, mut app: App, file: &Path, version: Option<&str>, keep: bool) -> Result<Installed> {
+    app.validate()?;
+    if store.apps.iter().any(|a| a.id == app.id || a.source == app.source) {
+        return Err(Error::AlreadyTracked(app.id));
+    }
+    if crate::desktop::appimage_entry(file).is_err() {
+        return Err(Error::Archive(format!("{} is not an AppImage", file.display())));
+    }
+    let tag = match version {
+        Some(version) => app
+            .source
+            .releases()
+            .ok()
+            .and_then(|releases| releases.into_iter().find(|r| same_version(&r.tag, version)))
+            .map_or_else(|| version.to_string(), |r| r.tag),
+        None => "unknown".into(),
+    };
+
+    let dir = crate::platform::appimage_dir().ok_or(Error::NoHome)?;
+    fs::create_dir_all(&dir)?;
+    let target = dir.join(format!("{}.AppImage", app.id));
+    let source = fs::canonicalize(file)?;
+    if target.exists() && fs::canonicalize(&target).ok().as_ref() != Some(&source) {
+        return Err(Error::LinkConflict(target));
+    }
+    // Files from the document portal are views of the user's own; they stay.
+    let keep = keep || (source.starts_with("/run/user") && source.components().any(|c| c.as_os_str() == "doc"));
+    if source != target {
+        if keep {
+            fs::copy(&source, &target)?;
+        } else if fs::rename(&source, &target).is_err() {
+            // Another filesystem: copy, then remove the original.
+            fs::copy(&source, &target)?;
+            fs::remove_file(&source)?;
+        }
+    }
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755))?;
+
+    let installed = Installed {
+        tag,
+        format: Format::AppImage,
+        asset: source
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        package: None,
+        desktop: crate::desktop::for_appimage(&app.id, &target).unwrap_or_default(),
+        path: Some(target),
+        links: Vec::new(),
+    };
+    app.set_installs(vec![installed.clone()]);
+    store.add(app)?;
+    store.save()?;
     Ok(installed)
 }
 

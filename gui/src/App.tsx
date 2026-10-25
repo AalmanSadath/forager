@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { countUpdates } from './appsView';
 import type { ProgressEvent, StartRequest, StatusEvent } from './types';
 import * as ipc from './ipc';
@@ -46,6 +47,7 @@ export default function App() {
   const openRequest = useCallback(
     (req: StartRequest) => {
       if (req.kind === 'add') setPage({ kind: 'add', url: req.url, link: req.link ?? undefined });
+      else if (req.kind === 'adopt') useAppStore.getState().openAppImage(req.path);
       else setPage({ kind: 'app', id: req.id });
     },
     [setPage],
@@ -55,6 +57,18 @@ export default function App() {
     loadApps().then(() => useAppStore.getState().checkStale());
     ipc.startRequest().then((req) => req && openRequest(req));
   }, [loadApps, setPage, openRequest]);
+
+  // An AppImage dropped on the window: adopt it.
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent((e) => {
+      if (e.payload.type !== 'drop') return;
+      const file = e.payload.paths.find((p) => p.toLowerCase().endsWith('.appimage'));
+      if (file) useAppStore.getState().openAppImage(file);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // A link clicked, or `forager-gui add`, while the window is open.
   useEffect(() => {
@@ -82,7 +96,7 @@ export default function App() {
         ) : page.kind === 'app' ? (
           <AppPage id={page.id} />
         ) : page.kind === 'add' ? (
-          <AddAppPage key={JSON.stringify(page)} initialUrl={page.url} link={page.link} />
+          <AddAppPage key={JSON.stringify(page)} initialUrl={page.url} link={page.link} adopt={page.adopt} />
         ) : (
           <AppsPanel />
         )}

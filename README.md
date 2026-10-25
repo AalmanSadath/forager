@@ -132,6 +132,7 @@ forager notes drawio-desktop             # release notes of the latest release (
 forager skip drawio-desktop              # do not offer the latest release; newer ones are
 forager unskip drawio-desktop
 forager install drawio-desktop --tag v24.0.0   # roll back; skips the release rolled back from
+forager adopt ~/Downloads/nvim-linux-x86_64.appimage   # track an AppImage you downloaded
 forager add https://github.com/ImranR98/Obtainium --track-only   # report new releases, never install
 forager seen obtainium                   # stop reporting the latest release as new
 ```
@@ -156,6 +157,16 @@ some other way.
 The latest release is the newest one with a file for this system, so a
 project that also tags, say, Android builds in the same repository still
 finds its Linux release.
+
+An AppImage downloaded by hand can be adopted: `forager adopt <file>`,
+"Add AppImage…" on the Apps page, or dropping it on the window. Most
+AppImages name their project in their update information
+(`gh-releases-zsync|owner|repo|latest|App-*-x86_64.AppImage.zsync`), which
+Forager reads without running the file and turns into the source and an
+asset filter; for one that does not, give its address (`--url`). The file
+moves to `~/Applications/<id>.AppImage` (`--keep` copies it), gets a menu
+entry, and its own version is the installed one, so the next check offers
+any newer release.
 
 AppImages and tarballs get a menu entry: an AppImage's own `.desktop` file
 and icon, read from the image without running it, or the entry a tarball

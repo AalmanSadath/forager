@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use forager_core::appimage::{self, AppImageInfo};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::{self, Verdict};
 use forager_core::model::{App, Format, Release, Signature};
@@ -251,6 +252,21 @@ fn apply_signature(app: &mut App, form: &SignatureForm) -> CmdResult<()> {
     Ok(())
 }
 
+/// What an AppImage chosen or dropped by the user says about itself.
+#[tauri::command]
+pub async fn inspect_appimage(path: PathBuf) -> CmdResult<AppImageInfo> {
+    blocking(move || appimage::inspect(&path).map_err(|_| format!("{} is not an AppImage", path.display()))).await
+}
+
+/// An AppImage the user already has, to become the new app's install.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdoptInput {
+    pub path: PathBuf,
+    pub version: Option<String>,
+    /// Copy the file rather than move it.
+    pub keep: bool,
+}
+
 #[tauri::command]
 pub async fn add_app(
     cache: State<'_, ReleaseCache>,
@@ -258,6 +274,7 @@ pub async fn add_app(
     id: String,
     settings: SettingsInput,
     signature: SignatureForm,
+    adopt: Option<AdoptInput>,
 ) -> CmdResult<AppView> {
     let mut app = App::new(spec, id.trim().to_string());
     settings.apply(&mut app)?;
@@ -273,10 +290,21 @@ pub async fn add_app(
         }
         // Last, since a GPG key is stored under the app's id.
         apply_signature(&mut app, &signature)?;
-        let view = AppView::from(&app);
-        store.add(app).map_err(|e| e.to_string())?;
-        store.save().map_err(|e| e.to_string())?;
-        Ok(view)
+        let Some(adopt) = adopt else {
+            let view = AppView::from(&app);
+            store.add(app).map_err(|e| e.to_string())?;
+            store.save().map_err(|e| e.to_string())?;
+            return Ok(view);
+        };
+        let id = app.id.clone();
+        let installed = update::adopt(&mut store, app, &adopt.path, adopt.version.as_deref(), adopt.keep)
+            .map_err(|e| e.to_string())?;
+        let mut event = Event::new(&id, Kind::Installed, Via::Gui);
+        event.to = Some(installed.tag.clone());
+        event.format = Some(Format::AppImage);
+        event.message = Some(format!("adopted {}", adopt.path.display()));
+        history::record(&event).ok();
+        Ok(AppView::from(store.get(&id).map_err(|e| e.to_string())?))
     })
     .await
 }

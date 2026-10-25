@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
-import type { AddRequest, SourceInfo } from '../types';
+import type { AddRequest, AppImageFile, SourceInfo } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import SettingsSection from './appPage/SettingsSection';
 import SignatureSection from './appPage/SignatureSection';
@@ -13,7 +13,16 @@ import { BackIcon, FORGE_NAMES } from './shared/icons';
  * which asset would be installed, adjust, then track it. Same layout as an
  * app's own page.
  */
-export default function AddAppPage({ initialUrl, link }: { initialUrl?: string; link?: AddRequest }) {
+export default function AddAppPage({
+  initialUrl,
+  link,
+  adopt,
+}: {
+  initialUrl?: string;
+  link?: AddRequest;
+  /** An AppImage the user has, to become the app's install. */
+  adopt?: AppImageFile;
+}) {
   const setPage = useAppStore((s) => s.setPage);
   const loadApps = useAppStore((s) => s.loadApps);
   const checkApps = useAppStore((s) => s.checkApps);
@@ -31,6 +40,8 @@ export default function AddAppPage({ initialUrl, link }: { initialUrl?: string; 
   const [signature, setSignature] = useState<SignatureDraft>({ kind: 'none', minisignKey: '', gpgFile: '' });
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Move the AppImage into ~/Applications, or leave the original where it is.
+  const [keep, setKeep] = useState(false);
 
   const input = useMemo(() => toInput(draft), [draft]);
   // The store refuses a second app for the same project, so say so up front.
@@ -67,7 +78,13 @@ export default function AddAppPage({ initialUrl, link }: { initialUrl?: string; 
     setAdding(true);
     setError(null);
     try {
-      const app = await ipc.addApp(info.spec, id.trim(), input, signatureForm(signature, null));
+      const app = await ipc.addApp(
+        info.spec,
+        id.trim(),
+        input,
+        signatureForm(signature, null),
+        adopt ? { path: adopt.path, version: adopt.version, keep } : null,
+      );
       await loadApps();
       checkApps([app.id]);
       setPage({ kind: 'app', id: app.id });
@@ -86,12 +103,12 @@ export default function AddAppPage({ initialUrl, link }: { initialUrl?: string; 
           <BackIcon />
         </button>
         <div className="page-header-title">
-          <h1>Add app</h1>
+          <h1>{adopt ? 'Add AppImage' : 'Add app'}</h1>
           {info && <span className="page-header-sub">{FORGE_NAMES[info.forge]} · {info.display}</span>}
         </div>
         <div className="page-header-actions">
           <button className="btn-primary" onClick={add} disabled={!info || !!existing || adding || !id.trim() || !!preview?.filter_error}>
-            {adding ? 'Adding…' : 'Track app'}
+            {adding ? 'Adding…' : adopt ? 'Track AppImage' : 'Track app'}
           </button>
         </div>
       </header>
@@ -122,7 +139,33 @@ export default function AddAppPage({ initialUrl, link }: { initialUrl?: string; 
         </select>
         <button className="btn-secondary" type="submit" disabled={!url.trim()}>Look up</button>
       </form>
-      {link && (
+      {adopt && (
+        <section className="page-card adopt-card">
+          <h3>AppImage</h3>
+          <dl className="facts">
+            <dt>File</dt>
+            <dd className="mono">{adopt.path}</dd>
+            {adopt.name && (
+              <>
+                <dt>App</dt>
+                <dd>{adopt.name}</dd>
+              </>
+            )}
+            <dt>Version</dt>
+            <dd className="mono">{adopt.version ?? 'Unknown'}</dd>
+          </dl>
+          <p className="form-hint">
+            {link
+              ? 'Its project comes from the update information inside it. Updates come from there from now on.'
+              : "It does not say where it comes from: paste its project's address above and look it up."}
+          </p>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
+            <span>Keep the original file (copy it to ~/Applications instead of moving it)</span>
+          </label>
+        </section>
+      )}
+      {link && !adopt && (
         <p className="form-hint">
           Opened from a forager:// link. Check the address and settings before tracking the app; a signing key, if it
           has one, comes from the project, never from a link.

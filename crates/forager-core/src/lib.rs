@@ -1,6 +1,7 @@
 //! Core library for Forager: tracks forge releases and installs them through
 //! the system package manager.
 
+pub mod appimage;
 pub mod desktop;
 pub mod envfile;
 pub mod error;

@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import * as ipc from '../ipc';
 import { restoreChecks, type CheckEntry } from '../appsView';
-import type { AddRequest, AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
+import type { AddRequest, AppImageFile, AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
 import { NO_APPEARANCE } from './theme';
 
 /** Which page fills the window. An app's page is a full page, not a drawer. */
 export type Page =
   | { kind: 'apps' }
   | { kind: 'app'; id: string }
-  | { kind: 'add'; url?: string; link?: AddRequest }
+  | { kind: 'add'; url?: string; link?: AddRequest; adopt?: AppImageFile }
   | { kind: 'activity' }
   | { kind: 'settings' };
 
@@ -27,6 +27,8 @@ interface AppStore {
   loadApps: () => Promise<void>;
   /** Adds missing menu entries (of `ids`, or every app) and reports how it went. */
   addMenuEntries: (ids?: string[]) => Promise<void>;
+  /** Opens the Add page for an AppImage the user chose or dropped. */
+  openAppImage: (path: string) => Promise<void>;
 
   /** Latest check per app id. */
   checks: Record<string, CheckEntry>;
@@ -101,6 +103,16 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
+  openAppImage: async (path) => {
+    try {
+      const info = await ipc.inspectAppImage(path);
+      const link = info.source ?? undefined;
+      const adopt = { path, name: info.name, version: info.version, info: info.update_info };
+      set({ page: { kind: 'add', url: link?.url, link, adopt } });
+    } catch (e) {
+      get().toast('error', String(e));
+    }
+  },
   addMenuEntries: async (ids) => {
     try {
       const results = await ipc.createMenuEntries(ids ?? null);

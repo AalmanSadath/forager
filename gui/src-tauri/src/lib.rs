@@ -84,6 +84,7 @@ pub fn run() {
             commands::edit::remove_app,
             commands::edit::list_releases,
             commands::edit::export_apps,
+            commands::edit::inspect_appimage,
             commands::edit::import_apps,
             commands::edit::app_link,
             commands::edit::create_menu_entries,

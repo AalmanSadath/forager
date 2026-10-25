@@ -352,7 +352,7 @@ fn direct_default_id(url: &str) -> String {
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+(?:\.\d+)+").unwrap());
 
 /// The first dotted number in `name`, as a version.
-fn version_in(name: &str) -> Option<String> {
+pub(crate) fn version_in(name: &str) -> Option<String> {
     NUMBER.find(name).map(|m| m.as_str().to_string())
 }
 

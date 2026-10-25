@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../store/appStore';
 import { countUpdates, formatsInUse, groupApps, missingMenuEntries, type Chip } from '../appsView';
 import AppCard from './AppCard';
@@ -25,6 +26,7 @@ export default function AppsPanel() {
   const openUpdate = useAppStore((s) => s.openUpdate);
   const progress = useAppStore((s) => s.progress);
   const addMenuEntries = useAppStore((s) => s.addMenuEntries);
+  const openAppImage = useAppStore((s) => s.openAppImage);
   const [adding, setAdding] = useState(false);
   const [chip, setChip] = useState<Chip>('all');
   const [search, setSearch] = useState('');
@@ -41,6 +43,21 @@ export default function AppsPanel() {
       </div>
       <div className="panel-toolbar">
         <button className="btn-primary" onClick={() => setPage({ kind: 'add' })}>+ Add App</button>
+        <button
+          className="btn-secondary"
+          title="Track an AppImage you downloaded; dropping one on the window does the same"
+          onClick={async () => {
+            const file = await open({
+              multiple: false,
+              directory: false,
+              title: 'AppImage to add',
+              filters: [{ name: 'AppImage', extensions: ['AppImage', 'appimage'] }],
+            });
+            if (typeof file === 'string') openAppImage(file);
+          }}
+        >
+          Add AppImage…
+        </button>
         <button className="btn-secondary" onClick={() => checkApps()} disabled={checkingAll || apps.length === 0}>
           {checkingAll ? 'Checking…' : 'Check all'}
         </button>

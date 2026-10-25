@@ -21,6 +21,8 @@ import type {
   SignatureForm,
   SourceSpec,
   StartRequest,
+  AdoptInput,
+  AppImageInfo,
   ImportResult,
   SystemAppearance,
 } from './types';
@@ -41,8 +43,16 @@ export const parseSource = (url: string, forge: string | null, pattern: string |
 /** With the `id` of a tracked app, assets that would update its installs are marked. */
 export const preview = (spec: SourceSpec, settings: SettingsInput, refresh: boolean, id: string | null = null) =>
   invoke<Preview>('preview', { spec, settings, refresh, id });
-export const addApp = (spec: SourceSpec, id: string, settings: SettingsInput, signature: SignatureForm) =>
-  invoke<AppView>('add_app', { spec, id, settings, signature });
+/** Tracks an app; with `adopt`, an AppImage the user has becomes its install. */
+export const addApp = (
+  spec: SourceSpec,
+  id: string,
+  settings: SettingsInput,
+  signature: SignatureForm,
+  adopt: AdoptInput | null = null,
+) => invoke<AppView>('add_app', { spec, id, settings, signature, adopt });
+/** What an AppImage says about itself; fails if the file is not one. */
+export const inspectAppImage = (path: string) => invoke<AppImageInfo>('inspect_appimage', { path });
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('save_app', { id, settings, signature });
 /** Stops tracking `id`, first uninstalling its installs in these formats. */

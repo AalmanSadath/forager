@@ -10,13 +10,22 @@ pub async fn system_appearance() -> SystemAppearance {
 }
 
 /// What the app was asked to open from its command line:
-/// `forager-gui add <url>`, `forager-gui open <id>`, or a `forager://add?…`
-/// link, which brings the settings to start from.
+/// `forager-gui add <url>`, `forager-gui open <id>`, a `forager://add?…`
+/// link, which brings the settings to start from, or an AppImage to adopt.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StartRequest {
-    Add { url: String, link: Option<AddRequest> },
-    Open { id: String },
+    Add {
+        url: String,
+        link: Option<AddRequest>,
+    },
+    Open {
+        id: String,
+    },
+    /// `forager-gui <file>.AppImage`: track an AppImage the user has.
+    Adopt {
+        path: String,
+    },
 }
 
 /// Event carrying a `StartRequest` from a second launch, e.g. a link
@@ -29,6 +38,10 @@ pub fn parse_start_args(args: &[String]) -> Option<StartRequest> {
             url: link.url.clone(),
             link: Some(link),
         });
+    }
+    if let Some(file) = args.iter().find(|a| a.to_ascii_lowercase().ends_with(".appimage")) {
+        let path = std::path::absolute(file).map_or_else(|_| file.clone(), |p| p.to_string_lossy().into_owned());
+        return Some(StartRequest::Adopt { path });
     }
     match args {
         [cmd, url, ..] if cmd == "add" => Some(StartRequest::Add {
@@ -65,6 +78,10 @@ mod tests {
             matches!(parse_start_args(&args(&["open", "ripgrep"])), Some(StartRequest::Open { id }) if id == "ripgrep")
         );
         assert!(parse_start_args(&args(&["add"])).is_none());
+        assert!(matches!(
+            parse_start_args(&args(&["/home/me/Downloads/Tool-1.0-x86_64.AppImage"])),
+            Some(StartRequest::Adopt { path }) if path == "/home/me/Downloads/Tool-1.0-x86_64.AppImage"
+        ));
         assert!(parse_start_args(&[]).is_none());
     }
 }

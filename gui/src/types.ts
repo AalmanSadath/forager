@@ -112,7 +112,37 @@ export interface AddRequest {
   track_only: boolean;
 }
 
-export type StartRequest = { kind: 'add'; url: string; link: AddRequest | null } | { kind: 'open'; id: string };
+/** What an AppImage downloaded by hand says about itself. */
+export interface AppImageInfo {
+  name: string | null;
+  version: string | null;
+  /** Raw update information, e.g. `gh-releases-zsync|owner|repo|latest|…`. */
+  update_info: string | null;
+  /** The project it names, as the Add page takes it. */
+  source: AddRequest | null;
+}
+
+/** An AppImage chosen on the Add page's way in. */
+export interface AppImageFile {
+  path: string;
+  name: string | null;
+  version: string | null;
+  /** Its raw update information, if any. */
+  info: string | null;
+}
+
+/** An AppImage the user has, to become the new app's install. */
+export interface AdoptInput {
+  path: string;
+  version: string | null;
+  /** Copy the file rather than move it. */
+  keep: boolean;
+}
+
+export type StartRequest =
+  | { kind: 'add'; url: string; link: AddRequest | null }
+  | { kind: 'open'; id: string }
+  | { kind: 'adopt'; path: string };
 
 export interface ImportResult {
   id: string;

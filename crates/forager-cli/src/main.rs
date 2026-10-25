@@ -196,6 +196,27 @@ enum Command {
         #[command(subcommand)]
         action: TimerAction,
     },
+    /// Track an AppImage downloaded by hand: it moves to ~/Applications, gets
+    /// a menu entry, and is updated from the project its update information
+    /// names, or from `--url`.
+    Adopt {
+        file: PathBuf,
+        /// The project's address, for AppImages that do not name one.
+        #[arg(long)]
+        url: Option<String>,
+        /// API the host speaks, as for `add`.
+        #[arg(long, requires = "url")]
+        forge: Option<Forge>,
+        /// Id to refer to the app by. Defaults to the repository name.
+        #[arg(long)]
+        id: Option<String>,
+        /// Regex an asset name must match, instead of the AppImage's own pattern.
+        #[arg(long)]
+        filter: Option<String>,
+        /// Copy the file instead of moving it.
+        #[arg(long)]
+        keep: bool,
+    },
     /// Write every tracked app's settings to a file (standard output if
     /// none is given), to track them on another machine with `import`.
     Export { file: Option<PathBuf> },
@@ -578,6 +599,56 @@ fn main() -> Result<()> {
         }
         Command::Timer { action } => timer(action, explicit_config)?,
         Command::Completions { .. } | Command::Man { .. } => unreachable!("handled before the config is loaded"),
+        Command::Adopt {
+            file,
+            url,
+            forge,
+            id,
+            filter,
+            keep,
+        } => {
+            let info = forager_core::appimage::inspect(&file)
+                .with_context(|| format!("{} is not an AppImage", file.display()))?;
+            // The address given wins over the one the AppImage names.
+            let request = info.source.clone().unwrap_or_default();
+            let source = match url {
+                Some(url) => Source::from_url(&url, forge)?,
+                None if info.source.is_some() => request.source()?,
+                None => bail!(
+                    "{} does not say where it comes from{}; give its project with --url",
+                    file.display(),
+                    info.update_info.as_deref().map_or(String::new(), |u| format!(" ({u})"))
+                ),
+            };
+            let named = info
+                .source
+                .as_ref()
+                .is_some_and(|r| r.source().ok().as_ref() == Some(&source));
+            let request = if named { request } else { share::AddRequest::default() };
+            let mut app = App::new(source.clone(), id.unwrap_or_else(|| source.default_id()));
+            app.asset_filter = filter.or(request.asset_filter);
+            app.tag_filter = request.tag_filter;
+            app.prerelease = request.prerelease;
+            let installed = update::adopt(&mut store, app.clone(), &file, info.version.as_deref(), keep)?;
+            let mut event = Event::new(&app.id, Kind::Installed, via);
+            event.to = Some(installed.tag.clone());
+            event.format = Some(Format::AppImage);
+            event.message = Some(format!("adopted {}", file.display()));
+            history::record(&event).ok();
+            println!(
+                "{}: tracking {} from {source}",
+                app.id,
+                info.name.as_deref().unwrap_or("the AppImage")
+            );
+            println!("  version: {}", installed.tag);
+            if let Some(path) = &installed.path {
+                let verb = if keep { "copied:" } else { "moved: " };
+                println!("  {verb}  {}", path.display());
+            }
+            if let Some(filter) = &app.asset_filter {
+                println!("  filter:  {filter}");
+            }
+        }
         Command::Export { file } => {
             let text = share::export(&store)?;
             match file {
