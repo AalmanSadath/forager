@@ -117,6 +117,7 @@ forager add https://git.example.org/team/tool --forge forgejo   # self-hosted
 forager add https://nodejs.org/dist/latest/ --forge html \
     --pattern 'node-v[0-9.]+-linux-x64\.tar\.xz$' --bin bin/node     # a download page
 forager check            # show installed vs latest and the asset that would be used
+forager check --json     # the same as JSON, for scripts and status bars (also list, history)
 forager update           # install or upgrade every tracked app (asks first)
 forager update drawio-desktop --yes
 forager edit drawio-desktop --format appimage   # or --format auto, --filter, --bin, --prerelease

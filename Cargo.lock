@@ -1259,6 +1259,8 @@ dependencies = [
  "forager-core",
  "notify-rust",
  "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

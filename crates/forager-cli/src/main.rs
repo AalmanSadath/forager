@@ -115,15 +115,22 @@ enum Command {
     /// none are given), e.g. ones installed before Forager made entries.
     MenuEntries { ids: Vec<String> },
     /// List tracked apps.
-    List,
+    List {
+        /// Print the list as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Check tracked apps for new releases.
     Check {
         /// Show a desktop notification if updates are available.
         #[arg(long)]
         notify: bool,
         /// Print nothing except errors.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "json")]
         quiet: bool,
+        /// Print the results as JSON, errors included.
+        #[arg(long)]
+        json: bool,
     },
     /// Install new releases of tracked apps (all apps if none are given).
     Update {
@@ -166,6 +173,9 @@ enum Command {
         /// Number of events to show.
         #[arg(short = 'n', long, default_value_t = 20)]
         limit: usize,
+        /// Print the events as JSON, newest first.
+        #[arg(long)]
+        json: bool,
     },
     /// Manage the daily background check (a systemd user timer).
     Timer {
@@ -407,7 +417,11 @@ fn main() -> Result<()> {
                 );
             }
         }
-        Command::List => {
+        Command::List { json: true } => {
+            let apps: Vec<ListEntry> = store.apps.iter().map(ListEntry::new).collect();
+            println!("{}", serde_json::to_string_pretty(&apps)?);
+        }
+        Command::List { json: false } => {
             if store.apps.is_empty() {
                 println!("No apps tracked. Add one with `forager add <url>`.");
             }
@@ -420,8 +434,12 @@ fn main() -> Result<()> {
                 println!("{:<20} {:<20} {}", app.id, state, app.source);
             }
         }
-        Command::Check { notify, quiet } => check(&mut store, notify, quiet, via)?,
-        Command::History { limit } => {
+        Command::Check { notify, quiet, json } => check(&mut store, notify, quiet, json, via)?,
+        Command::History { limit, json: true } => {
+            let events: Vec<Event> = history::read(limit)?.into_iter().rev().collect();
+            println!("{}", serde_json::to_string_pretty(&events)?);
+        }
+        Command::History { limit, json: false } => {
             for event in history::read(limit)?.iter().rev() {
                 println!("{}", describe_event(event));
             }
@@ -513,13 +531,110 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
+/// An app in `list --json`.
+#[derive(serde::Serialize)]
+struct ListEntry {
+    id: String,
+    source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<Format>,
+    installs: Vec<InstallEntry>,
+}
+
+impl ListEntry {
+    fn new(app: &App) -> ListEntry {
+        ListEntry {
+            id: app.id.clone(),
+            source: app.source.to_string(),
+            format: app.format,
+            installs: app.installs().map(|i| InstallEntry::new(i, None)).collect(),
+        }
+    }
+}
+
+/// An install in `list --json` and `check --json`.
+#[derive(serde::Serialize)]
+struct InstallEntry {
+    format: Format,
+    tag: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<State>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<PathBuf>,
+}
+
+impl InstallEntry {
+    fn new(installed: &Installed, state: Option<State>) -> InstallEntry {
+        InstallEntry {
+            format: installed.format,
+            tag: installed.tag.clone(),
+            state,
+            package: installed.package.clone(),
+            path: installed.path.clone(),
+        }
+    }
+}
+
+/// An app in `check --json`: its state, or the error that kept it from
+/// being checked.
+#[derive(serde::Serialize)]
+struct CheckEntry {
+    id: String,
+    source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<State>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest: Option<String>,
+    skipped: bool,
+    installs: Vec<InstallEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+impl CheckEntry {
+    fn new(app: &App, status: &update::Status) -> CheckEntry {
+        CheckEntry {
+            id: app.id.clone(),
+            source: app.source.to_string(),
+            state: Some(status.state),
+            latest: Some(status.latest.tag.clone()),
+            skipped: status.skipped,
+            installs: status
+                .installs
+                .iter()
+                .map(|i| InstallEntry::new(&i.installed, Some(i.state)))
+                .collect(),
+            error: None,
+        }
+    }
+
+    fn failed(app: &App, error: String) -> CheckEntry {
+        CheckEntry {
+            id: app.id.clone(),
+            source: app.source.to_string(),
+            state: None,
+            latest: None,
+            skipped: false,
+            installs: Vec::new(),
+            error: Some(error),
+        }
+    }
+}
+
+fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> Result<()> {
     let platform = Platform::detect();
     let mut pending = Vec::new();
     let mut found = false;
+    let mut entries = Vec::new();
     for index in 0..store.apps.len() {
         let status = match update::status(&store.apps[index]) {
             Ok(status) => status,
+            Err(e) if json => {
+                entries.push(CheckEntry::failed(&store.apps[index], e.to_string()));
+                continue;
+            }
             Err(e) if quiet => {
                 eprintln!("{}: {e}", store.apps[index].id);
                 continue;
@@ -537,6 +652,10 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
         let app = &store.apps[index];
         if status.state.needs_update() {
             pending.push((app.id.clone(), status.latest.tag.clone()));
+        }
+        if json {
+            entries.push(CheckEntry::new(app, &status));
+            continue;
         }
         if quiet {
             continue;
@@ -577,6 +696,9 @@ fn check(store: &mut Store, notify: bool, quiet: bool, via: Via) -> Result<()> {
         println!("{:<20} {:<30} {}", app.id, text, asset);
     }
 
+    if json {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+    }
     if found {
         store.save()?;
     }
@@ -976,6 +1098,37 @@ fn confirm(question: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_entries_serialise_as_json() {
+        let app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        let failed = serde_json::to_value(CheckEntry::failed(&app, "offline".into())).unwrap();
+        assert_eq!(
+            failed,
+            serde_json::json!({"id": "tool", "source": "github.com/o/tool", "skipped": false,
+                               "installs": [], "error": "offline"})
+        );
+        let installed = Installed {
+            tag: "v1".into(),
+            format: Format::AppImage,
+            asset: "tool.AppImage".into(),
+            package: None,
+            path: Some("/a/tool.AppImage".into()),
+            links: Vec::new(),
+            desktop: Vec::new(),
+        };
+        let entry = serde_json::to_value(InstallEntry::new(&installed, Some(State::Outdated))).unwrap();
+        assert_eq!(
+            entry,
+            serde_json::json!({"format": "appimage", "tag": "v1", "state": "outdated", "path": "/a/tool.AppImage"})
+        );
+    }
 
     #[test]
     fn formats_utc_times() {
