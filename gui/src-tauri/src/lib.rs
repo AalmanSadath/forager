@@ -5,8 +5,20 @@ mod appearance;
 mod commands;
 mod state;
 
+/// WebKitGTK's DMA-BUF renderer dies at startup on some GPU and compositor
+/// pairs, NVIDIA's driver under Wayland among them, and the window never
+/// appears. The fallback draws the same pixels, so it is used everywhere,
+/// as the Flatpak already does, unless the variable was set by the user.
+fn avoid_dmabuf_renderer() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // SAFETY: called at the start of `main`, before any thread starts.
+        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+    }
+}
+
 pub fn run() {
     forager_core::host::use_host_dirs();
+    avoid_dmabuf_renderer();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
