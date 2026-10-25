@@ -58,6 +58,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.5" date="2026-10-25">
+      <description>
+        <p>The window opens on machines where WebKitGTK's DMA-BUF renderer fails at startup, such as NVIDIA's driver under Wayland, in every package and not only the Flatpak.</p>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-10-25">
       <description>
         <p>Menu entries for AppImages and tarballs, release notes, skipping a release and rolling back to an older one, a filter for release names, and a restart prompt after Forager updates itself.</p>
