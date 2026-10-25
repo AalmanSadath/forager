@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useAppStore } from '../store/appStore';
 import { countUpdates, formatsInUse, groupApps, missingMenuEntries, type Chip } from '../appsView';
 import AppCard from './AppCard';
@@ -10,6 +11,7 @@ const SECTION_CHIPS: { chip: Chip; label: string }[] = [
   { chip: 'installed', label: 'Installed' },
   { chip: 'not_installed', label: 'Not installed' },
   { chip: 'problems', label: 'Problems' },
+  { chip: 'tracked', label: 'Tracked only' },
 ];
 
 /** The apps grid: the page Forager opens on, like BifroSSH's Hosts. */
@@ -108,7 +110,12 @@ export default function AppsPanel() {
                     app={app}
                     model={model}
                     onOpen={() => setPage({ kind: 'app', id: app.id })}
-                    onAction={() => openUpdate([app.id])}
+                    onAction={() => {
+                      const url = checks[app.id]?.status?.release_url;
+                      if (model.action === 'view') {
+                        if (url) openUrl(url).catch(() => {});
+                      } else openUpdate([app.id]);
+                    }}
                     progress={app.id in progress ? (progress[app.id] ?? 0) : null}
                   />
                 ))}

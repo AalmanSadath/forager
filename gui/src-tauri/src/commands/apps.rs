@@ -27,6 +27,10 @@ pub struct AppView {
     pub bins: Vec<String>,
     /// A release the user chose not to install.
     pub skipped: Option<String>,
+    /// Only new releases are reported; Forager does not install the app.
+    pub track_only: bool,
+    /// For a tracked-only app, the release the user last saw.
+    pub seen: Option<String>,
     /// `minisign`, `gpg` or `attestation` when a signature is required.
     pub signature: Option<String>,
     pub minisign_key: Option<String>,
@@ -77,6 +81,8 @@ impl From<&App> for AppView {
             prerelease: app.prerelease,
             bins: app.bins.clone(),
             skipped: app.skipped.clone(),
+            track_only: app.track_only,
+            seen: app.seen.clone(),
             signature: app.signature.as_ref().map(|s| s.to_string()),
             minisign_key: match &app.signature {
                 Some(Signature::Minisign { public_key }) => Some(public_key.clone()),

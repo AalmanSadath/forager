@@ -112,6 +112,10 @@ export default function SettingsSection({
         <input type="checkbox" checked={draft.prerelease} onChange={(e) => set({ prerelease: e.target.checked })} />
         <span>Include prereleases</span>
       </label>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={draft.trackOnly} onChange={(e) => set({ trackOnly: e.target.checked })} />
+        <span>Track only: report new releases, never install</span>
+      </label>
     </section>
   );
 }

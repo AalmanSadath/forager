@@ -99,6 +99,16 @@ function AppPageBody({ app }: { app: AppView }) {
     }
   };
 
+  const markSeen = async () => {
+    try {
+      await ipc.markSeen(app.id, status?.latest_tag ?? null);
+      await loadApps();
+      checkApps([app.id]);
+    } catch (e) {
+      toast('error', String(e));
+    }
+  };
+
   const remove = async () => {
     setRemoving(false);
     try {
@@ -135,7 +145,17 @@ function AppPageBody({ app }: { app: AppView }) {
           <button className="btn-secondary" onClick={() => checkApps([app.id])} disabled={entry?.checking}>
             {entry?.checking ? 'Checking…' : 'Check'}
           </button>
-          {model.action && !dirty && (
+          {model.action === 'view' && !dirty && status && (
+            <>
+              <button className="btn-primary" onClick={() => openUrl(status.release_url).catch(() => {})}>
+                Release page <ExternalIcon />
+              </button>
+              <button className="btn-secondary" onClick={markSeen} title="Stop reporting this release as new">
+                Mark {status.latest_tag} as seen
+              </button>
+            </>
+          )}
+          {model.action && model.action !== 'view' && !dirty && (
             <button className="btn-primary" onClick={() => openUpdate([app.id])}>
               {model.action === 'install'
                 ? 'Install'
@@ -166,7 +186,15 @@ function AppPageBody({ app }: { app: AppView }) {
           <section className="page-card">
             <h3>Status</h3>
             <dl className="facts">
-              {app.installs.length === 0 && (
+              {app.track_only && (
+                <>
+                  <dt>Tracked only</dt>
+                  <dd>Forager reports new releases and does not install this app.</dd>
+                  <dt>Seen</dt>
+                  <dd>{app.seen ? <span className="mono">{app.seen}</span> : 'None yet'}</dd>
+                </>
+              )}
+              {app.installs.length === 0 && !app.track_only && (
                 <>
                   <dt>Installed</dt>
                   <dd>Not installed</dd>
@@ -238,7 +266,7 @@ function AppPageBody({ app }: { app: AppView }) {
             error={previewError}
             onRefresh={refresh}
           />
-          <VersionsSection app={app} />
+          {!app.track_only && <VersionsSection app={app} />}
           <section className="page-card danger-zone">
             <div>
               <h3>Remove</h3>

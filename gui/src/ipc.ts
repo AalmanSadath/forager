@@ -55,6 +55,8 @@ export const listReleases = (id: string, refresh = false) => invoke<ReleaseView[
 /** Stops offering `tag` (the latest release when null) as an update. */
 export const skipRelease = (id: string, tag: string | null) => invoke<AppView>('skip_release', { id, tag });
 export const unskipRelease = (id: string) => invoke<AppView>('unskip_release', { id });
+/** Marks a tracked-only app's release (the latest when null) as seen. */
+export const markSeen = (id: string, tag: string | null) => invoke<AppView>('mark_seen', { id, tag });
 
 // ── update ──────────────────────────────────────────────────────
 /** One plan per install that needs updating, each in its own format; empty when up to date. */

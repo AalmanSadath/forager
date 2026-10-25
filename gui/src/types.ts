@@ -35,6 +35,10 @@ export interface AppView {
   bins: string[];
   /** A release the user chose not to install. */
   skipped: string | null;
+  /** Only new releases are reported; Forager does not install the app. */
+  track_only: boolean;
+  /** For a tracked-only app, the release the user last saw. */
+  seen: string | null;
   signature: 'minisign' | 'gpg' | 'attestation' | null;
   minisign_key: string | null;
   gpg_keyring: string | null;
@@ -74,6 +78,8 @@ export interface StatusView {
   installs: InstallStatusView[];
   /** The latest release is the skipped one. */
   skipped: boolean;
+  /** The latest release's page on the forge. */
+  release_url: string;
   /** Installs were found on the system, removed, or at a new version, and saved. */
   found: boolean;
 }
@@ -116,6 +122,8 @@ export interface SettingsInput {
   bins: string[];
   /** For web-page sources: the download link pattern. */
   pattern: string | null;
+  /** Only report new releases instead of installing them. */
+  track_only: boolean;
 }
 
 export type Reason =

@@ -127,6 +127,8 @@ forager notes drawio-desktop             # release notes of the latest release (
 forager skip drawio-desktop              # do not offer the latest release; newer ones are
 forager unskip drawio-desktop
 forager install drawio-desktop --tag v24.0.0   # roll back; skips the release rolled back from
+forager add https://github.com/ImranR98/Obtainium --track-only   # report new releases, never install
+forager seen obtainium                   # stop reporting the latest release as new
 ```
 
 Forager looks for an app on every check, in every format its release
@@ -139,6 +141,12 @@ seen. An app installed in several formats at once, say an rpm and a
 Flatpak, is tracked in each, and each is updated in its own format;
 removing the app asks which to uninstall. If one is removed outside
 Forager while another remains, Forager follows the one that remains.
+
+A tracked-only app (`--track-only`, or "Track only" in the app's settings)
+is never installed: `check`, the timer's notification and the Apps page
+report its releases newer than the one last marked as seen, with a link to
+the release page. Use it for apps with no Linux build, or ones installed
+some other way.
 
 The latest release is the newest one with a file for this system, so a
 project that also tags, say, Android builds in the same repository still

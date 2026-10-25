@@ -2,7 +2,13 @@ import type { CardModel } from '../appsView';
 import type { AppView } from '../types';
 import { FormatIcon, FORMAT_NAMES } from './shared/icons';
 
-const ACTION_LABELS = { update: 'Update', install: 'Install', reinstall: 'Reinstall', switch: 'Switch' } as const;
+const ACTION_LABELS = {
+  update: 'Update',
+  install: 'Install',
+  reinstall: 'Reinstall',
+  switch: 'Switch',
+  view: 'Release page',
+} as const;
 
 /**
  * One app in the grid, laid out like BifroSSH's host card: icon tile, status

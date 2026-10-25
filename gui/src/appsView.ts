@@ -11,14 +11,16 @@ export interface CheckEntry {
   error: string | null;
 }
 
-export type Section = 'updates' | 'problems' | 'installed' | 'not_installed';
+export type Section = 'updates' | 'releases' | 'problems' | 'installed' | 'not_installed' | 'tracked';
 export type Dot = 'on' | 'off' | 'error' | 'update' | 'busy';
 
 export const SECTIONS: { key: Section; title: string }[] = [
   { key: 'updates', title: 'Updates available' },
+  { key: 'releases', title: 'New releases' },
   { key: 'problems', title: 'Problems' },
   { key: 'installed', title: 'Installed' },
   { key: 'not_installed', title: 'Not installed' },
+  { key: 'tracked', title: 'Tracked only' },
 ];
 
 export interface CardModel {
@@ -32,8 +34,8 @@ export interface CardModel {
   format: Format | null;
   /** Every installed format, the preferred one first; `[format]` when none is installed. */
   formats: Format[];
-  /** The primary action, if one makes sense from the card. */
-  action: 'update' | 'install' | 'reinstall' | 'switch' | null;
+  /** The primary action, if one makes sense from the card; `view` opens the release page. */
+  action: 'update' | 'install' | 'reinstall' | 'switch' | 'view' | null;
 }
 
 export function cardModel(app: AppView, entry: CheckEntry | undefined): CardModel {
@@ -41,6 +43,7 @@ export function cardModel(app: AppView, entry: CheckEntry | undefined): CardMode
 }
 
 function installedFormats(app: AppView, entry: CheckEntry | undefined): Format[] {
+  if (app.track_only) return [];
   if (app.installs.length > 0) return app.installs.map((i) => i.format);
   const format = entry?.status?.asset_format ?? app.format;
   return format ? [format] : [];
@@ -58,6 +61,21 @@ function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel,
   if (entry?.error) {
     // The error itself goes on the card: it is the thing to act on.
     return { section: 'problems', dot: dot('error'), versions: entry.error, label: entry.error, format, action: null };
+  }
+  if (app.track_only) {
+    if (!status) {
+      return { section: 'tracked', dot: dot('off'), versions: app.seen ?? '—', label: 'Not checked yet', format: null, action: null };
+    }
+    return status.state === 'outdated'
+      ? {
+          section: 'releases',
+          dot: dot('update'),
+          versions: app.seen ? `${app.seen} → ${status.latest_tag}` : `${status.latest_tag} released`,
+          label: 'New release',
+          format: null,
+          action: 'view',
+        }
+      : { section: 'tracked', dot: dot('on'), versions: status.latest_tag, label: 'Seen', format: null, action: null };
   }
   if (!status) {
     return installed
@@ -111,7 +129,11 @@ export function groupApps(
   const words = search.toLowerCase().split(/\s+/).filter(Boolean);
   const items = apps
     .map((app) => ({ app, model: cardModel(app, entries[app.id]) }))
-    .filter(({ model }) => chip === 'all' || model.section === chip || model.formats.includes(chip as Format))
+    .filter(({ app, model }) =>
+      chip === 'tracked'
+        ? app.track_only
+        : chip === 'all' || model.section === chip || model.formats.includes(chip as Format),
+    )
     .filter(({ app, model }) => {
       const hay = haystack(app, model);
       return words.every((w) => hay.includes(w));

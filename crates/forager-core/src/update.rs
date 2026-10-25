@@ -172,6 +172,9 @@ pub fn status(app: &App) -> Result<Status> {
 pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
     let platform = Platform::detect();
     let latest = latest(app, releases, &platform)?;
+    if app.track_only {
+        return Ok(track_only_status(app, latest));
+    }
     let observed = observe(app, &latest, &platform);
     let found = (observed != app.install_list()).then(|| observed.clone());
     let skipped = app.skipped.as_deref() == Some(latest.tag.as_str());
@@ -193,6 +196,24 @@ pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
         found,
         skipped,
     })
+}
+
+/// A tracked-only app has no installs: its latest release is new until the
+/// user has seen it.
+fn track_only_status(app: &App, latest: Release) -> Status {
+    let skipped = app.skipped.as_deref() == Some(latest.tag.as_str());
+    let new = app
+        .seen
+        .as_deref()
+        .is_none_or(|seen| version::is_newer(seen, &latest.tag))
+        && !skipped;
+    Status {
+        state: if new { State::Outdated } else { State::UpToDate },
+        latest,
+        installs: Vec::new(),
+        found: None,
+        skipped,
+    }
 }
 
 /// A present install at `tag` against the latest release; older counts as
@@ -232,6 +253,10 @@ pub fn latest(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<
         .filter(|r| tags.as_ref().is_none_or(|re| re.is_match(&r.tag)))
         .peekable();
     let newest = eligible.peek().cloned().ok_or(Error::NoRelease)?;
+    if app.track_only {
+        // Nothing is installed, so the release need not have an asset.
+        return Ok(newest);
+    }
     Ok(eligible
         .find(|r| select_asset(app, r, platform).is_ok())
         .unwrap_or(newest))
@@ -399,6 +424,9 @@ fn existing_install(version: String, package: String, format: Format, asset: &As
 /// app's (see `Status::found`), so the caller should save `app` when its
 /// installs changed.
 pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
+    if app.track_only {
+        return Ok(Vec::new());
+    }
     let status = status(app)?;
     if let Some(found) = status.found {
         app.set_installs(found);
@@ -425,6 +453,9 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
 /// install moves to it in its own format (one install in the chosen format
 /// when there is none). Going back from the latest release skips it.
 pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Result<Plan>>> {
+    if app.track_only {
+        return Err(Error::TrackOnly(app.id.clone()));
+    }
     let releases = app.source.releases()?;
     let target = releases
         .iter()
@@ -685,6 +716,61 @@ mod tests {
             links: Vec::new(),
             desktop: Vec::new(),
         }
+    }
+
+    #[test]
+    fn tracked_only_apps_report_releases_they_have_not_seen() {
+        let release = |tag: &str, prerelease| Release {
+            tag: tag.into(),
+            name: None,
+            prerelease,
+            published_at: None,
+            notes: None,
+            // An Android build only: nothing for this system.
+            assets: vec![Asset {
+                name: "tool.apk".into(),
+                url: String::new(),
+                size: 0,
+                digest: None,
+            }],
+        };
+        let platform = Platform {
+            arch: "x86_64",
+            package_manager: None,
+            flatpak: false,
+        };
+        let mut app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        app.track_only = true;
+        let releases = vec![
+            release("v2.1-rc1", true),
+            release("v2.0", false),
+            release("v1.9", false),
+        ];
+        let latest = latest(&app, releases, &platform).unwrap();
+        assert_eq!(latest.tag, "v2.0");
+
+        assert_eq!(track_only_status(&app, latest.clone()).state, State::Outdated);
+        app.seen = Some("v1.9".into());
+        assert_eq!(track_only_status(&app, latest.clone()).state, State::Outdated);
+        app.seen = Some("v2.0".into());
+        let status = track_only_status(&app, latest.clone());
+        assert_eq!(status.state, State::UpToDate);
+        assert!(status.installs.is_empty() && status.found.is_none());
+        app.seen = Some("v1.9".into());
+        app.skipped = Some("v2.0".into());
+        assert_eq!(track_only_status(&app, latest).state, State::UpToDate);
+
+        assert!(plans(&mut app, &platform).unwrap().is_empty());
+        assert!(matches!(
+            plans_for(&mut app, &platform, "v1.9"),
+            Err(Error::TrackOnly(_))
+        ));
     }
 
     #[test]

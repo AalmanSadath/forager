@@ -94,6 +94,9 @@ pub struct SettingsInput {
     /// New download pattern, for an app tracked from a web page.
     #[serde(default)]
     pub pattern: Option<String>,
+    /// Only report new releases instead of installing them.
+    #[serde(default)]
+    pub track_only: bool,
 }
 
 impl SettingsInput {
@@ -106,6 +109,7 @@ impl SettingsInput {
         app.tag_filter = self.tag_filter.clone().filter(|f| !f.is_empty());
         app.prerelease = self.prerelease;
         app.bins = self.bins.iter().filter(|b| !b.trim().is_empty()).cloned().collect();
+        app.track_only = self.track_only;
         Ok(())
     }
 }
@@ -249,15 +253,20 @@ fn apply_signature(app: &mut App, form: &SignatureForm) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn add_app(
+    cache: State<'_, ReleaseCache>,
     spec: Source,
     id: String,
     settings: SettingsInput,
     signature: SignatureForm,
 ) -> CmdResult<AppView> {
+    let mut app = App::new(spec, id.trim().to_string());
+    settings.apply(&mut app)?;
+    // A tracked-only app reports releases after the one out now.
+    if app.track_only {
+        app.seen = Some(latest_tag(&cache, &app).await?);
+    }
     blocking(move || {
         let mut store = load_store()?;
-        let mut app = App::new(spec, id.trim().to_string());
-        settings.apply(&mut app)?;
         app.validate().map_err(|e| e.to_string())?;
         if store.get(&app.id).is_ok() {
             return Err(format!("{} is already tracked", app.id));
@@ -266,6 +275,37 @@ pub async fn add_app(
         apply_signature(&mut app, &signature)?;
         let view = AppView::from(&app);
         store.add(app).map_err(|e| e.to_string())?;
+        store.save().map_err(|e| e.to_string())?;
+        Ok(view)
+    })
+    .await
+}
+
+/// The tag of the latest release `app` takes, from the cache if it is there.
+async fn latest_tag(cache: &ReleaseCache, app: &App) -> CmdResult<String> {
+    let releases = releases_of(cache, &app.source, false).await?;
+    Ok(update::latest(app, releases, &Platform::detect())
+        .map_err(|e| e.to_string())?
+        .tag)
+}
+
+/// Marks a tracked-only app's release `tag` (the latest when `None`) as
+/// seen, so it is no longer reported as new.
+#[tauri::command]
+pub async fn mark_seen(cache: State<'_, ReleaseCache>, id: String, tag: Option<String>) -> CmdResult<AppView> {
+    let tag = match tag {
+        Some(tag) => tag,
+        None => {
+            let key = id.clone();
+            let app = blocking(move || load_store()?.get(&key).cloned().map_err(|e| e.to_string())).await?;
+            latest_tag(&cache, &app).await?
+        }
+    };
+    blocking(move || {
+        let mut store = load_store()?;
+        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
+        app.seen = Some(tag);
+        let view = AppView::from(&*app);
         store.save().map_err(|e| e.to_string())?;
         Ok(view)
     })
@@ -331,10 +371,7 @@ pub async fn skip_release(cache: State<'_, ReleaseCache>, id: String, tag: Optio
         None => {
             let key = id.clone();
             let app = blocking(move || load_store()?.get(&key).cloned().map_err(|e| e.to_string())).await?;
-            let releases = releases_of(&cache, &app.source, false).await?;
-            update::latest(&app, releases, &Platform::detect())
-                .map_err(|e| e.to_string())?
-                .tag
+            latest_tag(&cache, &app).await?
         }
     };
     set_skipped(id, Some(tag)).await
@@ -359,12 +396,28 @@ async fn set_skipped(id: String, tag: Option<String>) -> CmdResult<AppView> {
 }
 
 #[tauri::command]
-pub async fn save_app(id: String, settings: SettingsInput, signature: SignatureForm) -> CmdResult<AppView> {
+pub async fn save_app(
+    cache: State<'_, ReleaseCache>,
+    id: String,
+    settings: SettingsInput,
+    signature: SignatureForm,
+) -> CmdResult<AppView> {
+    let key = id.clone();
+    let mut current = blocking(move || load_store()?.get(&key).cloned().map_err(|e| e.to_string())).await?;
+    settings.apply(&mut current)?;
+    // Turning tracking-only on: what is out now counts as seen.
+    let seen = match current.track_only && current.seen.is_none() {
+        true => Some(latest_tag(&cache, &current).await?),
+        false => None,
+    };
     blocking(move || {
         let mut store = load_store()?;
         let app = store.get_mut(&id).map_err(|e| e.to_string())?;
         let mut edited = app.clone();
         settings.apply(&mut edited)?;
+        if seen.is_some() {
+            edited.seen = seen;
+        }
         edited.validate().map_err(|e| e.to_string())?;
         apply_signature(&mut edited, &signature)?;
         *app = edited;

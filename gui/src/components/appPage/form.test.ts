@@ -14,6 +14,8 @@ const app: AppView = {
   prerelease: false,
   bins: ['bin/tool', 'bin/helper'],
   skipped: null,
+  track_only: false,
+  seen: null,
   signature: 'minisign',
   minisign_key: 'RWQkey',
   gpg_keyring: null,
@@ -30,14 +32,16 @@ describe('settings form', () => {
       prerelease: false,
       bins: ['bin/tool', 'bin/helper'],
       pattern: null,
+      track_only: false,
     });
-    expect(toInput({ format: '', filter: '  ', tagFilter: ' ^v ', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ' })).toEqual({
+    expect(toInput({ format: '', filter: '  ', tagFilter: ' ^v ', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ', trackOnly: true })).toEqual({
       format: null,
       asset_filter: null,
       tag_filter: '^v',
       prerelease: true,
       bins: ['a', 'b'],
       pattern: 'x$',
+      track_only: true,
     });
   });
 

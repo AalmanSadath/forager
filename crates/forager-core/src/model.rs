@@ -134,6 +134,14 @@ pub struct App {
     /// app counts as up to date. A newer release is offered as usual.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+    /// Only report new releases, never install: for apps with no Linux
+    /// build or ones installed by other means.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub track_only: bool,
+    /// For a tracked-only app, the release the user last saw: newer ones
+    /// are reported as new.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen: Option<String>,
     /// Key the app's assets must be signed with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<Signature>,
@@ -158,6 +166,8 @@ impl App {
             prerelease: false,
             bins: Vec::new(),
             skipped: None,
+            track_only: false,
+            seen: None,
             signature: None,
             installed: None,
             also_installed: Vec::new(),

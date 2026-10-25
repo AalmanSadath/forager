@@ -210,6 +210,8 @@ mod tests {
             prerelease: false,
             bins: Vec::new(),
             skipped: None,
+            track_only: false,
+            seen: None,
             signature: None,
             installed: None,
             also_installed: Vec::new(),

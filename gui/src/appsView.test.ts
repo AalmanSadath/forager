@@ -15,6 +15,8 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     prerelease: false,
     bins: [],
     skipped: null,
+    track_only: false,
+    seen: null,
     signature: null,
     minisign_key: null,
     gpg_keyring: null,
@@ -43,12 +45,27 @@ function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
       checked_at: 0,
       installs: [],
       skipped: false,
+      release_url: 'https://github.com/o/a/releases/tag/2.0',
       found: false,
     },
   };
 }
 
 describe('cardModel', () => {
+  it("reports a tracked-only app's unseen release, apart from updates", () => {
+    const tracked = app('t', { track_only: true, seen: '1.0' });
+    expect(cardModel(tracked, status('outdated'))).toMatchObject({
+      section: 'releases',
+      versions: '1.0 → 2.0',
+      action: 'view',
+      formats: [],
+    });
+    expect(cardModel({ ...tracked, seen: '2.0' }, status('up_to_date'))).toMatchObject({ section: 'tracked', action: null });
+    expect(countUpdates([tracked], { t: status('outdated') })).toBe(0);
+    const shown = groupApps([tracked, app('b')], { t: status('outdated') }, 'tracked', '');
+    expect(shown.flatMap((s) => s.items.map((i) => i.app.id))).toEqual(['t']);
+  });
+
   it('shows an update as old → new with the update action', () => {
     const m = cardModel(app('a', { installed: installed('1.0') }), status('outdated'));
     expect(m).toMatchObject({ section: 'updates', dot: 'update', versions: '1.0 → 2.0', action: 'update', format: 'tarball' });

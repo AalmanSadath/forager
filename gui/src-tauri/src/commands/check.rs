@@ -37,6 +37,8 @@ pub struct StatusView {
     pub installs: Vec<InstallStatusView>,
     /// The latest release is the skipped one.
     pub skipped: bool,
+    /// The latest release's page on the forge.
+    pub release_url: String,
     /// Installs were found on the system, removed, or at another version
     /// than recorded, and saved, so the app list is out of date.
     pub found: bool,
@@ -98,6 +100,7 @@ pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> Status
                 .collect();
             let repo_version = installs.first().and_then(|i| i.repo_version.clone());
             StatusView {
+                release_url: app.source.release_url(&status.latest.tag),
                 state: status.state,
                 latest_tag: status.latest.tag,
                 latest_name: status.latest.name,

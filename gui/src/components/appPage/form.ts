@@ -13,9 +13,19 @@ export interface SettingsDraft {
   bins: string;
   /** Download link pattern; only web-page apps have one. */
   pattern: string;
+  /** Report new releases only, never install. */
+  trackOnly: boolean;
 }
 
-export const EMPTY_DRAFT: SettingsDraft = { format: '', filter: '', tagFilter: '', prerelease: false, bins: '', pattern: '' };
+export const EMPTY_DRAFT: SettingsDraft = {
+  format: '',
+  filter: '',
+  tagFilter: '',
+  prerelease: false,
+  bins: '',
+  pattern: '',
+  trackOnly: false,
+};
 
 export function draftOf(app: AppView): SettingsDraft {
   return {
@@ -25,6 +35,7 @@ export function draftOf(app: AppView): SettingsDraft {
     prerelease: app.prerelease,
     bins: app.bins.join(', '),
     pattern: app.spec.kind === 'html' ? (app.spec.pattern ?? '') : '',
+    trackOnly: app.track_only,
   };
 }
 
@@ -39,6 +50,7 @@ export function toInput(d: SettingsDraft): SettingsInput {
       .map((b) => b.trim())
       .filter(Boolean),
     pattern: d.pattern.trim() || null,
+    track_only: d.trackOnly,
   };
 }
 

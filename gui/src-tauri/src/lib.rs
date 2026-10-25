@@ -41,6 +41,7 @@ pub fn run() {
             commands::edit::create_menu_entries,
             commands::edit::skip_release,
             commands::edit::unskip_release,
+            commands::edit::mark_seen,
             commands::system::restart_self,
             commands::update::plan_update,
             commands::update::start_update,

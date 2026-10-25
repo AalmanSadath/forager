@@ -65,6 +65,10 @@ enum Command {
         /// Repeat for several. Found automatically if not given.
         #[arg(long = "bin", value_name = "PATH")]
         bins: Vec<String>,
+        /// Only report new releases, never install the app: for apps with no
+        /// Linux build, or ones installed some other way.
+        #[arg(long)]
+        track_only: bool,
         #[command(flatten)]
         signature: SignatureArgs,
     },
@@ -96,6 +100,9 @@ enum Command {
         /// Whether to consider prereleases.
         #[arg(long, value_name = "BOOL")]
         prerelease: Option<bool>,
+        /// Whether to only report new releases instead of installing them.
+        #[arg(long, value_name = "BOOL")]
+        track_only: Option<bool>,
         #[command(flatten)]
         signature: SignatureArgs,
         /// New download pattern, for an app tracked from a web page.
@@ -162,6 +169,13 @@ enum Command {
     /// Do not offer a release (the latest by default) as an update. A newer
     /// release is offered as usual.
     Skip {
+        id: String,
+        #[arg(long)]
+        tag: Option<String>,
+    },
+    /// Mark a tracked-only app's latest release (or `--tag`) as seen, so it
+    /// is no longer reported as new.
+    Seen {
         id: String,
         #[arg(long)]
         tag: Option<String>,
@@ -299,6 +313,7 @@ fn main() -> Result<()> {
             format,
             prerelease,
             bins,
+            track_only,
             signature,
         } => {
             let source = match (forge, pattern) {
@@ -313,15 +328,23 @@ fn main() -> Result<()> {
             app.format = format;
             app.prerelease = prerelease;
             app.bins = bins;
+            app.track_only = track_only;
             app.validate()?;
             if store.get(&id).is_ok() {
                 bail!("app already tracked: {id}");
+            }
+            // Only releases after this one are news.
+            if track_only {
+                app.seen = Some(update::latest(&app, app.source.releases()?, &Platform::detect())?.tag);
             }
             // Last, since a GPG key is stored on disk under the app's id.
             app.signature = signature.resolve(&id, &app.source)?;
             store.add(app)?;
             store.save()?;
-            println!("Tracking {id}. Run `forager update {id}` to install it.");
+            match track_only {
+                true => println!("Tracking {id}; `forager check` reports its new releases."),
+                false => println!("Tracking {id}. Run `forager update {id}` to install it."),
+            }
         }
         Command::Edit {
             id,
@@ -333,6 +356,7 @@ fn main() -> Result<()> {
             bins,
             clear_bins,
             prerelease,
+            track_only,
             signature,
             no_signature,
             pattern,
@@ -348,6 +372,7 @@ fn main() -> Result<()> {
                 && bins.is_empty()
                 && !clear_bins
                 && prerelease.is_none()
+                && track_only.is_none()
             {
                 bail!("nothing to change, see `forager edit --help`");
             }
@@ -372,6 +397,9 @@ fn main() -> Result<()> {
             }
             if let Some(prerelease) = prerelease {
                 app.prerelease = prerelease;
+            }
+            if let Some(track_only) = track_only {
+                app.track_only = track_only;
             }
             if let Some(pattern) = pattern {
                 let Source::Html { url, .. } = &app.source else {
@@ -502,6 +530,19 @@ fn main() -> Result<()> {
             store.save()?;
             println!("{id}: {tag} skipped; newer releases are offered as usual.");
         }
+        Command::Seen { id, tag } => {
+            let app = store.get(&id)?;
+            if !app.track_only {
+                bail!("{id} is installed by Forager, not tracked only; see `forager skip`");
+            }
+            let tag = match tag {
+                Some(tag) => tag,
+                None => update::latest(app, app.source.releases()?, &Platform::detect())?.tag,
+            };
+            store.get_mut(&id)?.seen = Some(tag.clone());
+            store.save()?;
+            println!("{id}: {tag} seen; newer releases are reported as new.");
+        }
         Command::Unskip { id } => {
             let skipped = store.get_mut(&id)?.skipped.take();
             store.save()?;
@@ -627,6 +668,7 @@ struct CheckEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     latest: Option<String>,
     skipped: bool,
+    track_only: bool,
     installs: Vec<InstallEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -640,6 +682,7 @@ impl CheckEntry {
             state: Some(status.state),
             latest: Some(status.latest.tag.clone()),
             skipped: status.skipped,
+            track_only: app.track_only,
             installs: status
                 .installs
                 .iter()
@@ -656,6 +699,7 @@ impl CheckEntry {
             state: None,
             latest: None,
             skipped: false,
+            track_only: app.track_only,
             installs: Vec::new(),
             error: Some(error),
         }
@@ -701,6 +745,15 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
         }
 
         let latest = &status.latest.tag;
+        if app.track_only {
+            let text = match (status.state, &app.seen) {
+                (State::Outdated, Some(seen)) => format!("{latest} released (seen {seen})"),
+                (State::Outdated, None) => format!("{latest} released"),
+                _ => format!("{latest} (seen)"),
+            };
+            println!("{:<20} {:<30} {}", app.id, text, app.source.release_url(latest));
+            continue;
+        }
         let text = match (status.state, status.installs.as_slice()) {
             (State::NotInstalled, _) => format!("{latest} available, not installed"),
             (State::WrongFormat, installs) => format!(
@@ -745,17 +798,15 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
         record_updates_found(store, &pending, via);
     }
     if notify && !pending.is_empty() {
-        let summary = match pending.len() {
-            1 => "1 update available".to_string(),
-            n => format!("{n} updates available"),
-        };
+        let (released, updates): (Vec<&str>, Vec<&str>) = pending
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .partition(|id| store.get(id).is_ok_and(|a| a.track_only));
+        let (summary, body) = notification_text(&updates, &released);
         notify_rust::Notification::new()
             .appname("Forager")
             .summary(&summary)
-            .body(&format!(
-                "{}\nRun `forager update` to install.",
-                pending.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>().join(", ")
-            ))
+            .body(&body)
             .icon("system-software-update")
             // Clicking the notification opens the app: Forager.desktop from
             // the deb and rpm packages, or the Flatpak's own entry.
@@ -764,6 +815,26 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
             .context("cannot show notification")?;
     }
     Ok(())
+}
+
+/// Summary and body of the background check's notification: updates to
+/// install, and new releases of apps that are tracked only.
+fn notification_text(updates: &[&str], released: &[&str]) -> (String, String) {
+    let plural = |n: usize, one: &str, many: &str| match n {
+        1 => format!("1 {one}"),
+        n => format!("{n} {many}"),
+    };
+    let mut summary = Vec::new();
+    let mut body = Vec::new();
+    if !updates.is_empty() {
+        summary.push(plural(updates.len(), "update available", "updates available"));
+        body.push(format!("{}\nRun `forager update` to install.", updates.join(", ")));
+    }
+    if !released.is_empty() {
+        summary.push(plural(released.len(), "new release", "new releases"));
+        body.push(format!("New releases: {}", released.join(", ")));
+    }
+    (summary.join(", "), body.join("\n"))
 }
 
 /// One install in `check`: `v1 (up to date)`, `v1 -> v2`, `missing (was v1)`,
@@ -921,6 +992,13 @@ fn run_plans(
     tag: Option<&str>,
 ) -> Result<usize> {
     let app = store.get_mut(id)?;
+    if app.track_only && tag.is_none() {
+        println!(
+            "{id}: tracked only, not installed; releases at {}",
+            app.source.web_url()
+        );
+        return Ok(0);
+    }
     let recorded = app.install_list();
     let plans = match tag {
         Some(tag) => update::plans_for(app, platform, tag)?,
@@ -1076,6 +1154,10 @@ fn describe(app: &App) -> String {
         Source::Html { pattern, .. } => format!("\n  pattern:    {pattern}"),
         _ => String::new(),
     };
+    let pattern = match app.track_only {
+        true => format!("{pattern}\n  track only: yes"),
+        false => pattern,
+    };
     format!(
         "  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
     )
@@ -1139,6 +1221,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn notifications_tell_updates_from_new_releases() {
+        assert_eq!(
+            notification_text(&["a", "b"], &[]),
+            (
+                "2 updates available".into(),
+                "a, b\nRun `forager update` to install.".into()
+            )
+        );
+        assert_eq!(
+            notification_text(&["a"], &["c"]),
+            (
+                "1 update available, 1 new release".into(),
+                "a\nRun `forager update` to install.\nNew releases: c".into()
+            )
+        );
+    }
+
+    #[test]
     fn check_entries_serialise_as_json() {
         let app = App::new(
             Source::GitHub {
@@ -1151,7 +1251,7 @@ mod tests {
         assert_eq!(
             failed,
             serde_json::json!({"id": "tool", "source": "github.com/o/tool", "skipped": false,
-                               "installs": [], "error": "offline"})
+                               "track_only": false, "installs": [], "error": "offline"})
         );
         let installed = Installed {
             tag: "v1".into(),

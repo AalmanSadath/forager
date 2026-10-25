@@ -142,6 +142,16 @@ impl Source {
         }
     }
 
+    /// The page of the release tagged `tag`, for apps that are tracked only.
+    pub fn release_url(&self, tag: &str) -> String {
+        let tag = url::form_urlencoded::byte_serialize(tag.as_bytes()).collect::<String>();
+        match self {
+            Source::GitHub { .. } | Source::Forgejo { .. } => format!("{}/releases/tag/{tag}", self.web_url()),
+            Source::GitLab { .. } => format!("{}/-/releases/{tag}", self.web_url()),
+            Source::Html { url, .. } => url.clone(),
+        }
+    }
+
     /// Short name of the forge kind: `github`, `gitlab` or `forgejo`.
     pub fn forge(&self) -> &'static str {
         match self {
@@ -257,6 +267,14 @@ mod tests {
         assert_eq!(source.default_id(), "tool");
         assert_eq!(source.to_string(), "gitlab.com/group/sub/tool");
         assert!(Source::from_url("https://gitlab.com/group", None).is_err());
+    }
+
+    #[test]
+    fn links_release_pages() {
+        let github = Source::from_url("https://github.com/o/r", None).unwrap();
+        assert_eq!(github.release_url("v1.0"), "https://github.com/o/r/releases/tag/v1.0");
+        let gitlab = Source::from_url("https://gitlab.com/g/r", None).unwrap();
+        assert_eq!(gitlab.release_url("v1/x"), "https://gitlab.com/g/r/-/releases/v1%2Fx");
     }
 
     #[test]
