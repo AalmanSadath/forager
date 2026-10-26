@@ -551,6 +551,15 @@ mod tests {
             package_guesses("foo-bar-2.0-1-x86_64.pkg.tar.zst", Format::Pacman, "foo"),
             ["foo-bar", "foo"]
         );
+        // Forager's own release files, named without the package release.
+        assert_eq!(
+            package_guesses("forager-0.1.7.x86_64.rpm", Format::Rpm, "forager"),
+            ["forager"]
+        );
+        assert_eq!(
+            package_guesses("forager-0.1.7-x86_64.pkg.tar.zst", Format::Pacman, "forager"),
+            ["forager"]
+        );
         assert_eq!(package_guesses("1.0.rpm", Format::Rpm, "x"), ["x"]);
         assert_eq!(
             package_guesses("OpenLogi-v0.8.17-x86_64.flatpak", Format::Flatpak, "openlogi-flatpak"),

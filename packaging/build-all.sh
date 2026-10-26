@@ -2,8 +2,8 @@
 # Builds every package of Forager into target/dist, with SHA256SUMS:
 #
 #   forager_<v>_amd64.deb             Debian, Ubuntu
-#   forager-<v>-1.x86_64.rpm          Fedora, openSUSE
-#   forager-<v>-1-x86_64.pkg.tar.zst  Arch
+#   forager-<v>.x86_64.rpm            Fedora, openSUSE
+#   forager-<v>-x86_64.pkg.tar.zst    Arch
 #   forager-<v>-x86_64.flatpak        any distribution with Flatpak
 #   Forager-<v>-x86_64.AppImage       any distribution
 #   forager-<v>-x86_64-linux.tar.gz   any distribution, unpacked by hand
@@ -25,7 +25,7 @@ npm ci --no-audit --no-fund
 npx tauri build --bundles deb,rpm,appimage
 bundle=$root/target/release/bundle
 cp "$bundle/deb/Forager_${version}_amd64.deb" "$out/forager_${version}_amd64.deb"
-cp "$bundle/rpm/Forager-${version}-1.x86_64.rpm" "$out/forager-${version}-1.x86_64.rpm"
+cp "$bundle/rpm/Forager-${version}-1.x86_64.rpm" "$out/forager-${version}.x86_64.rpm"
 cp "$bundle/appimage/Forager_${version}_amd64.AppImage" "$out/Forager-${version}-x86_64.AppImage"
 
 "$root/packaging/tarball.sh" "$out"

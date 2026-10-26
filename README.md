@@ -28,8 +28,8 @@ Each [release](https://github.com/AalmanSadath/forager/releases) has:
 | File | For | Install |
 | --- | --- | --- |
 | `forager_<v>_amd64.deb` | Debian 13, Ubuntu 24.04 and newer | `sudo apt install ./forager_<v>_amd64.deb` |
-| `forager-<v>-1.x86_64.rpm` | Fedora, openSUSE | `sudo dnf install ./forager-<v>-1.x86_64.rpm` |
-| `forager-<v>-1-x86_64.pkg.tar.zst` | Arch | `sudo pacman -U forager-<v>-1-x86_64.pkg.tar.zst` |
+| `forager-<v>.x86_64.rpm` | Fedora, openSUSE | `sudo dnf install ./forager-<v>.x86_64.rpm` |
+| `forager-<v>-x86_64.pkg.tar.zst` | Arch | `sudo pacman -U forager-<v>-x86_64.pkg.tar.zst` |
 | `forager-<v>-x86_64.flatpak` | any distribution with Flatpak | `flatpak install --user forager-<v>-x86_64.flatpak` |
 | `Forager-<v>-x86_64.AppImage` | any distribution | `chmod +x` it and run it |
 | `forager-<v>-x86_64-linux.tar.gz` | any distribution | unpack, then `./install.sh` (into `~/.local`) |
@@ -42,7 +42,7 @@ that this repository's release workflow built it from the tagged commit.
 Check one with the GitHub CLI:
 
 ```sh
-gh attestation verify forager-<v>-1.x86_64.rpm -R AalmanSadath/forager
+gh attestation verify forager-<v>.x86_64.rpm -R AalmanSadath/forager
 ```
 
 The Flatpak is a convenience, not a sandbox: Forager installs software for

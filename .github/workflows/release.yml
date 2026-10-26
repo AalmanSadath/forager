@@ -63,7 +63,7 @@ jobs:
           b=target/release/bundle
           mkdir -p dist
           cp "$b/deb/Forager_${v}_amd64.deb" "dist/forager_${v}_amd64.deb"
-          cp "$b/rpm/Forager-${v}-1.x86_64.rpm" "dist/forager-${v}-1.x86_64.rpm"
+          cp "$b/rpm/Forager-${v}-1.x86_64.rpm" "dist/forager-${v}.x86_64.rpm"
           cp "$b/appimage/Forager_${v}_amd64.AppImage" "dist/Forager-${v}-x86_64.AppImage"
           # Lets an installed AppImage update by fetching only what changed.
           (cd dist && zsyncmake -u "Forager-${v}-x86_64.AppImage" \

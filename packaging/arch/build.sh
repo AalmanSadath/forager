@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds forager-<version>-1-x86_64.pkg.tar.zst from the release tarball.
+# Builds forager-<version>-x86_64.pkg.tar.zst from the release tarball.
 # On Arch (or in CI's archlinux container) it runs makepkg directly; anywhere
 # else it runs makepkg in an archlinux container with podman.
 #
@@ -40,4 +40,7 @@ else
     su builder -c 'cd /build && $makepkg_cmd' &&
     cp /build/*.pkg.tar.zst /out/"
 fi
-ls "$out"/forager-"$version"-*.pkg.tar.zst
+# makepkg names it with the package release (-1-); the release files leave
+# that out, as the rpm's name does.
+mv "$out/forager-$version-1-x86_64.pkg.tar.zst" "$out/forager-$version-x86_64.pkg.tar.zst"
+ls "$out/forager-$version-x86_64.pkg.tar.zst"
