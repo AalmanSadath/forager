@@ -269,6 +269,7 @@ function draftOfLink(link: AddRequest): SettingsDraft {
     format: link.format ?? '',
     filter: link.asset_filter ?? '',
     tagFilter: link.tag_filter ?? '',
+    versions: link.versions ?? '',
     prerelease: link.prerelease,
     bins: link.bins.join(', '),
     pattern: link.pattern ?? '',

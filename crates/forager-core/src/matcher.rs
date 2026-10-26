@@ -208,6 +208,7 @@ mod tests {
             },
             asset_filter: None,
             tag_filter: None,
+            versions: None,
             format: None,
             prerelease: false,
             bins: Vec::new(),

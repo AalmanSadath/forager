@@ -12,6 +12,7 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     format: null,
     asset_filter: null,
     tag_filter: null,
+    versions: null,
     prerelease: false,
     bins: [],
     skipped: null,

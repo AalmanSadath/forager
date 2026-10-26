@@ -12,7 +12,7 @@ use forager_core::model::{App, Format, Release, Signature};
 use forager_core::platform::Platform;
 use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
-use forager_core::{Error, install, share, update};
+use forager_core::{Error, install, share, update, version};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -26,17 +26,17 @@ pub struct ReleaseCache(Mutex<HashMap<String, Vec<Release>>>);
 
 impl ReleaseCache {
     /// The whole source, not its display name: a web page's releases depend
-    /// on its pattern too.
-    fn key(source: &Source) -> String {
-        format!("{source:?}")
+    /// on its pattern too. Apps with a version limit fetch a longer list.
+    fn key(app: &App) -> String {
+        format!("{:?} {}", app.source, app.versions.is_some())
     }
 
-    pub fn put(&self, source: &Source, releases: Vec<Release>) {
-        self.0.lock().unwrap().insert(Self::key(source), releases);
+    pub fn put(&self, app: &App, releases: Vec<Release>) {
+        self.0.lock().unwrap().insert(Self::key(app), releases);
     }
 
-    fn get(&self, source: &Source) -> Option<Vec<Release>> {
-        self.0.lock().unwrap().get(&Self::key(source)).cloned()
+    fn get(&self, app: &App) -> Option<Vec<Release>> {
+        self.0.lock().unwrap().get(&Self::key(app)).cloned()
     }
 }
 
@@ -90,6 +90,9 @@ pub struct SettingsInput {
     /// Regex a release tag must match.
     #[serde(default)]
     pub tag_filter: Option<String>,
+    /// Versions to follow, as a semver requirement.
+    #[serde(default)]
+    pub versions: Option<String>,
     pub prerelease: bool,
     pub bins: Vec<String>,
     /// New download pattern, for an app tracked from a web page.
@@ -108,6 +111,7 @@ impl SettingsInput {
         app.format = self.format;
         app.asset_filter = self.asset_filter.clone().filter(|f| !f.is_empty());
         app.tag_filter = self.tag_filter.clone().filter(|f| !f.is_empty());
+        app.versions = self.versions.clone().filter(|v| !v.trim().is_empty());
         app.prerelease = self.prerelease;
         app.bins = self.bins.iter().filter(|b| !b.trim().is_empty()).cloned().collect();
         app.track_only = self.track_only;
@@ -154,6 +158,8 @@ pub struct Preview {
     pub filter_error: Option<String>,
     /// The tag filter does not compile; releases are shown without it.
     pub tag_filter_error: Option<String>,
+    /// The version limit does not parse; releases are shown without it.
+    pub versions_error: Option<String>,
 }
 
 /// What the latest release looks like under `settings`. Fetches the release
@@ -170,7 +176,7 @@ pub async fn preview(
     // A new pattern changes which links are releases, so it is part of the source.
     let mut app = App::new(spec, "preview".into());
     settings.apply(&mut app)?;
-    let releases = releases_of(&cache, &app.source, refresh).await?;
+    let releases = releases_of(&cache, &app, refresh).await?;
 
     let filter_error = app
         .asset_filter
@@ -187,6 +193,14 @@ pub async fn preview(
         .map(|e| e.to_string());
     if tag_filter_error.is_some() {
         app.tag_filter = None;
+    }
+    let versions_error = app
+        .versions
+        .as_deref()
+        .and_then(|v| version::requirement(v).err())
+        .map(|e| e.to_string());
+    if versions_error.is_some() {
+        app.versions = None;
     }
     let platform = Platform::detect();
     let release = update::latest(&app, releases, &platform).map_err(|e| e.to_string())?;
@@ -216,6 +230,7 @@ pub async fn preview(
         candidates,
         filter_error,
         tag_filter_error,
+        versions_error,
     })
 }
 
@@ -311,7 +326,7 @@ pub async fn add_app(
 
 /// The tag of the latest release `app` takes, from the cache if it is there.
 async fn latest_tag(cache: &ReleaseCache, app: &App) -> CmdResult<String> {
-    let releases = releases_of(cache, &app.source, false).await?;
+    let releases = releases_of(cache, app, false).await?;
     Ok(update::latest(app, releases, &Platform::detect())
         .map_err(|e| e.to_string())?
         .tag)
@@ -340,29 +355,27 @@ pub async fn mark_seen(cache: State<'_, ReleaseCache>, id: String, tag: Option<S
     .await
 }
 
-/// Releases of `source`, from the cache unless `refresh` is set.
-async fn releases_of(cache: &ReleaseCache, source: &Source, refresh: bool) -> CmdResult<Vec<Release>> {
-    if let Some(releases) = (!refresh).then(|| cache.get(source)).flatten() {
+/// Releases of `app`'s source, from the cache unless `refresh` is set.
+async fn releases_of(cache: &ReleaseCache, app: &App, refresh: bool) -> CmdResult<Vec<Release>> {
+    if let Some(releases) = (!refresh).then(|| cache.get(app)).flatten() {
         return Ok(releases);
     }
-    let fetch = source.clone();
+    let fetch = app.clone();
     let releases = blocking(move || fetch.releases().map_err(|e| e.to_string())).await?;
-    cache.put(source, releases.clone());
+    cache.put(app, releases.clone());
     Ok(releases)
 }
 
 /// The app's releases, newest first, as its settings see them: tags its tag
-/// filter accepts, and prereleases only if it follows them.
+/// filter and version limit accept, and prereleases only if it follows them.
 #[tauri::command]
 pub async fn list_releases(cache: State<'_, ReleaseCache>, id: String, refresh: bool) -> CmdResult<Vec<ReleaseView>> {
     let app = blocking(move || load_store()?.get(&id).cloned().map_err(|e| e.to_string())).await?;
-    let tags = app.tag_filter.as_deref().and_then(|f| regex::Regex::new(f).ok());
-    Ok(releases_of(&cache, &app.source, refresh)
-        .await?
-        .into_iter()
-        .filter(|r| app.prerelease || !r.prerelease)
-        .filter(|r| tags.as_ref().is_none_or(|re| re.is_match(&r.tag)))
-        .map(|r| ReleaseView::from(&r))
+    let releases = releases_of(&cache, &app, refresh).await?;
+    Ok(update::eligible(&app, releases)
+        .map_err(|e| e.to_string())?
+        .iter()
+        .map(ReleaseView::from)
         .collect())
 }
 

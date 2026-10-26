@@ -8,6 +8,8 @@ export interface SettingsDraft {
   filter: string;
   /** Regex a release tag must match. */
   tagFilter: string;
+  /** Semver requirement for the versions to follow. */
+  versions: string;
   prerelease: boolean;
   /** Comma-separated paths. */
   bins: string;
@@ -21,6 +23,7 @@ export const EMPTY_DRAFT: SettingsDraft = {
   format: '',
   filter: '',
   tagFilter: '',
+  versions: '',
   prerelease: false,
   bins: '',
   pattern: '',
@@ -32,6 +35,7 @@ export function draftOf(app: AppView): SettingsDraft {
     format: app.format ?? '',
     filter: app.asset_filter ?? '',
     tagFilter: app.tag_filter ?? '',
+    versions: app.versions ?? '',
     prerelease: app.prerelease,
     bins: app.bins.join(', '),
     pattern: app.spec.kind === 'html' ? (app.spec.pattern ?? '') : '',
@@ -44,6 +48,7 @@ export function toInput(d: SettingsDraft): SettingsInput {
     format: d.format || null,
     asset_filter: d.filter.trim() || null,
     tag_filter: d.tagFilter.trim() || null,
+    versions: d.versions.trim() || null,
     prerelease: d.prerelease,
     bins: d.bins
       .split(',')

@@ -56,6 +56,9 @@ enum Command {
         /// Regex a release tag must match, e.g. `^v` to skip `android-…` releases.
         #[arg(long, value_name = "REGEX")]
         tag_filter: Option<String>,
+        /// Versions to follow, e.g. `<25`, `1.*` or `>=2, <3`; newer releases are ignored.
+        #[arg(long, value_name = "REQUIREMENT")]
+        versions: Option<String>,
         /// Package format to use instead of the best one for this system.
         #[arg(long)]
         format: Option<Format>,
@@ -91,6 +94,12 @@ enum Command {
         /// Follow releases with any tag again.
         #[arg(long)]
         clear_tag_filter: bool,
+        /// Versions to follow, e.g. `<25`, `1.*` or `>=2, <3`; newer releases are ignored.
+        #[arg(long, value_name = "REQUIREMENT", conflicts_with = "clear_versions")]
+        versions: Option<String>,
+        /// Follow every version again.
+        #[arg(long)]
+        clear_versions: bool,
         /// Executable to link from a tarball, replacing the current list.
         /// Repeat for several.
         #[arg(long = "bin", value_name = "PATH", conflicts_with = "clear_bins")]
@@ -367,6 +376,7 @@ fn main() -> Result<()> {
             id,
             filter,
             tag_filter,
+            versions,
             format,
             prerelease,
             bins,
@@ -390,6 +400,7 @@ fn main() -> Result<()> {
             let mut app = App::new(source, id.clone());
             app.asset_filter = filter.or(link.asset_filter);
             app.tag_filter = tag_filter.or(link.tag_filter);
+            app.versions = versions.or(link.versions);
             app.format = format.or(link.format);
             app.prerelease = prerelease || link.prerelease;
             app.bins = if bins.is_empty() { link.bins } else { bins };
@@ -419,6 +430,8 @@ fn main() -> Result<()> {
             clear_filter,
             tag_filter,
             clear_tag_filter,
+            versions,
+            clear_versions,
             bins,
             clear_bins,
             prerelease,
@@ -435,6 +448,8 @@ fn main() -> Result<()> {
                 && !clear_filter
                 && tag_filter.is_none()
                 && !clear_tag_filter
+                && versions.is_none()
+                && !clear_versions
                 && bins.is_empty()
                 && !clear_bins
                 && prerelease.is_none()
@@ -448,6 +463,9 @@ fn main() -> Result<()> {
             if let Some(filter) = &tag_filter {
                 regex::Regex::new(filter).context("invalid --tag-filter")?;
             }
+            if let Some(versions) = &versions {
+                version::requirement(versions)?;
+            }
             let app = store.get_mut(&id)?;
             if let Some(FormatPin(format)) = format {
                 app.format = format;
@@ -457,6 +475,9 @@ fn main() -> Result<()> {
             }
             if tag_filter.is_some() || clear_tag_filter {
                 app.tag_filter = tag_filter;
+            }
+            if versions.is_some() || clear_versions {
+                app.versions = versions;
             }
             if !bins.is_empty() || clear_bins {
                 app.bins = bins;
@@ -492,7 +513,7 @@ fn main() -> Result<()> {
         }
         Command::Notes { id, tag } => {
             let app = store.get(&id)?;
-            let releases = app.source.releases()?;
+            let releases = app.releases()?;
             let release = match &tag {
                 Some(tag) => releases
                     .into_iter()
@@ -660,6 +681,7 @@ fn main() -> Result<()> {
             let mut app = App::new(source.clone(), id.unwrap_or_else(|| source.default_id()));
             app.asset_filter = filter.or(request.asset_filter);
             app.tag_filter = request.tag_filter;
+            app.versions = request.versions;
             app.prerelease = request.prerelease;
             let installed = update::adopt(&mut store, app.clone(), &file, info.version.as_deref(), keep)?;
             let mut event = Event::new(&app.id, Kind::Installed, via);
@@ -1333,6 +1355,7 @@ fn describe(app: &App) -> String {
     let format = app.format.map_or("auto".to_string(), |f| f.to_string());
     let filter = app.asset_filter.as_deref().unwrap_or("none");
     let tags = app.tag_filter.as_deref().unwrap_or("any");
+    let versions = app.versions.as_deref().unwrap_or("any");
     let bins = if app.bins.is_empty() {
         "auto".to_string()
     } else {
@@ -1349,7 +1372,7 @@ fn describe(app: &App) -> String {
         false => pattern,
     };
     format!(
-        "  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
+        "  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  versions:   {versions}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
     )
 }
 

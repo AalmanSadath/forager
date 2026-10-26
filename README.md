@@ -85,6 +85,7 @@ forager update drawio-desktop --yes
 # Change, roll back, skip
 forager edit drawio-desktop --format appimage   # or auto; also --filter, --bin, --prerelease
 forager edit bifrossh --tag-filter '^v'         # only v… releases, not android-v…
+forager edit drawio-desktop --versions '<29'    # stay below 29
 forager notes drawio-desktop                    # release notes (or --tag)
 forager install drawio-desktop --tag v24.0.0    # roll back; skips the newer release
 forager skip drawio-desktop                     # don't offer this release; newer ones are
@@ -123,6 +124,7 @@ The latest release is the newest one with a file for this system.
 | `--pattern <regex>` | download links on a web page (`--forge html`) |
 | `--filter <regex>` | asset names must match |
 | `--tag-filter <regex>` | release tags must match |
+| `--versions <req>` | stay within versions, e.g. `<25`, `1.*`, `>=2, <3` |
 | `--format <fmt>` | `deb`, `rpm`, `pacman`, `appimage`, `tarball` or `flatpak` instead of the best one |
 | `--prerelease` | consider prereleases |
 | `--bin <path>` | executable to link from a tarball (repeatable) |

@@ -92,6 +92,22 @@ export default function SettingsSection({
           </p>
         )}
       </div>
+      <div className="form-group">
+        <label htmlFor="versions">Versions</label>
+        <input
+          id="versions"
+          className={`mono${preview?.versions_error ? ' input-invalid' : ''}`}
+          placeholder="Any, or e.g. <25, 1.*, >=2, <3"
+          value={draft.versions}
+          onChange={(e) => set({ versions: e.target.value })}
+          spellCheck={false}
+        />
+        {preview?.versions_error ? (
+          <p className="form-hint form-hint-error">{preview.versions_error}</p>
+        ) : (
+          <p className="form-hint">Newer releases outside these versions are ignored, e.g. to stay on 1.x.</p>
+        )}
+      </div>
       {tarball && (
         <div className="form-group">
           <label htmlFor="bins">Executables</label>

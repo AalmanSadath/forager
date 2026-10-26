@@ -181,7 +181,7 @@ pub struct Status {
 
 /// Fetches the latest release and compares it with the installs.
 pub fn status(app: &App) -> Result<Status> {
-    status_in(app, app.source.releases()?)
+    status_in(app, app.releases()?)
 }
 
 /// `status` against releases already fetched, newest first.
@@ -256,19 +256,30 @@ fn overall(pinned: Option<Format>, installs: &[InstallState]) -> State {
     }
 }
 
+/// The releases the app takes, newest first: tags matching its tag filter
+/// and version limit, prereleases only if it follows them.
+pub fn eligible(app: &App, releases: Vec<Release>) -> Result<Vec<Release>> {
+    let tags = app.tag_filter.as_deref().map(regex::Regex::new).transpose()?;
+    let limit = app.versions.as_deref().map(version::requirement).transpose()?;
+    Ok(releases
+        .into_iter()
+        .filter(|r| app.prerelease || !r.prerelease)
+        .filter(|r| tags.as_ref().is_none_or(|re| re.is_match(&r.tag)))
+        .filter(|r| limit.as_ref().is_none_or(|limit| version::within(limit, &r.tag)))
+        .collect())
+}
+
 /// The newest release the app takes (its tag matching the app's tag filter,
 /// no prereleases unless it follows them) with an asset for this system. Projects that also publish other builds
 /// from the same repository, e.g. `android-v1.0` next to `v2.3`, would
 /// otherwise have their newest release be one with nothing to install.
 /// Falls back to the newest release, so the reason it has nothing shows.
 pub fn latest(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<Release> {
-    let tags = app.tag_filter.as_deref().map(regex::Regex::new).transpose()?;
-    let mut eligible = releases
-        .into_iter()
-        .filter(|r| app.prerelease || !r.prerelease)
-        .filter(|r| tags.as_ref().is_none_or(|re| re.is_match(&r.tag)))
-        .peekable();
-    let newest = eligible.peek().cloned().ok_or(Error::NoRelease)?;
+    let mut eligible = eligible(app, releases)?.into_iter().peekable();
+    let newest = eligible.peek().cloned().ok_or_else(|| match &app.versions {
+        Some(limit) => Error::NoReleaseWithin(limit.clone()),
+        None => Error::NoRelease,
+    })?;
     if app.track_only {
         // Nothing is installed, so the release need not have an asset.
         return Ok(newest);
@@ -472,7 +483,7 @@ pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Re
     if app.track_only {
         return Err(Error::TrackOnly(app.id.clone()));
     }
-    let releases = app.source.releases()?;
+    let releases = app.releases()?;
     let target = releases
         .iter()
         .find(|r| r.tag == tag)
@@ -1078,6 +1089,10 @@ mod tests {
             Err(Error::NoRelease)
         ));
         app.tag_filter = None;
+        // A version limit leaves out the 2.1 prerelease.
+        app.versions = Some("<2.1".into());
+        assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.0.0");
+        app.versions = None;
         // Nothing fits at all: the newest release, to show why.
         app.prerelease = false;
         app.asset_filter = Some("nothing".into());

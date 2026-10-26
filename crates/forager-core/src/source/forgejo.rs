@@ -5,13 +5,14 @@ use crate::model::Release;
 /// Fetches recent releases from a Forgejo or Gitea instance (Codeberg runs
 /// Forgejo), newest first. Their API has the same shape as GitHub's. A token
 /// comes from `FORAGER_TOKEN_<HOST>`, or `CODEBERG_TOKEN` for codeberg.org.
-pub fn releases(host: &str, owner: &str, repo: &str) -> Result<Vec<Release>> {
-    let url = format!("https://{host}/api/v1/repos/{owner}/{repo}/releases?limit=20");
+pub fn releases(host: &str, owner: &str, repo: &str, deep: bool) -> Result<Vec<Release>> {
+    let (count, suffix) = if deep { (50, "-deep") } else { (20, "") };
+    let url = format!("https://{host}/api/v1/repos/{owner}/{repo}/releases?limit={count}");
     let mut request = http::get(&url).header("Accept", "application/json");
     if let Some(token) = http::token_for(host, Some(("codeberg.org", "CODEBERG_TOKEN"))) {
         request = request.header("Authorization", format!("token {token}"));
     }
-    let body = http::get_cached(request, &format!("forgejo/{host}__{owner}__{repo}.json"))?;
+    let body = http::get_cached(request, &format!("forgejo/{host}__{owner}__{repo}{suffix}.json"))?;
     super::github::parse_releases(&body)
 }
 

@@ -36,15 +36,16 @@ struct ApiAsset {
 ///
 /// GitHub answers an unchanged list with a 304. With a token, 304s do not
 /// count against the rate limit; without one they still do.
-pub fn releases(owner: &str, repo: &str) -> Result<Vec<Release>> {
-    let url = format!("{API}/repos/{owner}/{repo}/releases?per_page=20");
+pub fn releases(owner: &str, repo: &str, deep: bool) -> Result<Vec<Release>> {
+    let (count, suffix) = if deep { (100, "-deep") } else { (20, "") };
+    let url = format!("{API}/repos/{owner}/{repo}/releases?per_page={count}");
     let mut request = http::get(&url)
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
     if let Some(token) = http::token_for("github.com", Some(("github.com", "GITHUB_TOKEN"))) {
         request = request.header("Authorization", format!("Bearer {token}"));
     }
-    let body = http::get_cached(request, &format!("github/{owner}__{repo}.json"))?;
+    let body = http::get_cached(request, &format!("github/{owner}__{repo}{suffix}.json"))?;
     parse_releases(&body)
 }
 

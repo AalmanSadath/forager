@@ -121,6 +121,10 @@ pub struct App {
     /// several products (`android-v1.0` next to `v2.3`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_filter: Option<String>,
+    /// Versions to follow, as a semver requirement (`<25`, `1.*`,
+    /// `>=2, <3`): newer releases outside it are ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub versions: Option<String>,
     /// Force a format instead of picking the best one for the system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<Format>,
@@ -162,6 +166,7 @@ impl App {
             source,
             asset_filter: None,
             tag_filter: None,
+            versions: None,
             format: None,
             prerelease: false,
             bins: Vec::new(),
@@ -196,12 +201,21 @@ impl App {
         self.installs().cloned().collect()
     }
 
+    /// The releases to choose from: more of them when a version limit may
+    /// rule out the newest.
+    pub fn releases(&self) -> crate::Result<Vec<crate::model::Release>> {
+        self.source.releases_deep(self.versions.is_some())
+    }
+
     /// Checks settings that come from the user: the id, which becomes part
     /// of file paths, and the filter regexes.
     pub fn validate(&self) -> crate::Result<()> {
         validate_id(&self.id)?;
         for filter in [&self.asset_filter, &self.tag_filter].into_iter().flatten() {
             regex::Regex::new(filter)?;
+        }
+        if let Some(versions) = &self.versions {
+            crate::version::requirement(versions)?;
         }
         Ok(())
     }

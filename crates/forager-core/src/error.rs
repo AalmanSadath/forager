@@ -16,6 +16,8 @@ pub enum Error {
     Config { path: PathBuf, source: toml::de::Error },
     #[error("cannot serialize config: {0}")]
     ConfigWrite(#[from] toml::ser::Error),
+    #[error("invalid version limit '{0}': use a requirement such as <25, 1.* or >=2, <3")]
+    InvalidVersions(String),
     #[error("invalid asset filter: {0}")]
     Regex(#[from] regex::Error),
     #[error("unsupported source URL: {0}")]
@@ -33,6 +35,8 @@ pub enum Error {
     },
     #[error("no release found")]
     NoRelease,
+    #[error("no recent release within versions {0}")]
+    NoReleaseWithin(String),
     #[error("no release tagged {0}")]
     ReleaseNotFound(String),
     #[error("{0} is tracked only; Forager does not install it")]

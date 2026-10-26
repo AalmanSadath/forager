@@ -29,6 +29,8 @@ pub struct ExportedApp {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_filter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub versions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<Format>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub prerelease: bool,
@@ -83,6 +85,7 @@ fn exported(app: &App) -> Result<ExportedApp> {
         source: app.source.clone(),
         asset_filter: app.asset_filter.clone(),
         tag_filter: app.tag_filter.clone(),
+        versions: app.versions.clone(),
         format: app.format,
         prerelease: app.prerelease,
         bins: app.bins.clone(),
@@ -112,6 +115,7 @@ fn imported(store: &Store, exported: ExportedApp) -> Result<App> {
     let mut app = App::new(exported.source, exported.id);
     app.asset_filter = exported.asset_filter;
     app.tag_filter = exported.tag_filter;
+    app.versions = exported.versions;
     app.format = exported.format;
     app.prerelease = exported.prerelease;
     app.bins = exported.bins;
@@ -160,6 +164,7 @@ pub struct AddRequest {
     pub id: Option<String>,
     pub asset_filter: Option<String>,
     pub tag_filter: Option<String>,
+    pub versions: Option<String>,
     pub format: Option<Format>,
     pub bins: Vec<String>,
     pub prerelease: bool,
@@ -204,6 +209,7 @@ pub fn link(app: &App) -> String {
         let optional = [
             ("filter", app.asset_filter.clone()),
             ("tag_filter", app.tag_filter.clone()),
+            ("versions", app.versions.clone()),
             ("format", app.format.map(|f| f.to_string())),
         ];
         for (key, value) in optional {
@@ -267,6 +273,7 @@ pub fn parse_link(link: &str) -> Result<AddRequest> {
             "id" => request.id = Some(value),
             "filter" => request.asset_filter = Some(value),
             "tag_filter" => request.tag_filter = Some(value),
+            "versions" => request.versions = Some(value),
             "format" => request.format = value.parse().ok(),
             "bin" => request.bins.push(value),
             "prerelease" => request.prerelease = flag(&value),
@@ -307,6 +314,7 @@ mod tests {
     fn exports_settings_and_imports_them_elsewhere() {
         let mut tool = github("tool");
         tool.asset_filter = Some("musl".into());
+        tool.versions = Some("<3".into());
         tool.bins = vec!["bin/tool".into()];
         tool.skipped = Some("v2".into());
         tool.signature = Some(Signature::Attestation);
@@ -334,6 +342,7 @@ mod tests {
         let tool = other.get("tool").unwrap();
         assert_eq!(tool.asset_filter.as_deref(), Some("musl"));
         assert_eq!(tool.bins, ["bin/tool"]);
+        assert_eq!(tool.versions.as_deref(), Some("<3"));
         assert_eq!(tool.signature, Some(Signature::Attestation));
         assert!(tool.installed.is_none() && tool.skipped.is_none());
     }
@@ -346,6 +355,7 @@ mod tests {
         );
         app.bins = vec!["bin/node".into(), "bin/npm".into()];
         app.format = Some(Format::Tarball);
+        app.versions = Some(">=20, <21".into());
         app.track_only = true;
         let text = link(&app);
         assert!(text.starts_with("forager://add?url=https%3A%2F%2Fnodejs.org%2Fdist%2Flatest%2F&forge=html&pattern="));
@@ -353,6 +363,7 @@ mod tests {
         assert_eq!(request.id.as_deref(), Some("node"));
         assert_eq!(request.bins, ["bin/node", "bin/npm"]);
         assert_eq!(request.format, Some(Format::Tarball));
+        assert_eq!(request.versions.as_deref(), Some(">=20, <21"));
         assert!(request.track_only && !request.prerelease);
         assert_eq!(request.source().unwrap(), app.source);
 

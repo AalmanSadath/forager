@@ -64,9 +64,9 @@ pub struct StatusEvent {
 pub const STATUS_EVENT: &str = "app-status";
 
 pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> StatusEvent {
-    let releases = app.source.releases();
+    let releases = app.releases();
     if let Ok(releases) = &releases {
-        cache.put(&app.source, releases.clone());
+        cache.put(app, releases.clone());
     }
     let result = releases
         .and_then(|releases| update::status_in(app, releases))

@@ -279,13 +279,19 @@ impl Source {
         }
     }
 
-    /// Newest release, skipping prereleases unless `prerelease` is set.
-    /// Every release, newest first.
+    /// Recent releases, newest first: the latest 20 from a forge.
     pub fn releases(&self) -> Result<Vec<Release>> {
+        self.releases_deep(false)
+    }
+
+    /// Recent releases, newest first; `deep` asks a forge for as many as one
+    /// request returns (100, or Forgejo's 50), for apps that keep to older
+    /// versions. Other sources list what they have either way.
+    pub fn releases_deep(&self, deep: bool) -> Result<Vec<Release>> {
         match self {
-            Source::GitHub { owner, repo } => github::releases(owner, repo),
-            Source::GitLab { host, path } => gitlab::releases(host, path),
-            Source::Forgejo { host, owner, repo } => forgejo::releases(host, owner, repo),
+            Source::GitHub { owner, repo } => github::releases(owner, repo, deep),
+            Source::GitLab { host, path } => gitlab::releases(host, path, deep),
+            Source::Forgejo { host, owner, repo } => forgejo::releases(host, owner, repo, deep),
             Source::Html { url, pattern } => html::releases(url, pattern),
             Source::SourceForge { project } => sourceforge::releases(project),
             Source::SourceHut { owner, repo } => sourcehut::releases(owner, repo),

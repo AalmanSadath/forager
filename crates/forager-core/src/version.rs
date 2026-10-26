@@ -1,4 +1,6 @@
-use semver::Version;
+use semver::{Version, VersionReq};
+
+use crate::error::{Error, Result};
 
 /// Parses a release tag leniently: `v1.2`, `release-1.2.3` and `1.2.3-rc.1`
 /// all yield a version. Tags with trailing text that is not a valid semver
@@ -29,6 +31,21 @@ pub fn is_newer(installed: &str, latest: &str) -> bool {
     }
 }
 
+/// Parses an app's version limit (`<25`, `1.*`, `~1.4`, `>=2, <3`).
+pub fn requirement(text: &str) -> Result<VersionReq> {
+    VersionReq::parse(text.trim()).map_err(|_| Error::InvalidVersions(text.to_string()))
+}
+
+/// Whether the release tagged `tag` falls within `limit`. A prerelease
+/// counts as its version (`2.0.0-rc.1` as `2.0.0`), so apps following
+/// prereleases keep to the limit too; a tag with no version never does.
+pub fn within(limit: &VersionReq, tag: &str) -> bool {
+    parse_tag(tag).is_some_and(|mut version| {
+        version.pre = semver::Prerelease::EMPTY;
+        limit.matches(&version)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,5 +67,19 @@ mod tests {
         assert!(!is_newer("v2.0.0", "v1.9.9"));
         assert!(is_newer("v1.0.0-rc.1", "v1.0.0"));
         assert!(is_newer("nightly-a", "nightly-b"));
+    }
+
+    #[test]
+    fn keeps_to_version_limits() {
+        let below_25 = requirement("<25").unwrap();
+        assert!(within(&below_25, "v24.7.1"));
+        assert!(!within(&below_25, "v25.0.0"));
+        assert!(!within(&below_25, "nightly"));
+        let one = requirement("1.*").unwrap();
+        assert!(within(&one, "1.9.0"));
+        assert!(!within(&one, "2.0.0-rc.1"));
+        assert!(within(&requirement(">=2, <3").unwrap(), "v2.1.0-beta.2"));
+        assert!(within(&requirement("~1.4").unwrap(), "1.4.9"));
+        assert!(requirement("not a version").is_err());
     }
 }

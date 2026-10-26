@@ -32,13 +32,20 @@ struct ApiLink {
 /// Fetches recent releases of project `path` (`group/subgroup/project`) on
 /// `host`, newest first. A token comes from `FORAGER_TOKEN_<HOST>`, or
 /// `GITLAB_TOKEN` for gitlab.com.
-pub fn releases(host: &str, path: &str) -> Result<Vec<Release>> {
-    let url = format!("https://{host}/api/v4/projects/{}/releases?per_page=20", encode(path));
+pub fn releases(host: &str, path: &str, deep: bool) -> Result<Vec<Release>> {
+    let (count, suffix) = if deep { (100, "-deep") } else { (20, "") };
+    let url = format!(
+        "https://{host}/api/v4/projects/{}/releases?per_page={count}",
+        encode(path)
+    );
     let mut request = http::get(&url);
     if let Some(token) = http::token_for(host, Some(("gitlab.com", "GITLAB_TOKEN"))) {
         request = request.header("PRIVATE-TOKEN", token);
     }
-    let body = http::get_cached(request, &format!("gitlab/{host}__{}.json", path.replace('/', "__")))?;
+    let body = http::get_cached(
+        request,
+        &format!("gitlab/{host}__{}{suffix}.json", path.replace('/', "__")),
+    )?;
     parse_releases(&body)
 }
 

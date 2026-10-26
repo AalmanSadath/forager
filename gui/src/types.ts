@@ -31,6 +31,8 @@ export interface AppView {
   format: Format | null;
   asset_filter: string | null;
   tag_filter: string | null;
+  /** Versions to follow, as a semver requirement such as `<25`. */
+  versions: string | null;
   prerelease: boolean;
   bins: string[];
   /** A release the user chose not to install. */
@@ -106,6 +108,7 @@ export interface AddRequest {
   id: string | null;
   asset_filter: string | null;
   tag_filter: string | null;
+  versions: string | null;
   format: Format | null;
   bins: string[];
   prerelease: boolean;
@@ -167,6 +170,7 @@ export interface SettingsInput {
   format: Format | null;
   asset_filter: string | null;
   tag_filter: string | null;
+  versions: string | null;
   prerelease: boolean;
   bins: string[];
   /** For web-page sources: the download link pattern. */
@@ -209,6 +213,7 @@ export interface Preview {
   candidates: CandidateView[];
   filter_error: string | null;
   tag_filter_error: string | null;
+  versions_error: string | null;
 }
 
 export type SignatureForm =
