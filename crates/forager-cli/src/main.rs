@@ -133,8 +133,13 @@ enum Command {
     /// Show the release notes of an app's latest release, or of `--tag`.
     Notes {
         id: String,
-        #[arg(long)]
+        /// Only this release's notes.
+        #[arg(long, conflicts_with = "latest")]
         tag: Option<String>,
+        /// Only the latest release's notes, not every release since the
+        /// installed one.
+        #[arg(long)]
+        latest: bool,
     },
     /// Add the menu entries missing from AppImages and tarballs (all apps if
     /// none are given), e.g. ones installed before Forager made entries.
@@ -526,20 +531,32 @@ fn main() -> Result<()> {
             println!("{id}:\n{settings}");
             println!("Changes apply on the next `forager update {id}`.");
         }
-        Command::Notes { id, tag } => {
+        Command::Notes { id, tag, latest } => {
             let app = store.get(&id)?;
             let releases = app.releases()?;
-            let release = match &tag {
-                Some(tag) => releases
-                    .into_iter()
-                    .find(|r| r.tag == *tag)
-                    .with_context(|| format!("{id} has no release {tag}"))?,
-                None => update::latest(app, releases, &Platform::detect())?,
+            let shown = match &tag {
+                Some(tag) => vec![
+                    releases
+                        .into_iter()
+                        .find(|r| r.tag == *tag)
+                        .with_context(|| format!("{id} has no release {tag}"))?,
+                ],
+                None => {
+                    let newest = update::latest(app, releases.clone(), &Platform::detect())?;
+                    // Every release since the installed one, unless asked for the latest alone.
+                    let from = app.installed.as_ref().map(|i| i.tag.as_str()).filter(|_| !latest);
+                    update::changes(app, releases, from, &newest)
+                }
             };
-            let name = release.name.as_deref().filter(|n| *n != release.tag);
-            println!("{}{}", release.tag, name.map_or(String::new(), |n| format!(" ({n})")));
-            println!();
-            println!("{}", release.notes.as_deref().unwrap_or("No release notes."));
+            for (i, release) in shown.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                let name = release.name.as_deref().filter(|n| *n != release.tag);
+                println!("{}{}", release.tag, name.map_or(String::new(), |n| format!(" ({n})")));
+                println!();
+                println!("{}", release.notes.as_deref().unwrap_or("No release notes."));
+            }
         }
         Command::MenuEntries { ids } => {
             let results = update::create_menu_entries(&mut store, &ids)?;

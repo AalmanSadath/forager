@@ -42,6 +42,9 @@ pub struct Plan {
     /// Fetch only what changed since the installed AppImage, using the
     /// release's zsync control file.
     pub delta: Option<Delta>,
+    /// The releases this update brings, newest first: the target and those
+    /// between it and the installed one, for their notes.
+    pub changes: Vec<Release>,
 }
 
 /// An installed file and the control file to update it from; see `zsync`.
@@ -454,7 +457,8 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
     if app.track_only {
         return Ok(Vec::new());
     }
-    let status = status(app)?;
+    let releases = app.releases()?;
+    let status = status_in(app, releases.clone())?;
     if let Some(found) = status.found {
         app.set_installs(found);
     }
@@ -462,6 +466,7 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
     let app = &*app;
     let make = |format: Option<Format>, current: Option<&InstallState>, replaces: Vec<Installed>| {
         plan_one(app, &release, platform, format, current, replaces, None)
+            .map(|plan| with_changes(app, plan, &releases))
     };
     Ok(match status.state {
         State::UpToDate => Vec::new(),
@@ -489,7 +494,7 @@ pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Re
         .find(|r| r.tag == tag)
         .cloned()
         .ok_or_else(|| Error::ReleaseNotFound(tag.to_string()))?;
-    let status = status_in(app, releases)?;
+    let status = status_in(app, releases.clone())?;
     if let Some(found) = status.found {
         app.set_installs(found);
     }
@@ -497,6 +502,7 @@ pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Re
     let skip_after = version::is_newer(&target.tag, &status.latest.tag).then(|| status.latest.tag.clone());
     let make = |format: Option<Format>, current: Option<&InstallState>| {
         plan_one(app, &target, platform, format, current, Vec::new(), skip_after.clone())
+            .map(|plan| with_changes(app, plan, &releases))
     };
     Ok(match status.installs.as_slice() {
         [] => vec![make(None, None)],
@@ -546,7 +552,63 @@ fn plan_one(
         downgrade: current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag)),
         replaces,
         skip_after,
+        changes: vec![release.clone()],
     })
+}
+
+fn with_changes(app: &App, mut plan: Plan, releases: &[Release]) -> Plan {
+    plan.changes = changes(app, releases.to_vec(), plan.from.as_deref(), &plan.release);
+    plan
+}
+
+/// Most releases whose notes `changes` gathers, so an app installed long
+/// ago does not print pages of them.
+const MAX_CHANGES: usize = 10;
+
+/// The releases `app` takes that are newer than `from` up to and including
+/// `to`, newest first; just `to` when nothing is installed. A downgrade
+/// brings no new releases, so it is `to` alone too.
+pub fn changes(app: &App, releases: Vec<Release>, from: Option<&str>, to: &Release) -> Vec<Release> {
+    let Some(from) = from.filter(|from| version::is_newer(from, &to.tag)) else {
+        return vec![to.clone()];
+    };
+    let mut changes: Vec<Release> = eligible(app, releases)
+        .unwrap_or_default()
+        .into_iter()
+        .skip_while(|r| r.tag != to.tag)
+        // Moving tags such as `stable` or `nightly` have no place between
+        // two versions.
+        .filter(|r| r.tag == to.tag || version::parse_tag(&r.tag).is_some() || version::parse_tag(from).is_none())
+        .take_while(|r| r.tag != from && version::is_newer(from, &r.tag))
+        .take(MAX_CHANGES)
+        .collect();
+    if changes.is_empty() {
+        changes.push(to.clone());
+    }
+    changes
+}
+
+/// The notes of `releases` as Markdown: one release's notes as they are,
+/// several each under a heading with its tag.
+pub fn combined_notes(releases: &[Release]) -> Option<String> {
+    match releases {
+        [] => None,
+        [one] => one.notes.clone(),
+        several => {
+            let parts: Vec<String> = several
+                .iter()
+                .map(|r| {
+                    let title = match r.name.as_deref().filter(|n| *n != r.tag) {
+                        Some(name) => format!("{} ({name})", r.tag),
+                        None => r.tag.clone(),
+                    };
+                    let notes = r.notes.as_deref().unwrap_or("_No release notes._");
+                    format!("## {title}\n\n{notes}")
+                })
+                .collect();
+            Some(parts.join("\n\n"))
+        }
+    }
 }
 
 /// Until when background updates leave `release` alone because of the
@@ -868,6 +930,7 @@ mod tests {
             replaces: Vec::new(),
             downgrade: false,
             delta: None,
+            changes: Vec::new(),
             skip_after: None,
         }
     }
@@ -1134,6 +1197,50 @@ mod tests {
         let older = existing_install("0.9.1".into(), "tool".into(), Format::Rpm, &plan.asset, &release);
         assert_eq!((older.tag.as_str(), older.asset.as_str()), ("0.9.1", ""));
         assert!(version::is_newer(&older.tag, &release.tag));
+    }
+
+    #[test]
+    fn gathers_the_releases_since_the_installed_one() {
+        let release = |tag: &str, prerelease: bool| Release {
+            tag: tag.into(),
+            name: None,
+            prerelease,
+            published_at: None,
+            notes: Some(format!("notes of {tag}")),
+            assets: Vec::new(),
+        };
+        let releases = vec![
+            release("v1.4.0", false),
+            release("v1.3.0", false),
+            release("v1.3.0-rc.1", true),
+            release("android-v9", false),
+            release("vstable", false),
+            release("v1.2.0", false),
+            release("v1.1.0", false),
+        ];
+        let source = Source::GitHub {
+            owner: "o".into(),
+            repo: "tool".into(),
+        };
+        let mut app = App::new(source, "tool".into());
+        app.tag_filter = Some("^v".into());
+        let tags = |changes: Vec<Release>| changes.into_iter().map(|r| r.tag).collect::<Vec<_>>();
+        // Up to the target, past the installed one, without prereleases or other tags.
+        assert_eq!(
+            tags(changes(&app, releases.clone(), Some("v1.1.0"), &releases[1])),
+            ["v1.3.0", "v1.2.0"]
+        );
+        assert_eq!(tags(changes(&app, releases.clone(), None, &releases[0])), ["v1.4.0"]);
+        // A rollback brings nothing new.
+        assert_eq!(
+            tags(changes(&app, releases.clone(), Some("v1.4.0"), &releases[5])),
+            ["v1.2.0"]
+        );
+
+        let notes = combined_notes(&changes(&app, releases.clone(), Some("v1.2.0"), &releases[0])).unwrap();
+        assert_eq!(notes, "## v1.4.0\n\nnotes of v1.4.0\n\n## v1.3.0\n\nnotes of v1.3.0");
+        assert_eq!(combined_notes(&releases[..1]).as_deref(), Some("notes of v1.4.0"));
+        assert_eq!(combined_notes(&[]), None);
     }
 
     #[test]

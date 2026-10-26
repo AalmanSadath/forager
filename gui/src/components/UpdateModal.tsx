@@ -181,7 +181,11 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
                   </dl>
                   {plan.notes && (
                     <details className="release-notes" open={single && plans.length === 1}>
-                      <summary>What's new in {plan.to}</summary>
+                      <summary>
+                        {plan.notes_releases > 1
+                          ? `What's new in ${plan.to} and ${plan.notes_releases - 1} earlier release${plan.notes_releases > 2 ? 's' : ''}`
+                          : `What's new in ${plan.to}`}
+                      </summary>
                       <Markdown text={plan.notes} />
                     </details>
                   )}

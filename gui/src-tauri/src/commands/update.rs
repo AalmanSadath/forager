@@ -46,8 +46,11 @@ pub struct PlanView {
     pub downgrade: bool,
     /// Release skipped once this is installed.
     pub skip_after: Option<String>,
-    /// Release notes of the version to install.
+    /// Release notes of the version to install and of those between it and
+    /// the installed one, as Markdown.
     pub notes: Option<String>,
+    /// How many releases `notes` covers.
+    pub notes_releases: usize,
 }
 
 /// One planned update of an app, or why it cannot be made.
@@ -117,7 +120,8 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String, tag: Option<St
                         needs_root: plan.format.needs_root(),
                         downgrade: plan.downgrade,
                         skip_after: plan.skip_after.clone(),
-                        notes: plan.release.notes.clone(),
+                        notes: update::combined_notes(&plan.changes),
+                        notes_releases: plan.changes.len(),
                     };
                     (plan, view)
                 })

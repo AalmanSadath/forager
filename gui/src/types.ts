@@ -247,7 +247,10 @@ export interface PlanView {
   downgrade: boolean;
   /** Release skipped once this is installed. */
   skip_after: string | null;
+  /** Notes of the release to install and of those since the installed one, as Markdown. */
   notes: string | null;
+  /** How many releases `notes` covers. */
+  notes_releases: number;
 }
 
 export interface FinishedView {
