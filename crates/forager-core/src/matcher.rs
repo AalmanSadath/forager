@@ -43,7 +43,8 @@ pub struct Candidate<'a> {
 /// is `Chosen`.
 ///
 /// Preference order: format (the installed one first, then as ranked by the
-/// platform), then an asset naming this architecture over one naming none.
+/// platform), then an asset naming this architecture over one built for any
+/// (`noarch`, `all`, `universal`), over one naming none.
 /// Assets naming another architecture or operating system, debug packages
 /// and source packages are never picked.
 /// A tarball must name Linux or this architecture, since one naming neither is
@@ -67,7 +68,7 @@ pub fn candidates<'a>(app: &App, release: &'a Release, platform: &Platform) -> R
         }
     };
 
-    let mut best: Option<(usize, (usize, bool))> = None;
+    let mut best: Option<(usize, (usize, ArchFit))> = None;
     let mut list: Vec<Candidate> = release
         .assets
         .iter()
@@ -100,7 +101,7 @@ fn judge(
     formats: &[Format],
     platform: &Platform,
     direct: bool,
-) -> std::result::Result<(usize, bool), Reason> {
+) -> std::result::Result<(usize, ArchFit), Reason> {
     let format = format.ok_or(Reason::NotPackage)?;
     if filter.is_some_and(|re| !re.is_match(&asset.name)) {
         return Err(Reason::Filter);
@@ -116,10 +117,14 @@ fn judge(
         .position(|f| *f == format)
         .ok_or(Reason::FormatNotWanted)?;
     let arch = arch_match(&asset.name, platform.arch).ok_or(Reason::OtherArch)?;
-    if format == Format::Tarball && !arch && !direct && !asset.name.to_ascii_lowercase().contains("linux") {
+    if format == Format::Tarball
+        && arch != ArchFit::Named
+        && !direct
+        && !asset.name.to_ascii_lowercase().contains("linux")
+    {
         return Err(Reason::SourceArchive);
     }
-    Ok((rank, !arch))
+    Ok((rank, arch))
 }
 
 /// Picks the release asset that best fits the app's settings and the
@@ -134,27 +139,60 @@ pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) ->
         })
 }
 
-/// `Some(true)` if the name mentions `arch`, `Some(false)` if it mentions no
-/// architecture, `None` if it mentions another one.
-fn arch_match(name: &str, arch: &str) -> Option<bool> {
+/// How an asset's name fits this architecture, best first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ArchFit {
+    Named,
+    /// Built for any architecture: `noarch`, `all`, `any`, `universal`.
+    Any,
+    /// Names no architecture.
+    Unnamed,
+}
+
+/// How `name` fits `arch`, or `None` if it names another architecture.
+///
+/// An alias found inside a longer one is ignored, so the `x86` of
+/// `x86_64` does not make an x86_64 build look like a 32-bit one.
+fn arch_match(name: &str, arch: &str) -> Option<ArchFit> {
     let name = name.to_ascii_lowercase();
-    let mentions = |a: &str| arch_aliases(a).iter().any(|alias| contains_word(&name, alias));
-    if mentions(arch) {
-        Some(true)
-    } else if KNOWN_ARCHES.iter().any(|a| *a != arch && mentions(a)) {
+    let mut found: Vec<(usize, usize, &str)> = Vec::new();
+    for known in KNOWN_ARCHES {
+        for alias in arch_aliases(known) {
+            found.extend(word_matches(&name, alias).map(|start| (start, start + alias.len(), known)));
+        }
+    }
+    let inside_longer = |&(start, end, _): &(usize, usize, &str)| {
+        found
+            .iter()
+            .any(|&(s, e, _)| s <= start && end <= e && e - s > end - start)
+    };
+    let mentioned: Vec<&str> = found.iter().filter(|m| !inside_longer(m)).map(|m| m.2).collect();
+    if mentioned.contains(&arch) {
+        Some(ArchFit::Named)
+    } else if !mentioned.is_empty() {
         None
+    } else if ["noarch", "all", "any", "universal"]
+        .iter()
+        .any(|w| contains_word(&name, w))
+    {
+        Some(ArchFit::Any)
     } else {
-        Some(false)
+        Some(ArchFit::Unnamed)
     }
 }
 
-/// True if `word` occurs in `haystack` without letters or digits on either side.
-fn contains_word(haystack: &str, word: &str) -> bool {
-    haystack.match_indices(word).any(|(i, _)| {
+/// Where `word` occurs in `haystack` without letters or digits on either side.
+fn word_matches<'a>(haystack: &'a str, word: &'a str) -> impl Iterator<Item = usize> + 'a {
+    haystack.match_indices(word).map(|(i, _)| i).filter(move |&i| {
         let before = haystack[..i].chars().next_back();
         let after = haystack[i + word.len()..].chars().next();
         !before.is_some_and(|c| c.is_ascii_alphanumeric()) && !after.is_some_and(|c| c.is_ascii_alphanumeric())
     })
+}
+
+/// True if `word` occurs in `haystack` without letters or digits on either side.
+fn contains_word(haystack: &str, word: &str) -> bool {
+    word_matches(haystack, word).next().is_some()
 }
 
 fn names_other_os(name: &str) -> bool {
@@ -374,6 +412,67 @@ mod tests {
         assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::AppImage);
         platform.flatpak = true;
         assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::Flatpak);
+    }
+
+    #[test]
+    fn reads_architecture_names() {
+        use ArchFit::*;
+        let cases: &[(&str, Option<ArchFit>, Option<ArchFit>)] = &[
+            // name, on x86_64, on aarch64
+            ("nvim-linux-x86_64.appimage", Some(Named), None),
+            ("nvim-linux-arm64.appimage", None, Some(Named)),
+            ("nvim-linux64.tar.gz", Some(Named), None),
+            ("fd-v10.2.0-arm-unknown-linux-gnueabihf.tar.gz", None, None),
+            ("tool-linux-arm.tar.gz", None, None),
+            ("tool_1.0_386.deb", None, None),
+            ("tool-x86.AppImage", None, None),
+            ("tool-loong64.tar.gz", None, None),
+            ("tool-1.0-1.mips64el.rpm", None, None),
+            ("tool-1.0-arm64-v8a.tar.gz", None, Some(Named)),
+            ("tool-1.0-1.noarch.rpm", Some(Any), Some(Any)),
+            ("tool_1.0_all.deb", Some(Any), Some(Any)),
+            ("tool-1.0.AppImage", Some(Unnamed), Some(Unnamed)),
+        ];
+        for (name, x86_64, aarch64) in cases {
+            assert_eq!(arch_match(name, "x86_64"), *x86_64, "{name} on x86_64");
+            assert_eq!(arch_match(name, "aarch64"), *aarch64, "{name} on aarch64");
+        }
+        // The x86 inside x86_64 does not count on a 32-bit system.
+        assert_eq!(arch_match("tool-x86_64.AppImage", "x86"), None);
+        assert_eq!(arch_match("tool-x86-64.AppImage", "x86"), None);
+        assert_eq!(arch_match("tool-i686.AppImage", "x86"), Some(Named));
+    }
+
+    #[test]
+    fn prefers_this_arch_then_any_then_unnamed() {
+        let release = release(&["tool.rpm", "tool-1.0-1.noarch.rpm", "tool-1.0-1.x86_64.rpm"]);
+        let pick = |release: &Release| {
+            select_asset(&app(), release, &platform(Some(PackageManager::Dnf)))
+                .unwrap()
+                .0
+                .name
+                .clone()
+        };
+        assert_eq!(pick(&release), "tool-1.0-1.x86_64.rpm");
+        let release = self::release(&["tool.rpm", "tool-1.0-1.noarch.rpm"]);
+        assert_eq!(pick(&release), "tool-1.0-1.noarch.rpm");
+    }
+
+    #[test]
+    fn picks_arm64_builds_on_aarch64() {
+        let release = release(&[
+            "nvim-linux-x86_64.appimage",
+            "nvim-linux-arm64.appimage",
+            "nvim-linux-x86_64.tar.gz",
+        ]);
+        let platform = Platform {
+            arch: "aarch64",
+            ..platform(None)
+        };
+        assert_eq!(
+            select_asset(&app(), &release, &platform).unwrap().0.name,
+            "nvim-linux-arm64.appimage"
+        );
     }
 
     #[test]

@@ -65,19 +65,34 @@ impl Platform {
 
 pub fn arch_aliases(arch: &str) -> &'static [&'static str] {
     match arch {
-        "x86_64" => &["x86_64", "x86-64", "amd64", "x64"],
-        "aarch64" => &["aarch64", "arm64"],
-        "arm" => &["armv7", "armv7l", "armhf", "armv6", "armv6l", "armel"],
-        "x86" => &["i386", "i686", "x86_32", "386"],
-        "riscv64" => &["riscv64"],
-        "powerpc64" => &["ppc64le"],
+        "x86_64" => &["x86_64", "x86-64", "amd64", "x64", "linux64"],
+        "aarch64" => &["aarch64", "arm64", "armv8", "armv8a"],
+        "arm" => &[
+            "arm", "armv7", "armv7l", "armv7hl", "armv7a", "armhf", "armv6", "armv6l", "armel", "arm32",
+        ],
+        "x86" => &["x86", "i386", "i586", "i686", "x86_32", "386", "ia32"],
+        "riscv64" => &["riscv64", "riscv64gc"],
+        "powerpc64" => &["ppc64le", "ppc64", "powerpc64le"],
         "s390x" => &["s390x"],
+        "loongarch64" => &["loongarch64", "loong64"],
+        "mips64" => &["mips64", "mips64el"],
+        "mips" => &["mips", "mipsel"],
         _ => &[],
     }
 }
 
-/// Architectures recognised when rejecting assets built for another one.
-pub const KNOWN_ARCHES: [&str; 7] = ["x86_64", "aarch64", "arm", "x86", "riscv64", "powerpc64", "s390x"];
+pub const KNOWN_ARCHES: [&str; 10] = [
+    "x86_64",
+    "aarch64",
+    "arm",
+    "x86",
+    "riscv64",
+    "powerpc64",
+    "s390x",
+    "loongarch64",
+    "mips64",
+    "mips",
+];
 
 /// Whether `name` is installed, on the host when running as a Flatpak.
 pub fn has_command(name: &str) -> bool {
