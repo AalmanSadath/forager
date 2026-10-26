@@ -231,6 +231,15 @@ Tokens are only sent to their own host.
   blocks download. The result is checked against the zsync SHA-1, falling
   back to a full download.
 
+### Removing
+
+`forager remove <id>` uninstalls the app and stops tracking it
+(`--keep-installed` leaves it installed). It then lists what the app left
+in your home directory: folders named exactly after the app in
+`~/.config`, `~/.cache`, `~/.local/share` and `~/.local/state`, and a
+Flatpak's `~/.var/app/<id>`. These are deleted only if you agree
+(`--purge` without asking, `--keep-data` to skip the question).
+
 ### Tarballs
 
 - Unpacked to `~/.local/opt/<id>`. The executable (at the top, in `bin/`,

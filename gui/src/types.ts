@@ -92,6 +92,12 @@ export interface StatusView {
   notices: Notice[];
 }
 
+/** A folder or file an app left in the home directory. */
+export interface Leftover {
+  path: string;
+  bytes: number;
+}
+
 /** Something worth knowing about an app's project that is not an update. */
 export type Notice =
   | { kind: 'archived' }

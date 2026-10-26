@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
+use forager_core::cleanup;
 use forager_core::conditions::{self, Avoid};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::select_asset;
@@ -296,6 +297,13 @@ enum Command {
         /// Leave the installed package in place.
         #[arg(long)]
         keep_installed: bool,
+        /// Also delete the app's settings, caches and data in your home
+        /// directory without asking.
+        #[arg(long, conflicts_with = "keep_data")]
+        purge: bool,
+        /// Keep the app's settings, caches and data without asking.
+        #[arg(long)]
+        keep_data: bool,
     },
 }
 
@@ -816,8 +824,18 @@ fn main() -> Result<()> {
             };
             println!("{text}");
         }
-        Command::Remove { id, keep_installed } => {
+        Command::Remove {
+            id,
+            keep_installed,
+            purge,
+            keep_data,
+        } => {
             let app = store.get(&id)?;
+            // Found before uninstalling, while the menu entries still name the app.
+            let leftovers = match keep_data {
+                true => Vec::new(),
+                false => cleanup::leftovers(app),
+            };
             let present: Vec<Installed> = app.installs().filter(|i| install::is_present(i)).cloned().collect();
             let mut uninstall = Vec::new();
             if !keep_installed {
@@ -832,15 +850,36 @@ fn main() -> Result<()> {
             for installed in &uninstall {
                 install::uninstall(installed, &platform)?;
             }
+            let delete = match leftovers.is_empty() || purge {
+                true => leftovers.iter().map(|l| l.path.clone()).collect(),
+                false => {
+                    println!("{id} left these in your home directory:");
+                    for leftover in &leftovers {
+                        println!("  {}  ({})", leftover.path.display(), size(leftover.bytes));
+                    }
+                    match io::stdin().is_terminal() && confirm("Delete them too?")? {
+                        true => leftovers.iter().map(|l| l.path.clone()).collect(),
+                        false => Vec::new(),
+                    }
+                }
+            };
+            let (count, bytes) = cleanup::remove(&leftovers, &delete)?;
             let app = store.remove(&id)?;
             store.save()?;
+            let deleted = (count > 0).then(|| format!("deleted {count} folders and files ({})", size(bytes)));
+            if let Some(deleted) = &deleted {
+                println!("{id}: {deleted}.");
+            }
             if uninstall.is_empty() {
-                history::record(&Event::new(&id, Kind::Removed, via)).ok();
+                let mut event = Event::new(&id, Kind::Removed, via);
+                event.message = deleted.clone();
+                history::record(&event).ok();
             }
             for installed in &uninstall {
                 let mut event = Event::new(&id, Kind::Removed, via);
                 event.from = Some(installed.tag.clone());
                 event.format = Some(installed.format);
+                event.message = deleted.clone();
                 history::record(&event).ok();
             }
             if let Some(Signature::Gpg { keyring }) = &app.signature {
@@ -850,6 +889,15 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `bytes` for people: KiB below a MiB, else MiB.
+fn size(bytes: u64) -> String {
+    match bytes {
+        b if b < 1024 => "<1 KiB".into(),
+        b if b < 1 << 20 => format!("{:.0} KiB", b as f64 / 1024.0),
+        b => format!("{:.1} MiB", b as f64 / 1048576.0),
+    }
 }
 
 /// Prints `doctor::run`'s checks; exits with 1 when one fails.

@@ -27,6 +27,7 @@ import type {
   DoctorCheck,
   ImportResult,
   SystemAppearance,
+  Leftover,
 } from './types';
 
 // ── activity ────────────────────────────────────────────────────
@@ -57,8 +58,10 @@ export const addApp = (
 export const inspectAppImage = (path: string) => invoke<AppImageInfo>('inspect_appimage', { path });
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('save_app', { id, settings, signature });
-/** Stops tracking `id`, first uninstalling its installs in these formats. */
-export const removeApp = (id: string, uninstall: Format[]) => invoke<void>('remove_app', { id, uninstall });
+/** Stops tracking `id`, first uninstalling its installs in these formats and deleting the leftovers in `remove`. */
+export const removeApp = (id: string, uninstall: Format[], remove: string[]) =>
+  invoke<void>('remove_app', { id, uninstall, delete: remove });
+export const appLeftovers = (id: string) => invoke<Leftover[]>('app_leftovers', { id });
 
 /** Adds the menu entries missing from AppImages and tarballs (of `ids`, or every app). */
 export const createMenuEntries = (ids: string[] | null = null) =>

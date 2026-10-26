@@ -115,6 +115,9 @@ select option {
   margin-bottom: 12px;
 }
 
+/* Long paths wrap rather than run out of a dialog. */
+.checkbox-row .mono { overflow-wrap: anywhere; }
+
 .checkbox-row input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;

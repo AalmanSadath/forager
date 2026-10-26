@@ -12,7 +12,7 @@ use forager_core::model::{App, Format, Release, Signature};
 use forager_core::platform::Platform;
 use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
-use forager_core::{Error, install, share, update, version};
+use forager_core::{Error, cleanup, install, share, update, version};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -563,12 +563,24 @@ pub fn parse_link(text: String) -> CmdResult<share::AddRequest> {
     share::parse_link(&text).map_err(|e| e.to_string())
 }
 
+/// What `id` left in the home directory, for the Remove dialog to offer.
+#[tauri::command]
+pub async fn app_leftovers(id: String) -> CmdResult<Vec<cleanup::Leftover>> {
+    blocking(move || Ok(cleanup::leftovers(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
+}
+
 /// Stops tracking `id`, first uninstalling its installs in the `uninstall` formats.
 #[tauri::command]
-pub async fn remove_app(id: String, uninstall: Vec<Format>) -> CmdResult<()> {
+pub async fn remove_app(id: String, uninstall: Vec<Format>, delete: Vec<PathBuf>) -> CmdResult<()> {
     blocking(move || {
         let mut store = load_store()?;
         let app = store.get(&id).map_err(|e| e.to_string())?;
+        // Worked out here, before uninstalling, so only the app's own
+        // leftovers can be deleted, whatever the window asks for.
+        let leftovers = cleanup::leftovers(app);
+        if let Some(path) = delete.iter().find(|p| !leftovers.iter().any(|l| l.path == **p)) {
+            return Err(format!("{} is not {id}'s to delete", path.display()));
+        }
         let chosen: Vec<_> = app
             .installs()
             .filter(|i| uninstall.contains(&i.format) && install::is_present(i))
@@ -578,18 +590,23 @@ pub async fn remove_app(id: String, uninstall: Vec<Format>) -> CmdResult<()> {
         for installed in &chosen {
             install::uninstall(installed, &platform).map_err(|e| e.to_string())?;
         }
+        let (count, bytes) = cleanup::remove(&leftovers, &delete).map_err(|e| e.to_string())?;
         let app = store.remove(&id).map_err(|e| e.to_string())?;
         store.save().map_err(|e| e.to_string())?;
         if let Some(Signature::Gpg { keyring }) = &app.signature {
             std::fs::remove_file(keyring).ok();
         }
+        let deleted = (count > 0).then(|| format!("deleted {count} folders and files ({} KiB)", bytes.div_ceil(1024)));
         if chosen.is_empty() {
-            history::record(&Event::new(&id, Kind::Removed, Via::Gui)).ok();
+            let mut event = Event::new(&id, Kind::Removed, Via::Gui);
+            event.message = deleted.clone();
+            history::record(&event).ok();
         }
         for installed in &chosen {
             let mut event = Event::new(&id, Kind::Removed, Via::Gui);
             event.from = Some(installed.tag.clone());
             event.format = Some(installed.format);
+            event.message = deleted.clone();
             history::record(&event).ok();
         }
         Ok(())

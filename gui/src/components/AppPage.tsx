@@ -4,7 +4,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
-import type { AppView, Format, InstalledView, Notice, UpdateState } from '../types';
+import type { AppView, Format, InstalledView, Leftover, Notice, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import VersionsSection from './appPage/VersionsSection';
 import SettingsSection from './appPage/SettingsSection';
@@ -59,6 +59,21 @@ function AppPageBody({ app }: { app: AppView }) {
   // Formats to uninstall when removing: every install unless unticked.
   const [keep, setKeep] = useState<Format[]>([]);
   const uninstall = app.installs.map((i) => i.format).filter((f) => !keep.includes(f));
+  // What the app left in the home directory, and which of it to delete.
+  const [leftovers, setLeftovers] = useState<Leftover[]>([]);
+  const [purge, setPurge] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!removing) return;
+    let live = true;
+    ipc
+      .appLeftovers(app.id)
+      .then((found) => live && setLeftovers(found))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [removing, app.id]);
 
   const input = useMemo(() => toInput(draft), [draft]);
   const { preview, error: previewError, loading, refresh } = usePreview(app.spec, input, app.id);
@@ -143,7 +158,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const remove = async () => {
     setRemoving(false);
     try {
-      await ipc.removeApp(app.id, uninstall);
+      await ipc.removeApp(app.id, uninstall, purge);
       setPage({ kind: 'apps' });
       await loadApps();
       toast('success', uninstall.length > 0 ? `Removed and uninstalled ${app.id}.` : `Stopped tracking ${app.id}.`);
@@ -353,6 +368,21 @@ function AppPageBody({ app }: { app: AppView }) {
               </span>
             </label>
           ))}
+          {leftovers.length > 0 && <p className="form-hint">Its settings and data stay unless you tick them:</p>}
+          {leftovers.map((leftover) => (
+            <label key={leftover.path} className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={purge.includes(leftover.path)}
+                onChange={(e) =>
+                  setPurge((p) => (e.target.checked ? [...p, leftover.path] : p.filter((x) => x !== leftover.path)))
+                }
+              />
+              <span>
+                Delete <span className="mono">{leftover.path}</span> ({formatSize(leftover.bytes)})
+              </span>
+            </label>
+          ))}
         </ConfirmModal>
       )}
     </div>
@@ -454,4 +484,9 @@ function NoticeFact({ notice, onFollow }: { notice: Notice; onFollow: () => void
         </>
       );
   }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return '<1 KiB';
+  return bytes < 1 << 20 ? `${Math.round(bytes / 1024)} KiB` : `${(bytes / (1 << 20)).toFixed(1)} MiB`;
 }
