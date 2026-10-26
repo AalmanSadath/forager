@@ -1329,6 +1329,23 @@ fn run_plans(
             println!("{id}: {} waits until {} (cooldown)", plan.release.tag, &until[..10]);
             continue;
         }
+        // A file that changed by more than its version waits for a person.
+        if let Ok(plan) = &plan
+            && let Some(previous) = &plan.asset_changed
+            && (options.yes || options.via == Via::Timer)
+        {
+            let message = format!(
+                "{} not installed: its file changed from {previous} to {}; run forager update {id} to confirm",
+                plan.release.tag, plan.asset.name
+            );
+            println!("{id}: {message}");
+            let mut event = Event::new(id, Kind::Failed, options.via);
+            event.message = Some(message);
+            event.format = Some(plan.format);
+            history::record(&event).ok();
+            failed += 1;
+            continue;
+        }
         let (name, result) = match plan {
             Ok(plan) => {
                 let name = match several {

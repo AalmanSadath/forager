@@ -51,6 +51,9 @@ pub struct PlanView {
     pub notes: Option<String>,
     /// How many releases `notes` covers.
     pub notes_releases: usize,
+    /// The installed file's name, when the new file differs from it by more
+    /// than the version.
+    pub asset_changed: Option<String>,
 }
 
 /// One planned update of an app, or why it cannot be made.
@@ -122,6 +125,7 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String, tag: Option<St
                         skip_after: plan.skip_after.clone(),
                         notes: update::combined_notes(&plan.changes),
                         notes_releases: plan.changes.len(),
+                        asset_changed: plan.asset_changed.clone(),
                     };
                     (plan, view)
                 })

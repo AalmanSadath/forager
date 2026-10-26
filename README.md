@@ -196,10 +196,14 @@ Tokens are only sent to their own host.
    2. Flatpak, if installed;
    3. AppImage;
    4. tarball.
-2. Assets naming this CPU architecture beat ones naming none. Assets
-   naming another architecture or OS are skipped.
+2. Assets naming this CPU architecture beat ones built for any (`noarch`,
+   `all`), which beat ones naming none. Assets naming another architecture
+   or OS are skipped.
 3. Debug and source packages are skipped, as are tarballs naming neither
    Linux nor this architecture.
+4. If the chosen file differs from the installed one by more than its
+   version (`x86_64` becoming `amd64`, `gnu` becoming `musl`), `update`
+   asks first; `--yes` and the timer leave it for you to confirm.
 
 ### Existing installs
 

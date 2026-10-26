@@ -5,6 +5,7 @@ use std::fs;
 use std::ops::ControlFlow;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use serde::Serialize;
 
@@ -45,6 +46,10 @@ pub struct Plan {
     /// The releases this update brings, newest first: the target and those
     /// between it and the installed one, for their notes.
     pub changes: Vec<Release>,
+    /// The installed file's name when the new one differs from it by more
+    /// than the version (another architecture, libc or format), so the
+    /// user is asked before it is installed; see `asset_shape`.
+    pub asset_changed: Option<String>,
 }
 
 /// An installed file and the control file to update it from; see `zsync`.
@@ -118,6 +123,10 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
     for previous in &plan.replaces {
         let value = format!("replaces the {} install, which will be removed", previous.format);
         lines.push(line("note", value, Tone::Warn));
+    }
+    if let Some(previous) = &plan.asset_changed {
+        let value = format!("changed from {previous}; check this is the build you want");
+        lines.push(line("file", value, Tone::Warn));
     }
     if plan.delta.is_some() {
         let from = plan.from.as_deref().unwrap_or("the installed version");
@@ -563,7 +572,12 @@ fn plan_one(
         None => None,
     };
     let delta = current.and_then(|i| delta_for(&i.installed, i.state, &asset, format, release));
+    let asset_changed = current
+        .map(|i| &i.installed)
+        .filter(|i| !i.asset.is_empty() && asset_shape(&i.asset, &i.tag) != asset_shape(&asset.name, &release.tag))
+        .map(|i| i.asset.clone());
     Ok(Plan {
+        asset_changed,
         delta,
         from: current
             .map(|i| i.installed.tag.clone())
@@ -579,6 +593,40 @@ fn plan_one(
         skip_after,
         changes: vec![release.clone()],
     })
+}
+
+/// `name` with its versions blanked out, so release files of the same
+/// build compare equal from one release to the next: the tag's version and
+/// any dotted version become `#`, as do long numbers (build ids, dates).
+/// Architecture, libc and extension stay, so `x86_64` becoming `amd64`, or
+/// `gnu` becoming `musl`, is a change.
+pub fn asset_shape(name: &str, tag: &str) -> String {
+    static DOTTED: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"\d+(\.\d+)+|\d{6,}").unwrap());
+    let name = name.to_ascii_lowercase();
+    let mut shape = DOTTED.replace_all(&name, "#").into_owned();
+    // A version without dots (`v32`) only where it stands alone; `_`
+    // joins words, so the 64 of `x86_64` is not one.
+    let in_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let number = tag.trim_start_matches(|c: char| !c.is_ascii_digit());
+    if !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()) {
+        let parts: Vec<&str> = shape.split(|c: char| !in_word(c)).collect();
+        if parts.contains(&number) {
+            let mut out = String::new();
+            let mut word = String::new();
+            for c in shape.chars().chain([' ']) {
+                if in_word(c) {
+                    word.push(c);
+                    continue;
+                }
+                out.push_str(if word == number { "#" } else { &word });
+                word.clear();
+                out.push(c);
+            }
+            out.pop();
+            shape = out;
+        }
+    }
+    shape
 }
 
 fn with_changes(app: &App, mut plan: Plan, releases: &[Release]) -> Plan {
@@ -844,15 +892,26 @@ pub fn adopt(store: &mut Store, mut app: App, file: &Path, version: Option<&str>
     if crate::desktop::appimage_entry(file).is_err() {
         return Err(Error::Archive(format!("{} is not an AppImage", file.display())));
     }
-    let tag = match version {
-        Some(version) => app
-            .source
+    let release = version.and_then(|version| {
+        app.source
             .releases()
-            .ok()
-            .and_then(|releases| releases.into_iter().find(|r| same_version(&r.tag, version)))
-            .map_or_else(|| version.to_string(), |r| r.tag),
-        None => "unknown".into(),
+            .ok()?
+            .into_iter()
+            .find(|r| same_version(&r.tag, version))
+    });
+    let tag = match (&release, version) {
+        (Some(release), _) => release.tag.clone(),
+        (None, Some(version)) => version.to_string(),
+        (None, None) => "unknown".into(),
     };
+    // The release's own file name, so the next update does not take a
+    // renamed file for a different build.
+    let release_asset = release.as_ref().and_then(|release| {
+        let mut target = app.clone();
+        target.format = Some(Format::AppImage);
+        let (asset, _) = select_asset(&target, release, &Platform::detect()).ok()?;
+        Some(asset.name.clone())
+    });
 
     let dir = crate::platform::appimage_dir().ok_or(Error::NoHome)?;
     fs::create_dir_all(&dir)?;
@@ -877,10 +936,12 @@ pub fn adopt(store: &mut Store, mut app: App, file: &Path, version: Option<&str>
     let installed = Installed {
         tag,
         format: Format::AppImage,
-        asset: source
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
+        asset: release_asset.unwrap_or_else(|| {
+            source
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        }),
         package: None,
         desktop: crate::desktop::for_appimage(&app.id, &target).unwrap_or_default(),
         path: Some(target),
@@ -957,7 +1018,68 @@ mod tests {
             delta: None,
             changes: Vec::new(),
             skip_after: None,
+            asset_changed: None,
         }
+    }
+
+    #[test]
+    fn version_bumps_keep_the_asset_shape() {
+        let same = [
+            (
+                "nvim-linux-x86_64.appimage",
+                "v0.12.5",
+                "nvim-linux-x86_64.appimage",
+                "v0.12.6",
+            ),
+            (
+                "drawio-x86_64-28.2.5.rpm",
+                "v28.2.5",
+                "drawio-x86_64-29.0.1.rpm",
+                "v29.0.1",
+            ),
+            (
+                "fd-v10.2.0-x86_64-unknown-linux-gnu.tar.gz",
+                "v10.2.0",
+                "fd-v10.5.0-x86_64-unknown-linux-gnu.tar.gz",
+                "v10.5.0",
+            ),
+            ("tool-31-x86_64.AppImage", "v31", "tool-32-x86_64.AppImage", "v32"),
+            (
+                "tool-20260101-x86_64.tar.gz",
+                "nightly",
+                "tool-20261026-x86_64.tar.gz",
+                "nightly",
+            ),
+            ("tool-1.0.0-1.x86_64.rpm", "1.0.0", "tool-1.1.0-1.x86_64.rpm", "1.1.0"),
+        ];
+        for (old, old_tag, new, new_tag) in same {
+            assert_eq!(asset_shape(old, old_tag), asset_shape(new, new_tag), "{old} -> {new}");
+        }
+    }
+
+    #[test]
+    fn other_builds_change_the_asset_shape() {
+        let changed = [
+            (
+                "nvim-linux64.appimage",
+                "v0.10.4",
+                "nvim-linux-x86_64.appimage",
+                "v0.12.6",
+            ),
+            ("tool_1.0_x86_64.deb", "v1.0", "tool_1.1_amd64.deb", "v1.1"),
+            (
+                "tool-1.0-x86_64-linux-gnu.tar.gz",
+                "1.0",
+                "tool-1.1-x86_64-linux-musl.tar.gz",
+                "1.1",
+            ),
+            ("Tool-1.0.AppImage", "1.0", "Tool-1.1.tar.gz", "1.1"),
+        ];
+        for (old, old_tag, new, new_tag) in changed {
+            assert_ne!(asset_shape(old, old_tag), asset_shape(new, new_tag), "{old} -> {new}");
+        }
+        // A bare number is only a version where it stands alone.
+        assert_eq!(asset_shape("tool-x86_64.AppImage", "v64"), "tool-x86_64.appimage");
     }
 
     fn install(format: Format, tag: &str) -> Installed {

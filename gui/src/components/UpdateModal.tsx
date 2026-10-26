@@ -36,6 +36,9 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   const [phase, setPhase] = useState<Phase>({ kind: 'planning' });
   const [plans, setPlans] = useState<Unit[]>([]);
   const [acceptUnverified, setAcceptUnverified] = useState(false);
+  // Updates in "Update all" whose file changed by more than its version,
+  // left out until ticked.
+  const [held, setHeld] = useState<string[]>([]);
   const [results, setResults] = useState<Result[]>([]);
   // Answers the distro question for the app waiting on it.
   const distroAnswer = useRef<((install: boolean) => void) | null>(null);
@@ -57,6 +60,7 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
       }
       if (live) {
         setPlans(out);
+        if (ids.length > 1) setHeld(out.filter((u) => u.plan?.asset_changed).map((u) => unitKey(u.id, u.plan!.format)));
         setPhase({ kind: 'confirm' });
       }
     })();
@@ -65,7 +69,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
     };
   }, [ids, tag]);
 
-  const runnable = plans.filter((p) => p.plan);
+  const planned = plans.filter((p) => p.plan);
+  const runnable = planned.filter((p) => !held.includes(unitKey(p.id, p.plan!.format)));
   // Named by format too when an app has more than one update.
   const nameOf = (id: string, format: Format) =>
     runnable.filter((p) => p.id === id).length > 1 ? `${id} (${FORMAT_NAMES[format]})` : id;
@@ -74,6 +79,10 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
 
   const run = async () => {
     const done: Result[] = [];
+    for (const { id, plan } of planned.filter((p) => !runnable.includes(p))) {
+      ipc.cancelUpdate(id, plan!.format);
+      done.push({ id, name: nameOf(id, plan!.format), outcome: 'skipped', detail: 'its file changed; not ticked' });
+    }
     // Set when Forager itself was updated.
     let restartTo: string | null = null;
     for (const { id, plan } of runnable) {
@@ -133,7 +142,7 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
     } else if (phase.kind === 'distro') {
       distroAnswer.current?.(false);
     } else if (phase.kind !== 'working') {
-      for (const { id, plan } of runnable) ipc.cancelUpdate(id, plan!.format);
+      for (const { id, plan } of planned) ipc.cancelUpdate(id, plan!.format);
       close();
     }
   };
@@ -179,6 +188,19 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
                         </div>
                       ))}
                   </dl>
+                  {!single && plan.asset_changed && (
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={!held.includes(unitKey(id, plan.format))}
+                        onChange={(e) => {
+                          const key = unitKey(id, plan.format);
+                          setHeld((h) => (e.target.checked ? h.filter((k) => k !== key) : [...h, key]));
+                        }}
+                      />
+                      <span>Install the new file anyway</span>
+                    </label>
+                  )}
                   {plan.notes && (
                     <details className="release-notes" open={single && plans.length === 1}>
                       <summary>
@@ -280,6 +302,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
     </Modal>
   );
 }
+
+const unitKey = (id: string, format: Format) => `${id}/${format}`;
 
 function ProgressBar({ fraction }: { fraction: number | null }) {
   return (

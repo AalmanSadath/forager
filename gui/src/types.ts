@@ -251,6 +251,8 @@ export interface PlanView {
   notes: string | null;
   /** How many releases `notes` covers. */
   notes_releases: number;
+  /** The installed file's name, when the new file differs by more than its version. */
+  asset_changed: string | null;
 }
 
 export interface FinishedView {
