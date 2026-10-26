@@ -255,6 +255,8 @@ export interface DownloadedView {
   package: string | null;
   repo_version: string | null;
   first_install: boolean;
+  /** How a delta download went, when there was one. */
+  delta: string | null;
 }
 
 /** Payload of `update-progress`. */

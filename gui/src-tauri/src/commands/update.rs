@@ -65,6 +65,9 @@ pub struct DownloadedView {
     /// Not installed before, or installed in another format: the distro
     /// overlap deserves a question. Later updates only mention it.
     pub first_install: bool,
+    /// How a delta download went, e.g. "reused 80.1 of 92.3 MiB from the
+    /// installed version"; `None` when the whole file was the plan.
+    pub delta: Option<String>,
 }
 
 /// Payload of `update-progress`.
@@ -190,6 +193,7 @@ pub async fn start_update(
                 package: download.package.clone(),
                 repo_version: download.repo_version.clone(),
                 first_install,
+                delta: download.delta.as_ref().map(ToString::to_string),
             };
             match sessions.get_mut(&session_key) {
                 Some(session) => session.download = Some(download),

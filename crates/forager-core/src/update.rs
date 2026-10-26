@@ -15,7 +15,7 @@ use crate::platform::Platform;
 use crate::signature::{self, Signed};
 use crate::source::Source;
 use crate::store::{self, Store};
-use crate::{install, verify, version};
+use crate::{install, verify, version, zsync};
 
 /// What `apply` would install for an app.
 #[derive(Debug, Clone)]
@@ -39,6 +39,16 @@ pub struct Plan {
     /// Release to mark as skipped once this is installed: rolling back to an
     /// older release skips the latest, so it is not offered again at once.
     pub skip_after: Option<String>,
+    /// Fetch only what changed since the installed AppImage, using the
+    /// release's zsync control file.
+    pub delta: Option<Delta>,
+}
+
+/// An installed file and the control file to update it from; see `zsync`.
+#[derive(Debug, Clone)]
+pub struct Delta {
+    pub control: Asset,
+    pub seed: PathBuf,
 }
 
 impl Plan {
@@ -105,6 +115,11 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
     for previous in &plan.replaces {
         let value = format!("replaces the {} install, which will be removed", previous.format);
         lines.push(line("note", value, Tone::Warn));
+    }
+    if plan.delta.is_some() {
+        let from = plan.from.as_deref().unwrap_or("the installed version");
+        let value = format!("only the parts changed since {from} are downloaded (zsync)");
+        lines.push(line("delta", value, Tone::Normal));
     }
     lines
 }
@@ -505,7 +520,9 @@ fn plan_one(
         }),
         None => None,
     };
+    let delta = current.and_then(|i| delta_for(&i.installed, i.state, &asset, format, release));
     Ok(Plan {
+        delta,
         from: current
             .map(|i| i.installed.tag.clone())
             .or_else(|| replaces.first().map(|i| i.tag.clone())),
@@ -519,6 +536,18 @@ fn plan_one(
         replaces,
         skip_after,
     })
+}
+
+/// A delta update for `asset` from `installed`: both AppImages, the old one
+/// still in place, and the release has `<asset>.zsync`.
+fn delta_for(installed: &Installed, state: State, asset: &Asset, format: Format, release: &Release) -> Option<Delta> {
+    if format != Format::AppImage || installed.format != Format::AppImage || state == State::Missing {
+        return None;
+    }
+    let seed = installed.path.clone().filter(|p| p.is_file())?;
+    let name = format!("{}.zsync", asset.name);
+    let control = release.assets.iter().find(|a| a.name == name)?.clone();
+    Some(Delta { control, seed })
 }
 
 /// Progress of `download` and `install`, for frontends to display.
@@ -543,6 +572,30 @@ pub struct Download {
     /// Version of the same package in the distribution's repositories. A
     /// distro update may then replace the forge's build, or the reverse.
     pub repo_version: Option<String>,
+    /// How the delta download went, when the plan had one.
+    pub delta: Option<DeltaOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeltaOutcome {
+    /// Bytes taken from the installed version, of the new one's `length`.
+    Reused { reused: u64, length: u64 },
+    /// Why it was downloaded whole instead.
+    Failed(String),
+}
+
+impl std::fmt::Display for DeltaOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeltaOutcome::Reused { reused, length } => write!(
+                f,
+                "reused {:.1} of {:.1} MiB from the installed version",
+                *reused as f64 / 1048576.0,
+                *length as f64 / 1048576.0
+            ),
+            DeltaOutcome::Failed(reason) => write!(f, "{reason}; downloaded in full"),
+        }
+    }
 }
 
 impl Drop for Download {
@@ -558,13 +611,32 @@ pub fn download(
     platform: &Platform,
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Download> {
-    let (path, actual) = verify::download(&plan.asset, &store::download_dir(), &mut |done, total| {
-        progress(Progress::Download { done, total })
-    })?;
+    let dir = store::download_dir();
+    let mut on_bytes = |done, total| progress(Progress::Download { done, total });
+    let mut delta = None;
+    let mut fetched = None;
+    if let Some(d) = &plan.delta {
+        match zsync::download(&plan.asset, &d.control.url, &d.seed, &dir, &mut on_bytes) {
+            Ok((path, hash, stats)) => {
+                delta = Some(DeltaOutcome::Reused {
+                    reused: stats.reused,
+                    length: stats.length,
+                });
+                fetched = Some((path, hash));
+            }
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => delta = Some(DeltaOutcome::Failed(e.to_string())),
+        }
+    }
+    let (path, actual) = match fetched {
+        Some(fetched) => fetched,
+        None => verify::download(&plan.asset, &dir, &mut on_bytes)?,
+    };
     let mut download = Download {
         path,
         package: None,
         repo_version: None,
+        delta,
     };
     check_sha256(plan, &actual)?;
     if let Some(check) = &plan.signature {
@@ -765,6 +837,7 @@ mod tests {
             signature: None,
             replaces: Vec::new(),
             downgrade: false,
+            delta: None,
             skip_after: None,
         }
     }
@@ -1027,6 +1100,39 @@ mod tests {
         let older = existing_install("0.9.1".into(), "tool".into(), Format::Rpm, &plan.asset, &release);
         assert_eq!((older.tag.as_str(), older.asset.as_str()), ("0.9.1", ""));
         assert!(version::is_newer(&older.tag, &release.tag));
+    }
+
+    #[test]
+    fn delta_needs_an_installed_appimage_and_a_control_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let seed = tmp.path().join("tool.AppImage");
+        fs::write(&seed, b"old").unwrap();
+        let asset = |name: &str| Asset {
+            name: name.into(),
+            url: format!("https://example.org/{name}"),
+            size: 0,
+            digest: None,
+        };
+        let new = asset("Tool-2-x86_64.AppImage");
+        let mut release = Release {
+            tag: "v2".into(),
+            name: None,
+            prerelease: false,
+            published_at: None,
+            notes: None,
+            assets: vec![new.clone(), asset("Tool-2-x86_64.AppImage.zsync")],
+        };
+        let mut installed = install(Format::AppImage, "v1");
+        installed.path = Some(seed.clone());
+        let delta = delta_for(&installed, State::Outdated, &new, Format::AppImage, &release).unwrap();
+        assert_eq!(delta.control.name, "Tool-2-x86_64.AppImage.zsync");
+        assert_eq!(delta.seed, seed);
+
+        assert!(delta_for(&installed, State::Missing, &new, Format::AppImage, &release).is_none());
+        let tarball = install(Format::Tarball, "v1");
+        assert!(delta_for(&tarball, State::Outdated, &new, Format::AppImage, &release).is_none());
+        release.assets.pop();
+        assert!(delta_for(&installed, State::Outdated, &new, Format::AppImage, &release).is_none());
     }
 
     #[test]

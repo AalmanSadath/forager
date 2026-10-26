@@ -168,6 +168,14 @@ moves to `~/Applications/<id>.AppImage` (`--keep` copies it), gets a menu
 entry, and its own version is the installed one, so the next check offers
 any newer release.
 
+When a release publishes a zsync control file next to its AppImage
+(`<asset>.zsync`), an update downloads only the parts that changed: blocks
+the installed AppImage already has are copied from it and the rest is
+fetched with range requests. The result must match the control file's SHA-1
+before the usual checksum and signature checks. If the server does not serve
+ranges, the files have too little in common, or anything else goes wrong,
+the AppImage is downloaded whole.
+
 AppImages and tarballs get a menu entry: an AppImage's own `.desktop` file
 and icon, read from the image without running it, or the entry a tarball
 ships in `share/applications` (command-line tools without one get none).

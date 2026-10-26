@@ -1226,6 +1226,9 @@ fn apply(
     let download = update::download(plan, platform, &mut |p| line.show(p));
     line.finish();
     let download = download?;
+    if let Some(delta) = &download.delta {
+        println!("  delta:  {delta}");
+    }
     if let (Some(package), Some(version)) = (&download.package, &download.repo_version) {
         println!("  note:   the distro repositories also have {package} {version}; system updates");
         println!("          and this build may replace each other");

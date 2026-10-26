@@ -3226,6 +3226,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/md4/md4-0.11.0.crate",
+        "sha256": "bd76fb0fd6b2e4be62a73f8e0858ca97f81babcb1af322dcaca196f735f17f80",
+        "dest": "cargo/vendor/md4-0.11.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"bd76fb0fd6b2e4be62a73f8e0858ca97f81babcb1af322dcaca196f735f17f80\", \"files\": {}}",
+        "dest": "cargo/vendor/md4-0.11.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/memchr/memchr-2.8.3.crate",
         "sha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
         "dest": "cargo/vendor/memchr-2.8.3"
@@ -4820,6 +4833,19 @@
         "type": "inline",
         "contents": "{\"package\": \"170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930\", \"files\": {}}",
         "dest": "cargo/vendor/servo_arc-0.4.3",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/sha1/sha1-0.11.0.crate",
+        "sha256": "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214",
+        "dest": "cargo/vendor/sha1-0.11.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214\", \"files\": {}}",
+        "dest": "cargo/vendor/sha1-0.11.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {

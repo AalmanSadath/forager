@@ -68,6 +68,8 @@ pub enum Error {
     PackageKit { code: u32, details: String },
     #[error("D-Bus: {0}")]
     DBus(#[from] zbus::Error),
+    #[error("delta download: {0}")]
+    Delta(String),
     #[error("cancelled")]
     Cancelled,
     #[error("command failed: {0}")]

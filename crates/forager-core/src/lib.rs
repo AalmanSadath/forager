@@ -20,5 +20,6 @@ pub mod timer;
 pub mod update;
 pub mod verify;
 pub mod version;
+pub mod zsync;
 
 pub use error::{Error, Result};

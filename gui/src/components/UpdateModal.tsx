@@ -101,7 +101,7 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
         setPhase({ kind: 'working', id, format, step: 'install' });
         const finished = await ipc.finishUpdate(id, format);
         if (finished.restart_needed) restartTo = plan!.to;
-        done.push({ id, name, outcome: 'installed', detail: plan!.to });
+        done.push({ id, name, outcome: 'installed', detail: downloaded.delta ? `${plan!.to} (${downloaded.delta})` : plan!.to });
       } catch (e) {
         done.push({ id, name, outcome: cancelled.current ? 'skipped' : 'failed', detail: cancelled.current ? 'cancelled' : String(e) });
       } finally {
