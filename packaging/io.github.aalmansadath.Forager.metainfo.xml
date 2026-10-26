@@ -58,6 +58,18 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.0" date="2026-10-27">
+      <description>
+        <ul>
+          <li>Apps show their own icons, including system packages and Flatpaks.</li>
+          <li>Before installing a release file that changed by more than its version, such as another architecture or libc, Forager asks; background updates leave it for you.</li>
+          <li>Checks note projects that were archived, moved or have not released for a year, and a moved project can be followed in one step.</li>
+          <li>Removing an app offers to delete the settings and data it left in your home directory.</li>
+          <li>Downloads are also verified against SHA-512 checksums, BSD-style checksum lists and electron-builder's latest-linux.yml.</li>
+          <li>More architecture names are recognised, and builds for this CPU are preferred over ones for any.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.8" date="2026-10-26">
       <description>
         <ul>
