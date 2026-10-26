@@ -58,6 +58,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.7" date="2026-10-26">
+      <description>
+        <ul>
+          <li>AppImage updates download only what changed when the release publishes a .zsync file; the rest is copied from the installed version.</li>
+          <li>Automatic background updates can skip metered connections and battery power.</li>
+          <li>"Add to Forager" badges for project READMEs, through a web page that opens Forager's Add page.</li>
+          <li>Pasting a forager:// link into the Add page fills in the whole form.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-10-25">
       <description>
         <ul>
