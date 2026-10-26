@@ -59,6 +59,10 @@ enum Command {
         /// Versions to follow, e.g. `<25`, `1.*` or `>=2, <3`; newer releases are ignored.
         #[arg(long, value_name = "REQUIREMENT")]
         versions: Option<String>,
+        /// Days a release must be out before the background timer installs it
+        /// (updating by hand is not held back).
+        #[arg(long, value_name = "DAYS")]
+        cooldown: Option<u32>,
         /// Package format to use instead of the best one for this system.
         #[arg(long)]
         format: Option<Format>,
@@ -100,6 +104,10 @@ enum Command {
         /// Follow every version again.
         #[arg(long)]
         clear_versions: bool,
+        /// Days a release must be out before the background timer installs it;
+        /// 0 for none.
+        #[arg(long, value_name = "DAYS")]
+        cooldown: Option<u32>,
         /// Executable to link from a tarball, replacing the current list.
         /// Repeat for several.
         #[arg(long = "bin", value_name = "PATH", conflicts_with = "clear_bins")]
@@ -377,6 +385,7 @@ fn main() -> Result<()> {
             filter,
             tag_filter,
             versions,
+            cooldown,
             format,
             prerelease,
             bins,
@@ -401,6 +410,7 @@ fn main() -> Result<()> {
             app.asset_filter = filter.or(link.asset_filter);
             app.tag_filter = tag_filter.or(link.tag_filter);
             app.versions = versions.or(link.versions);
+            app.cooldown_days = cooldown.unwrap_or(link.cooldown_days);
             app.format = format.or(link.format);
             app.prerelease = prerelease || link.prerelease;
             app.bins = if bins.is_empty() { link.bins } else { bins };
@@ -432,6 +442,7 @@ fn main() -> Result<()> {
             clear_tag_filter,
             versions,
             clear_versions,
+            cooldown,
             bins,
             clear_bins,
             prerelease,
@@ -450,6 +461,7 @@ fn main() -> Result<()> {
                 && !clear_tag_filter
                 && versions.is_none()
                 && !clear_versions
+                && cooldown.is_none()
                 && bins.is_empty()
                 && !clear_bins
                 && prerelease.is_none()
@@ -478,6 +490,9 @@ fn main() -> Result<()> {
             }
             if versions.is_some() || clear_versions {
                 app.versions = versions;
+            }
+            if let Some(cooldown) = cooldown {
+                app.cooldown_days = cooldown;
             }
             if !bins.is_empty() || clear_bins {
                 app.bins = bins;
@@ -864,6 +879,10 @@ struct CheckEntry {
     latest: Option<String>,
     skipped: bool,
     track_only: bool,
+    /// When background updates may install `latest`, if the app's cooldown
+    /// still holds it back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waits_until: Option<String>,
     installs: Vec<InstallEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -878,6 +897,7 @@ impl CheckEntry {
             latest: Some(status.latest.tag.clone()),
             skipped: status.skipped,
             track_only: app.track_only,
+            waits_until: update::cooldown_until(app, &status.latest, update::now()),
             installs: status
                 .installs
                 .iter()
@@ -895,6 +915,7 @@ impl CheckEntry {
             latest: None,
             skipped: false,
             track_only: app.track_only,
+            waits_until: None,
             installs: Vec::new(),
             error: Some(error),
         }
@@ -975,6 +996,12 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
         let text = match status.skipped && behind {
             true => format!("{} ({latest} skipped)", text.replace(" (up to date)", "")),
             false => text,
+        };
+        let text = match update::cooldown_until(app, &status.latest, update::now()) {
+            Some(until) if status.state.needs_update() => {
+                format!("{text} (auto-update waits until {})", &until[..10])
+            }
+            _ => text,
         };
         let asset = match select_asset(app, &status.latest, &platform) {
             Ok((asset, _)) => asset.name.clone(),
@@ -1233,7 +1260,17 @@ fn run_plans(
     }
     let several = plans.len() > 1;
     let mut failed = 0;
+    let now = update::now();
     for plan in plans {
+        // The timer waits out the app's cooldown; updating by hand does not.
+        if let Ok(plan) = &plan
+            && tag.is_none()
+            && options.via == Via::Timer
+            && let Some(until) = update::cooldown_until(store.get(id)?, &plan.release, now)
+        {
+            println!("{id}: {} waits until {} (cooldown)", plan.release.tag, &until[..10]);
+            continue;
+        }
         let (name, result) = match plan {
             Ok(plan) => {
                 let name = match several {
@@ -1356,6 +1393,11 @@ fn describe(app: &App) -> String {
     let filter = app.asset_filter.as_deref().unwrap_or("none");
     let tags = app.tag_filter.as_deref().unwrap_or("any");
     let versions = app.versions.as_deref().unwrap_or("any");
+    let cooldown = match app.cooldown_days {
+        0 => "none".to_string(),
+        1 => "1 day before auto-updating".to_string(),
+        days => format!("{days} days before auto-updating"),
+    };
     let bins = if app.bins.is_empty() {
         "auto".to_string()
     } else {
@@ -1372,7 +1414,7 @@ fn describe(app: &App) -> String {
         false => pattern,
     };
     format!(
-        "  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  versions:   {versions}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
+        "  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  versions:   {versions}\n  cooldown:   {cooldown}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
     )
 }
 

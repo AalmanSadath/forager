@@ -33,6 +33,8 @@ export interface AppView {
   tag_filter: string | null;
   /** Versions to follow, as a semver requirement such as `<25`. */
   versions: string | null;
+  /** Days a release must be out before background updates install it. */
+  cooldown_days: number;
   prerelease: boolean;
   bins: string[];
   /** A release the user chose not to install. */
@@ -82,6 +84,8 @@ export interface StatusView {
   skipped: boolean;
   /** The latest release's page on the forge. */
   release_url: string;
+  /** When background updates may install the latest release, while the cooldown holds it back. */
+  waits_until: string | null;
   /** Installs were found on the system, removed, or at a new version, and saved. */
   found: boolean;
 }
@@ -109,6 +113,7 @@ export interface AddRequest {
   asset_filter: string | null;
   tag_filter: string | null;
   versions: string | null;
+  cooldown_days: number;
   format: Format | null;
   bins: string[];
   prerelease: boolean;
@@ -171,6 +176,7 @@ export interface SettingsInput {
   asset_filter: string | null;
   tag_filter: string | null;
   versions: string | null;
+  cooldown_days: number;
   prerelease: boolean;
   bins: string[];
   /** For web-page sources: the download link pattern. */

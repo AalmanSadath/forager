@@ -270,6 +270,7 @@ function draftOfLink(link: AddRequest): SettingsDraft {
     filter: link.asset_filter ?? '',
     tagFilter: link.tag_filter ?? '',
     versions: link.versions ?? '',
+    cooldown: link.cooldown_days ? String(link.cooldown_days) : '',
     prerelease: link.prerelease,
     bins: link.bins.join(', '),
     pattern: link.pattern ?? '',

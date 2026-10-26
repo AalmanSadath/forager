@@ -209,6 +209,7 @@ mod tests {
             asset_filter: None,
             tag_filter: None,
             versions: None,
+            cooldown_days: 0,
             format: None,
             prerelease: false,
             bins: Vec::new(),

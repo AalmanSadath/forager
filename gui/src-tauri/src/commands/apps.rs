@@ -24,6 +24,7 @@ pub struct AppView {
     pub asset_filter: Option<String>,
     pub tag_filter: Option<String>,
     pub versions: Option<String>,
+    pub cooldown_days: u32,
     pub prerelease: bool,
     pub bins: Vec<String>,
     /// A release the user chose not to install.
@@ -80,6 +81,7 @@ impl From<&App> for AppView {
             asset_filter: app.asset_filter.clone(),
             tag_filter: app.tag_filter.clone(),
             versions: app.versions.clone(),
+            cooldown_days: app.cooldown_days,
             prerelease: app.prerelease,
             bins: app.bins.clone(),
             skipped: app.skipped.clone(),

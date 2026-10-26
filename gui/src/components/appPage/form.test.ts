@@ -12,6 +12,7 @@ const app: AppView = {
   asset_filter: 'musl',
   tag_filter: null,
   versions: '<3',
+  cooldown_days: 2,
   prerelease: false,
   bins: ['bin/tool', 'bin/helper'],
   skipped: null,
@@ -31,16 +32,18 @@ describe('settings form', () => {
       asset_filter: 'musl',
       tag_filter: null,
       versions: '<3',
+      cooldown_days: 2,
       prerelease: false,
       bins: ['bin/tool', 'bin/helper'],
       pattern: null,
       track_only: false,
     });
-    expect(toInput({ format: '', filter: '  ', tagFilter: ' ^v ', versions: ' ', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ', trackOnly: true })).toEqual({
+    expect(toInput({ format: '', filter: '  ', tagFilter: ' ^v ', versions: ' ', cooldown: 'x', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ', trackOnly: true })).toEqual({
       format: null,
       asset_filter: null,
       tag_filter: '^v',
       versions: null,
+      cooldown_days: 0,
       prerelease: true,
       bins: ['a', 'b'],
       pattern: 'x$',

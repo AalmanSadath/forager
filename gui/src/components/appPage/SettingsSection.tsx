@@ -124,6 +124,23 @@ export default function SettingsSection({
           </p>
         </div>
       )}
+      {!draft.trackOnly && (
+        <div className="form-group">
+          <label htmlFor="cooldown">Wait before auto-updating</label>
+          <input
+            id="cooldown"
+            type="number"
+            min={0}
+            placeholder="0"
+            value={draft.cooldown}
+            onChange={(e) => set({ cooldown: e.target.value })}
+          />
+          <p className="form-hint">
+            Days a release must be out before background updates install it, so a bad or hijacked release has time to be
+            pulled. Updating by hand is not held back.
+          </p>
+        </div>
+      )}
       <label className="checkbox-row">
         <input type="checkbox" checked={draft.prerelease} onChange={(e) => set({ prerelease: e.target.checked })} />
         <span>Include prereleases</span>

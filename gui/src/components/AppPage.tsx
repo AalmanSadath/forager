@@ -243,6 +243,12 @@ function AppPageBody({ app }: { app: AppView }) {
               <dd>
                 {status ? <span className="mono">{status.latest_tag}</span> : entry?.error ? <span className="text-danger">{entry.error}</span> : 'Not checked yet'}
               </dd>
+              {status?.waits_until && status.state !== 'up_to_date' && (
+                <>
+                  <dt>Cooldown</dt>
+                  <dd>Background updates install it from {new Date(status.waits_until).toLocaleDateString()}</dd>
+                </>
+              )}
               {status?.repo_version && (
                 <>
                   <dt>Distro</dt>

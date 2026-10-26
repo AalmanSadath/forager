@@ -125,6 +125,7 @@ The latest release is the newest one with a file for this system.
 | `--filter <regex>` | asset names must match |
 | `--tag-filter <regex>` | release tags must match |
 | `--versions <req>` | stay within versions, e.g. `<25`, `1.*`, `>=2, <3` |
+| `--cooldown <days>` | the timer installs a release only once it is this old; by hand is not held back |
 | `--format <fmt>` | `deb`, `rpm`, `pacman`, `appimage`, `tarball` or `flatpak` instead of the best one |
 | `--prerelease` | consider prereleases |
 | `--bin <path>` | executable to link from a tarball (repeatable) |
@@ -147,7 +148,9 @@ forager timer disable
 The timer reads variables such as `GITHUB_TOKEN` from
 `~/.config/forager/env` and never asks for a password. The skip flags hold
 off updates on metered connections (NetworkManager) or battery (UPower);
-the check still runs.
+the check still runs. An app's `--cooldown` makes the timer wait until a
+release is that many days old, so a hijacked release has time to be pulled;
+releases with no date (most web pages) are not held back.
 
 ### Sharing
 

@@ -125,6 +125,10 @@ pub struct App {
     /// `>=2, <3`): newer releases outside it are ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub versions: Option<String>,
+    /// Days a release must be out before background updates install it:
+    /// a hijacked release is usually found and pulled within days.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cooldown_days: u32,
     /// Force a format instead of picking the best one for the system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<Format>,
@@ -167,6 +171,7 @@ impl App {
             asset_filter: None,
             tag_filter: None,
             versions: None,
+            cooldown_days: 0,
             format: None,
             prerelease: false,
             bins: Vec::new(),
@@ -219,6 +224,10 @@ impl App {
         }
         Ok(())
     }
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// App ids name files and directories (`~/.local/opt/<id>`,

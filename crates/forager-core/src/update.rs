@@ -549,6 +549,25 @@ fn plan_one(
     })
 }
 
+/// Until when background updates leave `release` alone because of the
+/// app's cooldown, as ISO 8601; `None` once it is old enough, or when it
+/// has no date to wait on. `now` is seconds since the Unix epoch.
+pub fn cooldown_until(app: &App, release: &Release, now: u64) -> Option<String> {
+    if app.cooldown_days == 0 {
+        return None;
+    }
+    let published = release.published_at.as_deref().and_then(crate::source::unix_from_iso)?;
+    let ready = published + u64::from(app.cooldown_days) * 86400;
+    (ready > now).then(|| crate::source::iso_from_unix(ready))
+}
+
+/// Seconds since the Unix epoch.
+pub fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 /// A delta update for `asset` from `installed`: both AppImages, the old one
 /// still in place, and the release has `<asset>.zsync`.
 fn delta_for(installed: &Installed, state: State, asset: &Asset, format: Format, release: &Release) -> Option<Delta> {
@@ -1115,6 +1134,28 @@ mod tests {
         let older = existing_install("0.9.1".into(), "tool".into(), Format::Rpm, &plan.asset, &release);
         assert_eq!((older.tag.as_str(), older.asset.as_str()), ("0.9.1", ""));
         assert!(version::is_newer(&older.tag, &release.tag));
+    }
+
+    #[test]
+    fn cooldown_holds_fresh_releases_back() {
+        let source = Source::GitHub {
+            owner: "o".into(),
+            repo: "tool".into(),
+        };
+        let mut app = App::new(source, "tool".into());
+        let mut release = plan(Format::AppImage, None).release;
+        release.published_at = Some("2026-10-25T00:00:00Z".into());
+        let day = 86400;
+        let published = crate::source::unix_from_iso("2026-10-25T00:00:00Z").unwrap();
+        assert_eq!(cooldown_until(&app, &release, published), None);
+        app.cooldown_days = 3;
+        assert_eq!(
+            cooldown_until(&app, &release, published + day).as_deref(),
+            Some("2026-10-28T00:00:00Z")
+        );
+        assert_eq!(cooldown_until(&app, &release, published + 3 * day), None);
+        release.published_at = None;
+        assert_eq!(cooldown_until(&app, &release, published), None);
     }
 
     #[test]

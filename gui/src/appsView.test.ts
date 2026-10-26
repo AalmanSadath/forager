@@ -13,6 +13,7 @@ function app(id: string, extra: Partial<AppView> = {}): AppView {
     asset_filter: null,
     tag_filter: null,
     versions: null,
+    cooldown_days: 0,
     prerelease: false,
     bins: [],
     skipped: null,
@@ -47,6 +48,7 @@ function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
       installs: [],
       skipped: false,
       release_url: 'https://github.com/o/a/releases/tag/2.0',
+      waits_until: null,
       found: false,
     },
   };

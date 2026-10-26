@@ -93,6 +93,9 @@ pub struct SettingsInput {
     /// Versions to follow, as a semver requirement.
     #[serde(default)]
     pub versions: Option<String>,
+    /// Days a release must be out before background updates install it.
+    #[serde(default)]
+    pub cooldown_days: u32,
     pub prerelease: bool,
     pub bins: Vec<String>,
     /// New download pattern, for an app tracked from a web page.
@@ -112,6 +115,7 @@ impl SettingsInput {
         app.asset_filter = self.asset_filter.clone().filter(|f| !f.is_empty());
         app.tag_filter = self.tag_filter.clone().filter(|f| !f.is_empty());
         app.versions = self.versions.clone().filter(|v| !v.trim().is_empty());
+        app.cooldown_days = self.cooldown_days;
         app.prerelease = self.prerelease;
         app.bins = self.bins.iter().filter(|b| !b.trim().is_empty()).cloned().collect();
         app.track_only = self.track_only;

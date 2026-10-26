@@ -10,6 +10,8 @@ export interface SettingsDraft {
   tagFilter: string;
   /** Semver requirement for the versions to follow. */
   versions: string;
+  /** Days before auto-updating, as typed. */
+  cooldown: string;
   prerelease: boolean;
   /** Comma-separated paths. */
   bins: string;
@@ -24,6 +26,7 @@ export const EMPTY_DRAFT: SettingsDraft = {
   filter: '',
   tagFilter: '',
   versions: '',
+  cooldown: '',
   prerelease: false,
   bins: '',
   pattern: '',
@@ -36,6 +39,7 @@ export function draftOf(app: AppView): SettingsDraft {
     filter: app.asset_filter ?? '',
     tagFilter: app.tag_filter ?? '',
     versions: app.versions ?? '',
+    cooldown: app.cooldown_days ? String(app.cooldown_days) : '',
     prerelease: app.prerelease,
     bins: app.bins.join(', '),
     pattern: app.spec.kind === 'html' ? (app.spec.pattern ?? '') : '',
@@ -49,6 +53,7 @@ export function toInput(d: SettingsDraft): SettingsInput {
     asset_filter: d.filter.trim() || null,
     tag_filter: d.tagFilter.trim() || null,
     versions: d.versions.trim() || null,
+    cooldown_days: Math.max(0, Math.floor(Number(d.cooldown) || 0)),
     prerelease: d.prerelease,
     bins: d.bins
       .split(',')

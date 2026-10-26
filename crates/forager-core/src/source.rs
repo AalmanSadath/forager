@@ -431,8 +431,36 @@ fn iso_date(text: &str) -> Option<String> {
     Some(format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z"))
 }
 
+/// ISO 8601 as the forges write it (`2026-10-25T08:50:19Z`, with optional
+/// fractions of a second or a `+01:00` offset) as seconds since the Unix
+/// epoch.
+pub fn unix_from_iso(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let (date, time) = text.split_once(['T', ' ']).unwrap_or((text, "00:00:00"));
+    let mut parts = date.split('-').map(|p| p.parse::<i64>().ok());
+    let (year, month, day) = (parts.next()??, parts.next()??, parts.next()??);
+    let zone_at = time.find(['Z', 'z', '+', '-']).unwrap_or(time.len());
+    let (clock, zone) = time.split_at(zone_at);
+    let mut clock = clock.split('.').next()?.split(':').map(|p| p.parse::<i64>().ok());
+    let (h, mi, s) = (clock.next()??, clock.next()??, clock.next().flatten().unwrap_or(0));
+    let offset = match zone.strip_prefix(['+', '-']) {
+        Some(rest) => {
+            let digits: String = rest.chars().filter(char::is_ascii_digit).collect();
+            let minutes =
+                digits.get(..2)?.parse::<i64>().ok()? * 60 + digits.get(2..4).map_or(Some(0), |m| m.parse().ok())?;
+            if zone.starts_with('-') { -minutes } else { minutes }
+        }
+        None => 0,
+    };
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let secs = days_from_civil(year, month as u32, day as u32) * 86400 + h * 3600 + mi * 60 + s - offset * 60;
+    u64::try_from(secs).ok()
+}
+
 /// Seconds since the Unix epoch as ISO 8601 in UTC.
-fn iso_from_unix(secs: u64) -> String {
+pub fn iso_from_unix(secs: u64) -> String {
     let (y, mo, d, h, mi, s) = civil_from_unix(secs as i64);
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
@@ -635,6 +663,13 @@ mod tests {
         );
         assert_eq!(iso_date("yesterday"), None);
         assert_eq!(iso_from_unix(0), "1970-01-01T00:00:00Z");
+        for secs in [0, 1_792_918_219, 4_102_444_800] {
+            assert_eq!(unix_from_iso(&iso_from_unix(secs)), Some(secs));
+        }
+        assert_eq!(unix_from_iso("2026-10-25T08:50:19.123Z"), Some(1_792_918_219));
+        assert_eq!(unix_from_iso("2026-10-25T10:50:19+02:00"), Some(1_792_918_219));
+        assert_eq!(unix_from_iso("2026-10-25"), Some(1_792_886_400));
+        assert_eq!(unix_from_iso("soon"), None);
         assert_eq!(
             element("<a><title><![CDATA[/x & y]]></title></a>", "title").as_deref(),
             Some("/x & y")
