@@ -84,8 +84,8 @@ export const restartSelf = () => invoke<void>('restart_self');
 export const getGuiSettings = () => invoke<GuiSettings>('get_gui_settings');
 export const setGuiSettings = (settings: GuiSettings) => invoke<void>('set_gui_settings', { settings });
 export const getTimer = () => invoke<TimerState>('get_timer');
-export const setTimer = (enabled: boolean, autoUpdate: boolean) =>
-  invoke<TimerState>('set_timer', { enabled, autoUpdate });
+export const setTimer = (enabled: boolean, autoUpdate: boolean, skipMetered: boolean, skipOnBattery: boolean) =>
+  invoke<TimerState>('set_timer', { enabled, autoUpdate, skipMetered, skipOnBattery });
 export const getTokens = () => invoke<Record<string, string>>('get_tokens');
 export const setTokens = (tokens: Record<string, string>) => invoke<void>('set_tokens', { tokens });
 export const aboutInfo = () => invoke<AboutInfo>('about_info');

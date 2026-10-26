@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
+use forager_core::conditions::{self, Avoid};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format, Installed, Signature};
@@ -151,6 +152,12 @@ enum Command {
         /// Skip updates that need root (deb, rpm and Arch packages).
         #[arg(long)]
         unprivileged_only: bool,
+        /// Install nothing over a metered connection (as NetworkManager sees it).
+        #[arg(long)]
+        skip_metered: bool,
+        /// Install nothing while running on battery.
+        #[arg(long)]
+        skip_on_battery: bool,
     },
     /// Install a particular release, e.g. to roll back to an older one. Going
     /// back from the latest release skips it, so it is not offered again.
@@ -289,6 +296,12 @@ enum TimerAction {
         /// Also install updates that need no root (AppImage, tarball, Flatpak).
         #[arg(long)]
         auto_update: bool,
+        /// With --auto-update: skip the day's updates over a metered connection.
+        #[arg(long, requires = "auto_update")]
+        skip_metered: bool,
+        /// With --auto-update: skip the day's updates while on battery.
+        #[arg(long, requires = "auto_update")]
+        skip_on_battery: bool,
     },
     /// Stop and remove the timer.
     Disable,
@@ -539,16 +552,28 @@ fn main() -> Result<()> {
             yes,
             allow_unverified,
             unprivileged_only,
-        } => update(
-            &mut store,
-            &ids,
-            &UpdateOptions {
-                yes,
-                allow_unverified,
-                unprivileged_only,
-                via,
-            },
-        )?,
+            skip_metered,
+            skip_on_battery,
+        } => {
+            let avoid = Avoid {
+                metered: skip_metered,
+                battery: skip_on_battery,
+            };
+            if let Some(reason) = conditions::blocked(avoid) {
+                println!("Updates skipped: {reason}.");
+                return Ok(());
+            }
+            update(
+                &mut store,
+                &ids,
+                &UpdateOptions {
+                    yes,
+                    allow_unverified,
+                    unprivileged_only,
+                    via,
+                },
+            )?
+        }
         Command::Install {
             id,
             tag,
@@ -1062,17 +1087,31 @@ fn utc_time(secs: u64) -> String {
 
 fn timer(action: TimerAction, config: Option<PathBuf>) -> Result<()> {
     match action {
-        TimerAction::Enable { auto_update } => {
+        TimerAction::Enable {
+            auto_update,
+            skip_metered,
+            skip_on_battery,
+        } => {
             let config = config.map(std::path::absolute).transpose()?;
             let settings = timer::Settings {
                 command: host::cli_command(&std::env::current_exe().context("cannot locate the forager binary")?),
                 config,
                 auto_update,
+                avoid: Avoid {
+                    metered: skip_metered,
+                    battery: skip_on_battery,
+                },
             };
             timer::enable(&settings)?;
             println!("Daily check enabled ({}).", timer::TIMER);
             if auto_update {
                 println!("Updates that need no root are installed automatically.");
+            }
+            match (skip_metered, skip_on_battery) {
+                (true, true) => println!("Not over a metered connection or on battery."),
+                (true, false) => println!("Not over a metered connection."),
+                (false, true) => println!("Not on battery."),
+                (false, false) => {}
             }
         }
         TimerAction::Disable => {

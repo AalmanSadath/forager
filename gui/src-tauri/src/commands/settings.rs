@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use forager_core::conditions::Avoid;
 use forager_core::{envfile, history, host, platform, store, timer};
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +57,10 @@ pub fn set_gui_settings(settings: GuiSettings) -> CmdResult<()> {
 pub struct TimerState {
     pub enabled: bool,
     pub auto_update: bool,
+    /// The automatic updates wait while the connection is metered.
+    pub skip_metered: bool,
+    /// They wait while the system runs on battery.
+    pub skip_on_battery: bool,
     pub next_run: Option<String>,
     /// The `forager` binary the timer would run, if one was found.
     pub cli: Option<PathBuf>,
@@ -78,9 +83,12 @@ fn cli_path() -> Option<PathBuf> {
 
 fn timer_state() -> CmdResult<TimerState> {
     let next_run = timer::next_run().map_err(|e| e.to_string())?;
+    let avoid = timer::auto_update_avoids();
     Ok(TimerState {
         enabled: next_run.is_some(),
         auto_update: timer::auto_update_enabled(),
+        skip_metered: avoid.metered,
+        skip_on_battery: avoid.battery,
         next_run,
         cli: cli_path(),
     })
@@ -92,7 +100,12 @@ pub async fn get_timer() -> CmdResult<TimerState> {
 }
 
 #[tauri::command]
-pub async fn set_timer(enabled: bool, auto_update: bool) -> CmdResult<TimerState> {
+pub async fn set_timer(
+    enabled: bool,
+    auto_update: bool,
+    skip_metered: bool,
+    skip_on_battery: bool,
+) -> CmdResult<TimerState> {
     blocking(move || {
         if enabled {
             let exe = cli_path().ok_or("the forager command-line tool was not found next to the app or on PATH")?;
@@ -101,6 +114,10 @@ pub async fn set_timer(enabled: bool, auto_update: bool) -> CmdResult<TimerState
                 command: host::cli_command(&exe),
                 config,
                 auto_update,
+                avoid: Avoid {
+                    metered: skip_metered,
+                    battery: skip_on_battery,
+                },
             })
             .map_err(|e| e.to_string())?;
         } else {

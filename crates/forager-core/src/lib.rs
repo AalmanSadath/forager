@@ -2,6 +2,7 @@
 //! the system package manager.
 
 pub mod appimage;
+pub mod conditions;
 pub mod desktop;
 pub mod envfile;
 pub mod error;

@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::conditions::Avoid;
 use crate::error::{Error, Result};
 use crate::host;
 
@@ -20,6 +21,8 @@ pub struct Settings {
     pub config: Option<PathBuf>,
     /// Also install updates that need no root (AppImage, tarball, Flatpak).
     pub auto_update: bool,
+    /// When those updates are skipped for the day.
+    pub avoid: Avoid,
 }
 
 /// `$XDG_CONFIG_HOME/systemd/user`.
@@ -56,7 +59,14 @@ pub fn service_unit(settings: &Settings) -> String {
     );
     if settings.auto_update {
         // `-`: a failed update must not stop the check that follows.
-        unit += &format!("ExecStart=-{}\n", command(&["update", "--yes", "--unprivileged-only"]));
+        let mut args = vec!["update", "--yes", "--unprivileged-only"];
+        if settings.avoid.metered {
+            args.push("--skip-metered");
+        }
+        if settings.avoid.battery {
+            args.push("--skip-on-battery");
+        }
+        unit += &format!("ExecStart=-{}\n", command(&args));
     }
     unit += &format!("ExecStart={}\n", command(&["check", "--notify", "--quiet"]));
     unit
@@ -106,12 +116,25 @@ pub fn disable() -> Result<()> {
     systemctl(&["daemon-reload"])
 }
 
+fn installed_service() -> Option<String> {
+    fs::read_to_string(unit_dir().ok()?.join(SERVICE)).ok()
+}
+
 /// Whether the installed service also installs updates, read back from it.
 pub fn auto_update_enabled() -> bool {
-    unit_dir()
-        .ok()
-        .and_then(|dir| fs::read_to_string(dir.join(SERVICE)).ok())
-        .is_some_and(|unit| unit.contains("--unprivileged-only"))
+    installed_service().is_some_and(|unit| unit.contains("--unprivileged-only"))
+}
+
+/// When the installed service's updates are skipped, read back from it.
+pub fn auto_update_avoids() -> Avoid {
+    installed_service().map_or_else(Avoid::default, |unit| avoids_in(&unit))
+}
+
+fn avoids_in(unit: &str) -> Avoid {
+    Avoid {
+        metered: unit.contains("--skip-metered"),
+        battery: unit.contains("--skip-on-battery"),
+    }
 }
 
 /// When the timer next fires, or `None` if it is not enabled.
@@ -161,6 +184,7 @@ mod tests {
             command: vec!["/usr/bin/forager".into()],
             config: Some("/home/me/My Apps/100%.toml".into()),
             auto_update,
+            avoid: Avoid::default(),
         }
     }
 
@@ -180,6 +204,21 @@ mod tests {
         let check = unit.find("check --notify").unwrap();
         assert!(update < check);
         assert!(unit.contains("update --yes --unprivileged-only\n"));
+        assert_eq!(avoids_in(&unit), Avoid::default());
+    }
+
+    #[test]
+    fn auto_update_can_wait_for_an_unmetered_connection_and_mains_power() {
+        let mut settings = settings(true);
+        settings.avoid = Avoid {
+            metered: true,
+            battery: true,
+        };
+        let unit = service_unit(&settings);
+        assert!(unit.contains("update --yes --unprivileged-only --skip-metered --skip-on-battery\n"));
+        assert_eq!(avoids_in(&unit), settings.avoid);
+        settings.avoid.battery = false;
+        assert!(!service_unit(&settings).contains("--skip-on-battery"));
     }
 
     #[test]

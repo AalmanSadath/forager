@@ -28,6 +28,9 @@ finish-args:
   - --talk-name=org.freedesktop.Flatpak
   # Installing system packages with one password prompt and progress
   - --system-talk-name=org.freedesktop.PackageKit
+  # Skipping background updates over a metered connection or on battery
+  - --system-talk-name=org.freedesktop.NetworkManager
+  - --system-talk-name=org.freedesktop.UPower
   # "Updates available" from the background check
   - --talk-name=org.freedesktop.Notifications
   # WebKitGTK inside Flatpak, as BifroSSH runs it: its own sandbox cannot

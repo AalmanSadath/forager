@@ -217,6 +217,7 @@ Background checks run from a systemd user timer:
 ```sh
 forager timer enable                 # daily `check --notify`: a desktop notification lists updates
 forager timer enable --auto-update   # also installs updates that need no root (AppImage, tarball, Flatpak)
+forager timer enable --auto-update --skip-metered --skip-on-battery   # but not over a metered connection or on battery
 forager timer status
 forager timer disable
 ```
@@ -228,6 +229,11 @@ updates the timer found, from the CLI, the timer and the GUI alike
 The timer reads `GITHUB_TOKEN` and other variables from `~/.config/forager/env`.
 `update --unprivileged-only` skips anything that needs root, so the timer
 never asks for a password.
+`update --skip-metered` installs nothing while NetworkManager marks the
+connection as metered (a phone hotspot, say), and `--skip-on-battery`
+nothing while UPower reports battery power; the check still runs, and the
+next day's run tries again. Without NetworkManager or UPower nothing is
+skipped.
 
 `edit` changes an app's settings; a new format is installed (and the old
 install removed) on the next `update`.

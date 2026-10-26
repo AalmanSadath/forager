@@ -284,6 +284,8 @@ export interface HistoryEvent {
 export interface TimerState {
   enabled: boolean;
   auto_update: boolean;
+  skip_metered: boolean;
+  skip_on_battery: boolean;
   next_run: string | null;
   cli: string | null;
 }
