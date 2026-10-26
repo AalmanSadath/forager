@@ -182,6 +182,31 @@ pub struct Status {
     pub skipped: bool,
 }
 
+/// Releases of the GitHub apps among `apps`, by index into `apps`, fetched
+/// together through GraphQL when a token allows it: one request for up to
+/// 25 apps instead of one each. Apps missing from the result (no token,
+/// another source, a version limit that needs a longer list, or a failed
+/// request) are fetched one by one as before, with `status`.
+pub fn prefetch(apps: &[App]) -> std::collections::HashMap<usize, Vec<Release>> {
+    let repos: Vec<(usize, (String, String))> = apps
+        .iter()
+        .enumerate()
+        .filter_map(|(i, app)| match &app.source {
+            Source::GitHub { owner, repo } if app.versions.is_none() => Some((i, (owner.clone(), repo.clone()))),
+            _ => None,
+        })
+        .collect();
+    // One app costs one request either way.
+    if repos.len() < 2 {
+        return Default::default();
+    }
+    let found = Source::github_batch(&repos.iter().map(|(_, repo)| repo.clone()).collect::<Vec<_>>());
+    repos
+        .into_iter()
+        .filter_map(|(i, repo)| found.get(&repo).map(|releases| (i, releases.clone())))
+        .collect()
+}
+
 /// Fetches the latest release and compares it with the installs.
 pub fn status(app: &App) -> Result<Status> {
     status_in(app, app.releases()?)

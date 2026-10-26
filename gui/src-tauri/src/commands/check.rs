@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use forager_core::install;
 use forager_core::matcher::select_asset;
-use forager_core::model::{App, Format, Installed};
+use forager_core::model::{App, Format, Installed, Release};
 use forager_core::platform::Platform;
 use forager_core::update::{self, State};
 use serde::Serialize;
@@ -66,8 +66,14 @@ pub struct StatusEvent {
 
 pub const STATUS_EVENT: &str = "app-status";
 
-pub fn status_of(app: &App, platform: &Platform, cache: &ReleaseCache) -> StatusEvent {
-    let releases = app.releases();
+/// `app`'s status, from `prefetched` releases when there are some.
+pub fn status_of(
+    app: &App,
+    platform: &Platform,
+    cache: &ReleaseCache,
+    prefetched: Option<Vec<Release>>,
+) -> StatusEvent {
+    let releases = prefetched.map_or_else(|| app.releases(), Ok);
     if let Ok(releases) = &releases {
         cache.put(app, releases.clone());
     }
@@ -155,15 +161,20 @@ pub async fn check_apps(app: AppHandle, ids: Option<Vec<String>>) -> CmdResult<(
             .collect();
         let platform = Platform::detect();
         let cache = app.state::<ReleaseCache>();
+        // GitHub apps together through GraphQL when a token allows it.
+        let prefetched = update::prefetch(&apps);
+        let indexed: Vec<(usize, &App)> = apps.iter().enumerate().collect();
         let (tx, rx) = mpsc::channel();
         std::thread::scope(|scope| {
-            for chunk in apps.chunks(apps.len().div_ceil(PARALLEL).max(1)) {
+            for chunk in indexed.chunks(indexed.len().div_ceil(PARALLEL).max(1)) {
                 let tx = tx.clone();
                 let platform = &platform;
                 let cache = &cache;
+                let prefetched = &prefetched;
                 scope.spawn(move || {
-                    for app in chunk {
-                        tx.send(status_of(app, platform, cache)).ok();
+                    for (i, app) in chunk {
+                        tx.send(status_of(app, platform, cache, prefetched.get(i).cloned()))
+                            .ok();
                     }
                 });
             }

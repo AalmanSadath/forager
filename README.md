@@ -181,7 +181,7 @@ a redirect page:
 | Release cache | `~/.cache/forager`, fetched conditionally |
 | History | `~/.local/state/forager/history.jsonl` |
 | GPG keys | `~/.local/share/forager/keys` |
-| `GITHUB_TOKEN` | raises GitHub's limit from 60 to 5000 requests/hour; unchanged releases don't count |
+| `GITHUB_TOKEN` | raises GitHub's limit from 60 to 5000 requests/hour; unchanged releases don't count, and checks ask about 25 apps per request |
 | `GITLAB_TOKEN`, `CODEBERG_TOKEN` | for gitlab.com and codeberg.org |
 | `FORAGER_TOKEN_<HOST>` | any host, e.g. `FORAGER_TOKEN_GIT_EXAMPLE_ORG`; overrides the others |
 

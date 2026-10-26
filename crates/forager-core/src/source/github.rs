@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
 
 use crate::error::Result;
@@ -5,6 +7,10 @@ use crate::http;
 use crate::model::{Asset, Release};
 
 const API: &str = "https://api.github.com";
+const GRAPHQL: &str = "https://api.github.com/graphql";
+/// Repositories asked about in one GraphQL request: 25 × 20 releases × 100
+/// assets stays well under GitHub's limit of 500,000 nodes per query.
+const BATCH: usize = 25;
 
 /// Release as returned by GitHub, and by Forgejo and Gitea, which copy its
 /// API (without `digest`).
@@ -74,9 +80,147 @@ pub(super) fn parse_releases(body: &str) -> Result<Vec<Release>> {
         .collect())
 }
 
+/// Recent releases of many repositories, `BATCH` per GraphQL request, by
+/// `(owner, repo)`. GraphQL needs a token, so without one this is empty.
+/// A repository the answer leaves out (not found, or a request that
+/// failed) is missing from the result, for the caller to fetch alone; that
+/// request then reports the error. Asset digests are not asked for: this
+/// is for checking, and updates fetch the release again with them.
+pub fn releases_batch(repos: &[(String, String)]) -> HashMap<(String, String), Vec<Release>> {
+    let Some(token) = http::token_for("github.com", Some(("github.com", "GITHUB_TOKEN"))) else {
+        return HashMap::new();
+    };
+    let mut found = HashMap::new();
+    for chunk in repos.chunks(BATCH) {
+        let body = serde_json::json!({ "query": batch_query(chunk) });
+        if let Ok(text) = http::post_json(GRAPHQL, &body, &token) {
+            found.extend(parse_batch(chunk, &text));
+        }
+    }
+    found
+}
+
+fn batch_query(repos: &[(String, String)]) -> String {
+    let fields = "releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { \
+                  tagName name isPrerelease isDraft publishedAt description \
+                  releaseAssets(first: 100) { nodes { name downloadUrl size } } } }";
+    let repos: Vec<String> = repos
+        .iter()
+        .enumerate()
+        .map(|(i, (owner, repo))| {
+            // JSON string literals are valid GraphQL strings.
+            let (owner, repo) = (serde_json::json!(owner), serde_json::json!(repo));
+            format!("r{i}: repository(owner: {owner}, name: {repo}) {{ {fields} }}")
+        })
+        .collect();
+    format!("query {{ {} }}", repos.join(" "))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlRelease {
+    tag_name: String,
+    name: Option<String>,
+    #[serde(default)]
+    is_prerelease: bool,
+    #[serde(default)]
+    is_draft: bool,
+    published_at: Option<String>,
+    description: Option<String>,
+    release_assets: GqlNodes<GqlAsset>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlAsset {
+    name: String,
+    download_url: String,
+    #[serde(default)]
+    size: u64,
+}
+
+#[derive(Deserialize)]
+struct GqlNodes<T> {
+    nodes: Vec<T>,
+}
+
+/// The releases in a GraphQL answer to `batch_query(repos)`, by repository.
+fn parse_batch(repos: &[(String, String)], body: &str) -> HashMap<(String, String), Vec<Release>> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return HashMap::new();
+    };
+    repos
+        .iter()
+        .enumerate()
+        .filter_map(|(i, repo)| {
+            let nodes = value["data"][format!("r{i}")]["releases"].get("nodes")?.clone();
+            let releases: Vec<GqlRelease> = serde_json::from_value(nodes).ok()?;
+            let releases = releases
+                .into_iter()
+                .filter(|r| !r.is_draft)
+                .map(|r| Release {
+                    tag: r.tag_name,
+                    name: r.name,
+                    prerelease: r.is_prerelease,
+                    published_at: r.published_at,
+                    notes: r.description.filter(|d| !d.trim().is_empty()),
+                    assets: r
+                        .release_assets
+                        .nodes
+                        .into_iter()
+                        .map(|a| Asset {
+                            name: a.name,
+                            url: a.download_url,
+                            size: a.size,
+                            digest: None,
+                        })
+                        .collect(),
+                })
+                .collect();
+            Some((repo.clone(), releases))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asks_for_each_repository_under_an_alias() {
+        let query = batch_query(&[("o".into(), "tool".into()), ("x\"y".into(), "z".into())]);
+        assert!(query.starts_with("query { r0: repository(owner: \"o\", name: \"tool\") {"));
+        assert!(query.contains("r1: repository(owner: \"x\\\"y\", name: \"z\")"));
+        assert!(query.contains("releaseAssets(first: 100)"));
+    }
+
+    #[test]
+    fn reads_a_batch_answer() {
+        let repos = [
+            ("o".to_string(), "tool".to_string()),
+            ("o".to_string(), "gone".to_string()),
+        ];
+        let body = r###"{"data": {
+            "r0": {"releases": {"nodes": [
+                {"tagName": "v2", "name": null, "isPrerelease": false, "isDraft": true, "publishedAt": null,
+                 "description": "", "releaseAssets": {"nodes": []}},
+                {"tagName": "v1", "name": "One", "isPrerelease": true, "isDraft": false,
+                 "publishedAt": "2026-10-25T08:50:19Z", "description": "## Fixed",
+                 "releaseAssets": {"nodes": [{"name": "tool.rpm", "downloadUrl": "https://x/tool.rpm", "size": 3}]}}
+            ]}},
+            "r1": null},
+            "errors": [{"type": "NOT_FOUND", "path": ["r1"]}]}"###;
+        let found = parse_batch(&repos, body);
+        assert_eq!(found.len(), 1);
+        let releases = &found[&repos[0]];
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].tag, "v1");
+        assert!(releases[0].prerelease);
+        assert_eq!(releases[0].notes.as_deref(), Some("## Fixed"));
+        assert_eq!(releases[0].assets[0].url, "https://x/tool.rpm");
+        assert_eq!(releases[0].assets[0].size, 3);
+        assert!(parse_batch(&repos, "not json").is_empty());
+    }
 
     #[test]
     fn parses_releases_and_skips_drafts() {

@@ -980,8 +980,13 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
     let mut pending = Vec::new();
     let mut found = false;
     let mut entries = Vec::new();
+    let mut prefetched = update::prefetch(&store.apps);
     for index in 0..store.apps.len() {
-        let status = match update::status(&store.apps[index]) {
+        let status = match prefetched.remove(&index) {
+            Some(releases) => update::status_in(&store.apps[index], releases),
+            None => update::status(&store.apps[index]),
+        };
+        let status = match status {
             Ok(status) => status,
             Err(e) if json => {
                 entries.push(CheckEntry::failed(&store.apps[index], e.to_string()));

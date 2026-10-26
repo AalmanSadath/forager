@@ -279,6 +279,12 @@ impl Source {
         }
     }
 
+    /// Recent releases of many GitHub repositories at once, by `(owner,
+    /// repo)`; empty without a GitHub token. See `github::releases_batch`.
+    pub fn github_batch(repos: &[(String, String)]) -> std::collections::HashMap<(String, String), Vec<Release>> {
+        github::releases_batch(repos)
+    }
+
     /// Recent releases, newest first: the latest 20 from a forge.
     pub fn releases(&self) -> Result<Vec<Release>> {
         self.releases_deep(false)

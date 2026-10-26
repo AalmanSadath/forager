@@ -34,6 +34,19 @@ pub fn head(url: &str) -> RequestBuilder<WithoutBody> {
     AGENT.head(url)
 }
 
+/// POSTs `body` as JSON with a bearer `token`, returning the answer's text.
+pub fn post_json(url: &str, body: &serde_json::Value, token: &str) -> Result<String> {
+    let response = AGENT
+        .post(url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send_json(body)?;
+    Ok(check(response)?
+        .body_mut()
+        .with_config()
+        .limit(BODY_LIMIT)
+        .read_to_string()?)
+}
+
 /// Turns error statuses into errors. 304 passes through for conditional
 /// requests; a GitHub rate-limit response becomes `Error::RateLimited`.
 pub fn check(response: Response<Body>) -> Result<Response<Body>> {
