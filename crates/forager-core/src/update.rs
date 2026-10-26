@@ -16,6 +16,7 @@ use crate::platform::Platform;
 use crate::signature::{self, Signed};
 use crate::source::Source;
 use crate::store::{self, Store};
+use crate::verify::{Algorithm, Checksum};
 use crate::{install, verify, version, zsync};
 
 /// What `apply` would install for an app.
@@ -24,8 +25,8 @@ pub struct Plan {
     pub release: Release,
     pub asset: Asset,
     pub format: Format,
-    /// SHA-256 the download must match, if the release publishes one.
-    pub expected_sha256: Option<String>,
+    /// Checksum the download must match, if the release publishes one.
+    pub checksum: Option<Checksum>,
     /// Tag currently installed.
     pub from: Option<String>,
     /// The recorded install was removed outside Forager.
@@ -62,7 +63,7 @@ pub struct Delta {
 impl Plan {
     /// Neither a checksum nor a signature can vouch for the download.
     pub fn unverified(&self) -> bool {
-        self.expected_sha256.is_none() && self.signature.is_none()
+        self.checksum.is_none() && self.signature.is_none()
     }
 }
 
@@ -100,11 +101,18 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
         ),
         line("source", app.source.to_string(), Tone::Normal),
     ];
-    lines.push(match (&plan.expected_sha256, &plan.signature) {
-        (Some(_), _) => line("sha256", "published, will verify".into(), Tone::Normal),
-        (None, Some(_)) => line("sha256", "not published".into(), Tone::Normal),
+    lines.push(match (&plan.checksum, &plan.signature) {
+        (Some(checksum), _) => {
+            let from = checksum.from.as_deref().unwrap_or("the forge");
+            line(
+                "hash",
+                format!("{} from {from}, will verify", checksum.algorithm),
+                Tone::Normal,
+            )
+        }
+        (None, Some(_)) => line("hash", "no checksum published".into(), Tone::Normal),
         (None, None) => line(
-            "sha256",
+            "hash",
             "NOT PUBLISHED, download cannot be verified".into(),
             Tone::Danger,
         ),
@@ -562,7 +570,7 @@ fn plan_one(
     }
     let (asset, format) = select_asset(&target, release, platform)?;
     let asset = asset.clone();
-    let expected_sha256 = verify::expected_sha256(&asset, release)?;
+    let checksum = verify::expected(&asset, release)?;
     let signature = match &app.signature {
         Some(signature) => Some(SignatureCheck {
             signed: signature::find(signature, &asset, release)?,
@@ -585,7 +593,7 @@ fn plan_one(
         release: release.clone(),
         asset,
         format,
-        expected_sha256,
+        checksum,
         missing: current.is_some_and(|i| i.state == State::Missing),
         signature,
         downgrade: current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag)),
@@ -769,7 +777,7 @@ impl Drop for Download {
     }
 }
 
-/// Downloads the plan's asset and checks it against the expected SHA-256.
+/// Downloads the plan's asset and checks it against the expected checksum.
 /// `progress` may return `Break` to cancel (`Error::Cancelled`).
 pub fn download(
     plan: &Plan,
@@ -803,7 +811,7 @@ pub fn download(
         repo_version: None,
         delta,
     };
-    check_sha256(plan, &actual)?;
+    check_checksum(plan, &download.path, &actual)?;
     if let Some(check) = &plan.signature {
         signature::check(&check.signature, &check.signed, &check.source, &download.path, &actual)?;
     }
@@ -815,14 +823,23 @@ pub fn download(
     Ok(download)
 }
 
-fn check_sha256(plan: &Plan, actual: &str) -> Result<()> {
-    match &plan.expected_sha256 {
-        Some(expected) if expected != actual => Err(Error::ChecksumMismatch {
+/// Checks the download at `path`, whose SHA-256 is `sha256`, against the
+/// plan's checksum. A SHA-512 means reading the file once more.
+fn check_checksum(plan: &Plan, path: &Path, sha256: &str) -> Result<()> {
+    let Some(expected) = &plan.checksum else {
+        return Ok(());
+    };
+    let actual = match expected.algorithm {
+        Algorithm::Sha256 => sha256.to_string(),
+        algorithm => verify::hash_file(path, algorithm)?,
+    };
+    match expected.hex == actual {
+        true => Ok(()),
+        false => Err(Error::ChecksumMismatch {
             asset: plan.asset.name.clone(),
-            expected: expected.clone(),
-            actual: actual.to_string(),
+            expected: expected.hex.clone(),
+            actual,
         }),
-        _ => Ok(()),
     }
 }
 
@@ -992,7 +1009,7 @@ pub fn create_menu_entries(store: &mut Store, ids: &[String]) -> Result<Vec<(Str
 mod tests {
     use super::*;
 
-    fn plan(format: Format, expected_sha256: Option<String>) -> Plan {
+    fn plan(format: Format, sha256: Option<String>) -> Plan {
         Plan {
             release: Release {
                 tag: "v1".into(),
@@ -1009,7 +1026,11 @@ mod tests {
                 digest: None,
             },
             format,
-            expected_sha256,
+            checksum: sha256.map(|hex| Checksum {
+                algorithm: Algorithm::Sha256,
+                hex,
+                from: Some("SHA256SUMS".into()),
+            }),
             from: None,
             missing: false,
             signature: None,
@@ -1447,17 +1468,33 @@ mod tests {
 
     #[test]
     fn checksum_mismatch_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("tool.tar.gz");
+        fs::write(&file, "test").unwrap();
         let plan = plan(Format::Tarball, Some("a".repeat(64)));
         assert!(matches!(
-            check_sha256(&plan, &"b".repeat(64)),
+            check_checksum(&plan, &file, &"b".repeat(64)),
             Err(Error::ChecksumMismatch { .. })
         ));
-        assert!(check_sha256(&plan, &"a".repeat(64)).is_ok());
-        let unverified = Plan {
-            expected_sha256: None,
-            ..plan
-        };
-        assert!(check_sha256(&unverified, &"b".repeat(64)).is_ok());
+        assert!(check_checksum(&plan, &file, &"a".repeat(64)).is_ok());
+
+        // A SHA-512 is computed from the file itself.
+        let sha512 = verify::hash_file(&file, Algorithm::Sha512).unwrap();
+        let mut plan512 = plan.clone();
+        plan512.checksum = Some(Checksum {
+            algorithm: Algorithm::Sha512,
+            hex: sha512,
+            from: Some("latest-linux.yml".into()),
+        });
+        assert!(check_checksum(&plan512, &file, "unused").is_ok());
+        plan512.checksum.as_mut().unwrap().hex = "0".repeat(128);
+        assert!(matches!(
+            check_checksum(&plan512, &file, "unused"),
+            Err(Error::ChecksumMismatch { .. })
+        ));
+
+        let unverified = Plan { checksum: None, ..plan };
+        assert!(check_checksum(&unverified, &file, &"b".repeat(64)).is_ok());
     }
 
     #[test]
@@ -1487,7 +1524,14 @@ mod tests {
                 .find(|l| l.label == label && l.value.contains(needle))
                 .map(|l| l.tone)
         };
-        assert_eq!(tone("sha256", "NOT PUBLISHED"), Some(Tone::Danger));
+        assert_eq!(tone("hash", "NOT PUBLISHED"), Some(Tone::Danger));
+        let verified = self::plan(Format::Tarball, Some("a".repeat(64)));
+        let lines = summary(&app, &verified);
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.label == "hash" && l.value == "sha256 from SHA256SUMS, will verify")
+        );
         assert_eq!(tone("note", "as root"), Some(Tone::Warn));
         assert_eq!(tone("note", "replaces the appimage"), Some(Tone::Warn));
         assert_eq!(tone("source", "github.com/o/tool"), Some(Tone::Normal));

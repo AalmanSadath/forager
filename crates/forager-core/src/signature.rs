@@ -84,14 +84,21 @@ pub fn check(signature: &Signature, signed: &Signed, source: &Source, file: &Pat
             fs::write(tmp.path(), &list_bytes)?;
             check_file(signature, &sig, tmp.path())?;
             let name = file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
-            match verify::find_in_checksums(&String::from_utf8_lossy(&list_bytes), &name, false) {
-                Some(hex) if hex == sha256 => Ok(()),
-                Some(hex) => Err(Error::ChecksumMismatch {
+            let Some((algorithm, hex)) = verify::find_in_checksums(&String::from_utf8_lossy(&list_bytes), &name, false)
+            else {
+                return Err(Error::SignatureInvalid(format!("{} does not list {name}", list.name)));
+            };
+            let actual = match algorithm {
+                verify::Algorithm::Sha256 => sha256.to_string(),
+                algorithm => verify::hash_file(file, algorithm)?,
+            };
+            match hex == actual {
+                true => Ok(()),
+                false => Err(Error::ChecksumMismatch {
                     asset: name.into_owned(),
                     expected: hex,
-                    actual: sha256.to_string(),
+                    actual,
                 }),
-                None => Err(Error::SignatureInvalid(format!("{} does not list {name}", list.name))),
             }
         }
     }

@@ -242,8 +242,12 @@ graphical polkit agent is missing.
 ## Security
 
 System packages run scripts as root: installing one means trusting the
-project. A checksum only catches corrupted downloads, so with `--yes`
-unverified assets are refused unless `--allow-unverified` is given.
+project. Downloads are checked against the forge's digest or a checksum the
+release publishes: `<asset>.sha256` or `.sha512`, a list such as
+`SHA256SUMS`, `SHA512SUMS` or `checksums.txt` (BSD-style lines too), or
+electron-builder's `latest-linux.yml`. A checksum only catches corrupted
+downloads, so with `--yes` unverified assets are refused unless
+`--allow-unverified` is given.
 
 Against a compromised release, give Forager the signing key; unsigned
 assets are then refused, with no override:
