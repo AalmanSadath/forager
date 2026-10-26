@@ -158,13 +158,8 @@ fn parse_batch(repos: &[(String, String)], body: &str) -> HashMap<(String, Strin
             let releases = releases
                 .into_iter()
                 .filter(|r| !r.is_draft)
-                .map(|r| Release {
-                    tag: r.tag_name,
-                    name: r.name,
-                    prerelease: r.is_prerelease,
-                    published_at: r.published_at,
-                    notes: r.description.filter(|d| !d.trim().is_empty()),
-                    assets: r
+                .map(|r| {
+                    let mut assets: Vec<Asset> = r
                         .release_assets
                         .nodes
                         .into_iter()
@@ -174,7 +169,18 @@ fn parse_batch(repos: &[(String, String)], body: &str) -> HashMap<(String, Strin
                             size: a.size,
                             digest: None,
                         })
-                        .collect(),
+                        .collect();
+                    // In REST's order, by name, so ties between equally good
+                    // assets go the same way as when updating.
+                    assets.sort_by(|a, b| a.name.cmp(&b.name));
+                    Release {
+                        tag: r.tag_name,
+                        name: r.name,
+                        prerelease: r.is_prerelease,
+                        published_at: r.published_at,
+                        notes: r.description.filter(|d| !d.trim().is_empty()),
+                        assets,
+                    }
                 })
                 .collect();
             Some((repo.clone(), releases))
@@ -206,7 +212,8 @@ mod tests {
                  "description": "", "releaseAssets": {"nodes": []}},
                 {"tagName": "v1", "name": "One", "isPrerelease": true, "isDraft": false,
                  "publishedAt": "2026-10-25T08:50:19Z", "description": "## Fixed",
-                 "releaseAssets": {"nodes": [{"name": "tool.rpm", "downloadUrl": "https://x/tool.rpm", "size": 3}]}}
+                 "releaseAssets": {"nodes": [{"name": "tool.rpm", "downloadUrl": "https://x/tool.rpm", "size": 3},
+                                             {"name": "tool.deb", "downloadUrl": "https://x/tool.deb", "size": 4}]}}
             ]}},
             "r1": null},
             "errors": [{"type": "NOT_FOUND", "path": ["r1"]}]}"###;
@@ -217,8 +224,9 @@ mod tests {
         assert_eq!(releases[0].tag, "v1");
         assert!(releases[0].prerelease);
         assert_eq!(releases[0].notes.as_deref(), Some("## Fixed"));
-        assert_eq!(releases[0].assets[0].url, "https://x/tool.rpm");
-        assert_eq!(releases[0].assets[0].size, 3);
+        // Sorted by name, as REST lists them.
+        assert_eq!(releases[0].assets[0].url, "https://x/tool.deb");
+        assert_eq!(releases[0].assets[1].size, 3);
         assert!(parse_batch(&repos, "not json").is_empty());
     }
 
