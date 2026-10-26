@@ -109,6 +109,15 @@ function AppPageBody({ app }: { app: AppView }) {
     }
   };
 
+  const copyBadge = async () => {
+    try {
+      await writeText(await ipc.appBadge(app.id));
+      toast('success', 'Badge Markdown copied.');
+    } catch (e) {
+      toast('error', String(e));
+    }
+  };
+
   const markSeen = async () => {
     try {
       await ipc.markSeen(app.id, status?.latest_tag ?? null);
@@ -248,6 +257,14 @@ function AppPageBody({ app }: { app: AppView }) {
                 {FORGE_NAMES[app.forge]} ·{' '}
                 <button className="link-btn" onClick={copyLink} title="A forager:// link that opens these settings on the Add page">
                   Copy link
+                </button>{' '}
+                ·{' '}
+                <button
+                  className="link-btn"
+                  onClick={copyBadge}
+                  title="Markdown for an “Add to Forager” badge, for the project's README"
+                >
+                  Copy badge
                 </button>
               </dd>
               {status && (

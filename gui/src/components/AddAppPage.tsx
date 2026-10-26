@@ -44,6 +44,21 @@ export default function AddAppPage({
   // Move the AppImage into ~/Applications, or leave the original where it is.
   const [keep, setKeep] = useState(false);
 
+  // A forager:// link, or the page a badge leads to, pasted here fills in
+  // the whole form, as opening the link would.
+  const takeAddress = async (text: string) => {
+    setUrl(text);
+    setUnknownHost(null);
+    const trimmed = text.trim();
+    if (!/^forager:/i.test(trimmed) && !trimmed.startsWith(WEB_ADD)) return;
+    try {
+      const request = await ipc.parseLink(trimmed);
+      setPage({ kind: 'add', url: request.url, link: request });
+    } catch {
+      // Not a complete link yet; leave it as typed.
+    }
+  };
+
   const input = useMemo(() => toInput(draft), [draft]);
   // The store refuses a second app for the same project, so say so up front.
   const existing = info ? apps.find((a) => a.source === info.display) : undefined;
@@ -119,18 +134,12 @@ export default function AddAppPage({
           autoFocus
           placeholder="A GitHub, GitLab, Codeberg, SourceForge or SourceHut project, or a link to the file"
           value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            setUnknownHost(null);
-          }}
+          onChange={(e) => takeAddress(e.target.value)}
           // Right-click pastes the address copied from the browser.
           onContextMenu={async (e) => {
             e.preventDefault();
             const text = (await readText().catch(() => null))?.trim();
-            if (text) {
-              setUrl(text);
-              setUnknownHost(null);
-            }
+            if (text) takeAddress(text);
           }}
           title="Right-click to paste"
           spellCheck={false}
@@ -242,6 +251,9 @@ export default function AddAppPage({
 }
 
 type Kind = 'auto' | 'gitlab' | 'forgejo' | 'html' | 'jenkins' | 'direct';
+
+/** The page "Add to Forager" badges link to; see `share::WEB_ADD`. */
+const WEB_ADD = 'https://aalmansadath.github.io/forager/add/';
 
 /** The source menu's choice for a link's `forge`; others are found from the address. */
 function kindOf(forge: string | null | undefined): Kind {

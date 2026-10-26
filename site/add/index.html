@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  "Add to Forager" badges link here, since GitHub and most sites drop
+  forager:// links. The query is passed on unchanged to forager://add,
+  which opens Forager's Add page filled in; nothing is installed until the
+  user clicks Add there.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add to Forager</title>
+  <link rel="icon" href="../icon.svg">
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #1A1B2E; color: #e6e6f0;
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 34rem; padding: 2rem; text-align: center; }
+    img { width: 72px; height: 72px; }
+    h1 { font-size: 1.4rem; margin: 0.8rem 0 0.4rem; }
+    .app { font-family: ui-monospace, monospace; word-break: break-all; color: #7BC86C; }
+    .open {
+      display: inline-block; margin: 1.2rem 0; padding: 0.6rem 1.4rem; border-radius: 8px;
+      background: #7BC86C; color: #1A1B2E; font-weight: 600; text-decoration: none;
+    }
+    .open:hover { background: #8fd681; }
+    p.hint { color: #a0a0b8; font-size: 0.9rem; }
+    a { color: #7BC86C; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="../icon.svg" alt="">
+    <h1>Add to Forager</h1>
+    <p id="what">This link adds an app to Forager.</p>
+    <a class="open" id="open" href="forager://add">Open in Forager</a>
+    <p class="hint">
+      Forager opens its Add page with the settings filled in, for you to check before adding.
+      Nothing happened? Forager may not be installed: get it from
+      <a href="https://github.com/AalmanSadath/forager/releases/latest">its releases</a>,
+      then come back to this page.
+    </p>
+  </main>
+  <script>
+    const query = location.search;
+    const params = new URLSearchParams(query);
+    const app = params.get('url');
+    if (app) {
+      const what = document.getElementById('what');
+      what.textContent = 'This link adds ';
+      const name = document.createElement('span');
+      name.className = 'app';
+      name.textContent = app;
+      what.append(name, ' to Forager.');
+      const link = 'forager://add' + query;
+      document.getElementById('open').href = link;
+      location.href = link;
+    }
+  </script>
+</body>
+</html>

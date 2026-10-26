@@ -88,6 +88,8 @@ pub fn run() {
             commands::edit::inspect_appimage,
             commands::edit::import_apps,
             commands::edit::app_link,
+            commands::edit::app_badge,
+            commands::edit::parse_link,
             commands::edit::create_menu_entries,
             commands::edit::skip_release,
             commands::edit::unskip_release,

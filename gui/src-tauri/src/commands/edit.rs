@@ -500,6 +500,19 @@ pub async fn app_link(id: String) -> CmdResult<String> {
     blocking(move || Ok(share::link(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
 }
 
+/// Markdown for an "Add to Forager" badge for `id`, for its project's README.
+#[tauri::command]
+pub async fn app_badge(id: String) -> CmdResult<String> {
+    blocking(move || Ok(share::badge(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
+}
+
+/// Reads a `forager://add?…` link, or the badge page's address, pasted
+/// into the Add page.
+#[tauri::command]
+pub fn parse_link(text: String) -> CmdResult<share::AddRequest> {
+    share::parse_link(&text).map_err(|e| e.to_string())
+}
+
 /// Stops tracking `id`, first uninstalling its installs in the `uninstall` formats.
 #[tauri::command]
 pub async fn remove_app(id: String, uninstall: Vec<Format>) -> CmdResult<()> {

@@ -1,0 +1,35 @@
+name: Pages
+
+# Publishes site/: the page "Add to Forager" badges link to, which hands
+# its query on to forager://add, and the badge itself. Needs Pages enabled
+# with "GitHub Actions" as the source in the repository settings.
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp gui/src-tauri/icons/icon.svg site/icon.svg
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -194,6 +194,7 @@ To move apps to another machine, or share one:
 forager export apps.toml          # every app's source, settings and signing keys
 forager import apps.toml          # on another machine; --install installs them too
 forager link node                 # forager://add?url=…&forge=html&pattern=…&bin=bin%2Fnode
+forager link node --badge         # Markdown for an "Add to Forager" badge
 forager add 'forager://add?url=https://github.com/o/tool&filter=musl'
 ```
 
@@ -201,11 +202,17 @@ An export holds no installs; apps already on the other machine are found on
 its next check. Settings → Apps in the app does the same. A `forager://add`
 link opens the Add page with the app's settings filled in (the app page's
 "Copy link" makes one), for the user to check and confirm; nothing is
-installed from a link, and links never carry signing keys. To offer one
-from a project's README:
+installed from a link, and links never carry signing keys.
+
+A project can offer itself from its README with a badge. GitHub and most
+sites drop `forager://` links, so the badge leads to a page that hands the
+same settings on to Forager
+(`https://aalmansadath.github.io/forager/add/?url=…`, which the Add page and
+`forager add` also accept). `forager link <id> --badge`, or "Copy badge" on
+the app page, gives the Markdown:
 
 ```markdown
-[Track with Forager](forager://add?url=https%3A%2F%2Fgithub.com%2Fowner%2Frepo)
+[![Add to Forager](https://aalmansadath.github.io/forager/badge.svg)](https://aalmansadath.github.io/forager/add/?url=https%3A%2F%2Fgithub.com%2Fowner%2Frepo)
 ```
 
 The link parameters are `url`, and optionally `forge`, `pattern`, `id`,

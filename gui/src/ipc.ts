@@ -23,6 +23,7 @@ import type {
   StartRequest,
   AdoptInput,
   AppImageInfo,
+  AddRequest,
   ImportResult,
   SystemAppearance,
 } from './types';
@@ -99,3 +100,7 @@ export const exportApps = (path: string) => invoke<number>('export_apps', { path
 export const importApps = (path: string) => invoke<ImportResult[]>('import_apps', { path });
 /** A forager://add?… link with the app's settings. */
 export const appLink = (id: string) => invoke<string>('app_link', { id });
+/** Markdown for an "Add to Forager" badge for the app. */
+export const appBadge = (id: string) => invoke<string>('app_badge', { id });
+/** The request in a forager://add?… link or the badge page's address. */
+export const parseLink = (text: string) => invoke<AddRequest>('parse_link', { text });

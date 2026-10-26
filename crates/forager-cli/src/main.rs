@@ -238,7 +238,15 @@ enum Command {
         yes: bool,
     },
     /// Print a link that opens Forager's Add page with an app's settings.
-    Link { id: String },
+    Link {
+        id: String,
+        /// The same through a web page, for sites that drop forager:// links.
+        #[arg(long, conflicts_with = "badge")]
+        web: bool,
+        /// Markdown for an "Add to Forager" badge, for the project's README.
+        #[arg(long)]
+        badge: bool,
+    },
     /// Print a shell completion script, e.g.
     /// `forager completions bash > ~/.local/share/bash-completion/completions/forager`.
     Completions { shell: clap_complete::Shell },
@@ -365,10 +373,9 @@ fn main() -> Result<()> {
             track_only,
             signature,
         } => {
-            // A `forager://add?…` link brings its own settings; options given
-            // here win.
-            let link = url
-                .starts_with("forager:")
+            // A `forager://add?…` link, or the badge page's address, brings
+            // its own settings; options given here win.
+            let link = (url.starts_with("forager:") || url.starts_with(share::WEB_ADD))
                 .then(|| share::parse_link(&url))
                 .transpose()?;
             let source = match (&link, forge, pattern) {
@@ -710,7 +717,15 @@ fn main() -> Result<()> {
                 println!("Run `forager update` to install them.");
             }
         }
-        Command::Link { id } => println!("{}", share::link(store.get(&id)?)),
+        Command::Link { id, web, badge } => {
+            let app = store.get(&id)?;
+            let text = match (web, badge) {
+                (true, _) => share::web_link(app),
+                (_, true) => share::badge(app),
+                _ => share::link(app),
+            };
+            println!("{text}");
+        }
         Command::Remove { id, keep_installed } => {
             let app = store.get(&id)?;
             let present: Vec<Installed> = app.installs().filter(|i| install::is_present(i)).cloned().collect();

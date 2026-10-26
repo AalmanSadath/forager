@@ -224,14 +224,36 @@ pub fn link(app: &App) -> String {
     url.to_string()
 }
 
-/// Reads a `forager://add?…` link. Settings it does not know are ignored,
-/// so links from newer versions still open.
+/// The web page "Add to Forager" badges link to. Sites like GitHub drop
+/// `forager://` links, so it takes the same query and hands it on.
+pub const WEB_ADD: &str = "https://aalmansadath.github.io/forager/add/";
+
+/// The badge image, served next to that page.
+pub const BADGE_IMAGE: &str = "https://aalmansadath.github.io/forager/badge.svg";
+
+/// `link(app)` through the web page, for places that only allow https.
+pub fn web_link(app: &App) -> String {
+    let link = link(app);
+    let query = link.split_once('?').map_or("", |(_, query)| query);
+    format!("{WEB_ADD}?{query}")
+}
+
+/// Markdown for an "Add to Forager" badge, for a project's README.
+pub fn badge(app: &App) -> String {
+    format!("[![Add to Forager]({BADGE_IMAGE})]({})", web_link(app))
+}
+
+/// Reads a `forager://add?…` link, or the same through the web page.
+/// Settings it does not know are ignored, so links from newer versions
+/// still open.
 pub fn parse_link(link: &str) -> Result<AddRequest> {
     let invalid = || Error::UnsupportedSource(link.to_string());
     let url = Url::parse(link.trim()).map_err(|_| invalid())?;
     // `forager://add?…` has `add` as its host; `forager:add?…` as its path.
     let action = url.host_str().unwrap_or_else(|| url.path().trim_matches('/'));
-    if url.scheme() != "forager" || action != "add" {
+    let web = Url::parse(WEB_ADD).expect("a valid address");
+    let is_web = url.origin() == web.origin() && url.path().trim_end_matches('/') == web.path().trim_end_matches('/');
+    if !is_web && (url.scheme() != "forager" || action != "add") {
         return Err(invalid());
     }
     let mut request = AddRequest::default();
@@ -340,6 +362,16 @@ mod tests {
             link(&github("tool")),
             "forager://add?url=https%3A%2F%2Fgithub.com%2Fo%2Ftool"
         );
+        let web = web_link(&github("tool"));
+        assert_eq!(
+            web,
+            "https://aalmansadath.github.io/forager/add/?url=https%3A%2F%2Fgithub.com%2Fo%2Ftool"
+        );
+        assert_eq!(parse_link(&web).unwrap().url, "https://github.com/o/tool");
+        let request = parse_link(&web_link(&app)).unwrap();
+        assert_eq!(request.source().unwrap(), app.source);
+        assert!(badge(&github("tool")).starts_with("[![Add to Forager](https://aalmansadath.github.io/forager/badge.svg)](https://aalmansadath.github.io/forager/add/?url="));
+        assert!(parse_link("https://aalmansadath.github.io/forager/other/?url=x").is_err());
         assert!(parse_link("forager://remove?url=x").is_err());
         assert!(parse_link("https://example.org/?url=x").is_err());
         assert!(parse_link("forager://add?id=x").is_err());
