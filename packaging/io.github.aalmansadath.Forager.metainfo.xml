@@ -58,6 +58,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.8" date="2026-10-26">
+      <description>
+        <ul>
+          <li>Keep an app to a range of versions, such as below 25 or 1.x.</li>
+          <li>A per-app cooldown makes background updates wait until a release is a few days old.</li>
+          <li>Updates show the release notes of every release since the installed one.</li>
+          <li>A system check (forager doctor, or Settings → System check) finds what is missing and says how to fix it.</li>
+          <li>With a GitHub token, checks ask about 25 GitHub apps per request.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.7" date="2026-10-26">
       <description>
         <ul>
