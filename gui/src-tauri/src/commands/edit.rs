@@ -359,6 +359,29 @@ pub async fn mark_seen(cache: State<'_, ReleaseCache>, id: String, tag: Option<S
     .await
 }
 
+/// Points the app at the address its repository moved to, as the forge
+/// reports it. Installs and settings stay.
+#[tauri::command]
+pub async fn follow_move(id: String) -> CmdResult<AppView> {
+    blocking(move || {
+        let mut store = load_store()?;
+        let source = store.get(&id).map_err(|e| e.to_string())?.source.clone();
+        let moved = source
+            .repo_info()
+            .and_then(|info| source.moved_to(&info))
+            .ok_or_else(|| format!("{source} has not moved"))?;
+        if let Some(other) = store.apps.iter().find(|a| a.id != id && a.source == moved) {
+            return Err(format!("{} already tracks {moved}", other.id));
+        }
+        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
+        app.source = moved;
+        let view = AppView::from(&*app);
+        store.save().map_err(|e| e.to_string())?;
+        Ok(view)
+    })
+    .await
+}
+
 /// Releases of `app`'s source, from the cache unless `refresh` is set.
 async fn releases_of(cache: &ReleaseCache, app: &App, refresh: bool) -> CmdResult<Vec<Release>> {
     if let Some(releases) = (!refresh).then(|| cache.get(app)).flatten() {

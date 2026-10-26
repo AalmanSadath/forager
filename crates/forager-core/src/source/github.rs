@@ -95,13 +95,17 @@ pub fn releases_batch(repos: &[(String, String)]) -> HashMap<(String, String), V
         let body = serde_json::json!({ "query": batch_query(chunk) });
         if let Ok(text) = http::post_json(GRAPHQL, &body, &token) {
             found.extend(parse_batch(chunk, &text));
+            // Saves asking about each repository's state on its own.
+            for ((owner, repo), info) in parse_repo_infos(chunk, &text) {
+                super::repo::save(&super::Source::GitHub { owner, repo }, &info);
+            }
         }
     }
     found
 }
 
 fn batch_query(repos: &[(String, String)]) -> String {
-    let fields = "releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { \
+    let fields = "isArchived nameWithOwner releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { \
                   tagName name isPrerelease isDraft publishedAt description \
                   releaseAssets(first: 100) { nodes { name downloadUrl size } } } }";
     let repos: Vec<String> = repos
@@ -188,6 +192,25 @@ fn parse_batch(repos: &[(String, String)], body: &str) -> HashMap<(String, Strin
         .collect()
 }
 
+/// Whether each repository in a GraphQL answer is archived, and its name.
+fn parse_repo_infos(repos: &[(String, String)], body: &str) -> Vec<((String, String), super::RepoInfo)> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Vec::new();
+    };
+    repos
+        .iter()
+        .enumerate()
+        .filter_map(|(i, repo)| {
+            let node = &value["data"][format!("r{i}")];
+            let info = super::RepoInfo {
+                archived: node["isArchived"].as_bool()?,
+                name: node["nameWithOwner"].as_str()?.to_string(),
+            };
+            Some((repo.clone(), info))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +221,7 @@ mod tests {
         assert!(query.starts_with("query { r0: repository(owner: \"o\", name: \"tool\") {"));
         assert!(query.contains("r1: repository(owner: \"x\\\"y\", name: \"z\")"));
         assert!(query.contains("releaseAssets(first: 100)"));
+        assert!(query.contains("isArchived nameWithOwner"));
     }
 
     #[test]
@@ -207,7 +231,7 @@ mod tests {
             ("o".to_string(), "gone".to_string()),
         ];
         let body = r###"{"data": {
-            "r0": {"releases": {"nodes": [
+            "r0": {"isArchived": true, "nameWithOwner": "new/tool", "releases": {"nodes": [
                 {"tagName": "v2", "name": null, "isPrerelease": false, "isDraft": true, "publishedAt": null,
                  "description": "", "releaseAssets": {"nodes": []}},
                 {"tagName": "v1", "name": "One", "isPrerelease": true, "isDraft": false,
@@ -228,6 +252,15 @@ mod tests {
         assert_eq!(releases[0].assets[0].url, "https://x/tool.deb");
         assert_eq!(releases[0].assets[1].size, 3);
         assert!(parse_batch(&repos, "not json").is_empty());
+        let infos = parse_repo_infos(&repos, body);
+        assert_eq!(infos.len(), 1);
+        assert_eq!(
+            infos[0].1,
+            super::super::RepoInfo {
+                archived: true,
+                name: "new/tool".into()
+            }
+        );
     }
 
     #[test]

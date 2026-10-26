@@ -2,7 +2,7 @@
  * How the apps grid sorts, labels and filters apps. Pure, so it is tested
  * without a window.
  */
-import type { AppView, Format, StatusView } from './types';
+import type { AppView, Format, Notice, StatusView } from './types';
 
 /** What the frontend knows about one app's latest check. */
 export interface CheckEntry {
@@ -36,10 +36,16 @@ export interface CardModel {
   formats: Format[];
   /** The primary action, if one makes sense from the card; `view` opens the release page. */
   action: 'update' | 'install' | 'reinstall' | 'switch' | 'view' | null;
+  /** Kinds of notice about the project, shown as tags. */
+  notices: Notice['kind'][];
 }
 
 export function cardModel(app: AppView, entry: CheckEntry | undefined): CardModel {
-  return { ...baseModel(app, entry), formats: installedFormats(app, entry) };
+  return {
+    ...baseModel(app, entry),
+    formats: installedFormats(app, entry),
+    notices: entry?.status?.notices.map((n) => n.kind) ?? [],
+  };
 }
 
 function installedFormats(app: AppView, entry: CheckEntry | undefined): Format[] {
@@ -49,7 +55,7 @@ function installedFormats(app: AppView, entry: CheckEntry | undefined): Format[]
   return format ? [format] : [];
 }
 
-function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel, 'formats'> {
+function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel, 'formats' | 'notices'> {
   // With several installs, the one needing attention is the one shown.
   const attention = entry?.status?.installs?.find((i) => i.state !== 'up_to_date');
   const installed = attention ? { tag: attention.tag, format: attention.format } : app.installed;

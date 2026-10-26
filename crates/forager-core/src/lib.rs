@@ -13,6 +13,7 @@ pub mod http;
 pub mod install;
 pub mod matcher;
 pub mod model;
+pub mod notice;
 pub mod platform;
 pub mod share;
 pub mod signature;

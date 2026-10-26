@@ -50,6 +50,7 @@ function status(state: StatusView['state'], latest = '2.0'): CheckEntry {
       release_url: 'https://github.com/o/a/releases/tag/2.0',
       waits_until: null,
       found: false,
+      notices: [],
     },
   };
 }
@@ -119,6 +120,13 @@ describe('apps installed in several formats', () => {
     ];
     return e;
   };
+
+  it('carries the kinds of notice about the project', () => {
+    const entry = status('up_to_date');
+    entry.status!.notices = [{ kind: 'archived' }, { kind: 'stale', since: '2022-03' }];
+    expect(cardModel(app('a'), entry).notices).toEqual(['archived', 'stale']);
+    expect(cardModel(app('a'), undefined).notices).toEqual([]);
+  });
 
   it('lists every format and shows the install that needs updating', () => {
     const m = cardModel(both, entry());

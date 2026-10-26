@@ -4,7 +4,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
-import type { AppView, Format, InstalledView, UpdateState } from '../types';
+import type { AppView, Format, InstalledView, Notice, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import VersionsSection from './appPage/VersionsSection';
 import SettingsSection from './appPage/SettingsSection';
@@ -113,6 +113,17 @@ function AppPageBody({ app }: { app: AppView }) {
     try {
       await writeText(await ipc.appBadge(app.id));
       toast('success', 'Badge Markdown copied.');
+    } catch (e) {
+      toast('error', String(e));
+    }
+  };
+
+  const followMove = async () => {
+    try {
+      await ipc.followMove(app.id);
+      await loadApps();
+      checkApps([app.id]);
+      toast('success', `${app.id} now follows its new address.`);
     } catch (e) {
       toast('error', String(e));
     }
@@ -243,6 +254,9 @@ function AppPageBody({ app }: { app: AppView }) {
               <dd>
                 {status ? <span className="mono">{status.latest_tag}</span> : entry?.error ? <span className="text-danger">{entry.error}</span> : 'Not checked yet'}
               </dd>
+              {status?.notices.map((notice) => (
+                <NoticeFact key={notice.kind} notice={notice} onFollow={followMove} />
+              ))}
               {status?.waits_until && status.state !== 'up_to_date' && (
                 <>
                   <dt>Cooldown</dt>
@@ -407,4 +421,36 @@ function InstallFacts({
       )}
     </>
   );
+}
+
+/** A notice about the project, under Status. */
+function NoticeFact({ notice, onFollow }: { notice: Notice; onFollow: () => void }) {
+  switch (notice.kind) {
+    case 'archived':
+      return (
+        <>
+          <dt>Archived</dt>
+          <dd>The repository is read-only; no more releases are expected.</dd>
+        </>
+      );
+    case 'moved':
+      return (
+        <>
+          <dt>Moved</dt>
+          <dd>
+            The project is now at <span className="mono">{notice.to}</span> ·{' '}
+            <button className="link-btn" onClick={onFollow}>
+              Use the new address
+            </button>
+          </dd>
+        </>
+      );
+    case 'stale':
+      return (
+        <>
+          <dt>Quiet</dt>
+          <dd>No release since {notice.since}; the project may be abandoned.</dd>
+        </>
+      );
+  }
 }

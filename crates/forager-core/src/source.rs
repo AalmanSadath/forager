@@ -4,6 +4,7 @@ mod github;
 mod gitlab;
 mod html;
 mod jenkins;
+mod repo;
 mod sourceforge;
 mod sourcehut;
 
@@ -17,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::model::{Format, Release};
 use crate::version;
+
+pub use repo::RepoInfo;
 
 /// Where an app's releases come from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

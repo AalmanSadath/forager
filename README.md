@@ -153,6 +153,10 @@ the check still runs. An app's `--cooldown` makes the timer wait until a
 release is that many days old, so a hijacked release has time to be pulled;
 releases with no date (most web pages) are not held back.
 
+`check` also notes projects that were archived, moved (`forager edit <id>
+--url <new>` follows them; the app page has a button) or have not released
+anything for a year.
+
 ### Sharing
 
 ```sh

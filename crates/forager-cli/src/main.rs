@@ -8,6 +8,7 @@ use forager_core::conditions::{self, Avoid};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format, Installed, Signature};
+use forager_core::notice::{self, Notice};
 use forager_core::platform::{self, Platform};
 use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
@@ -126,6 +127,13 @@ enum Command {
         /// New download pattern, for an app tracked from a web page.
         #[arg(long, value_name = "REGEX")]
         pattern: Option<String>,
+        /// New project address, e.g. after the project moved. Installs and
+        /// settings are kept.
+        #[arg(long)]
+        url: Option<String>,
+        /// API the new address's host speaks, as for `add`.
+        #[arg(long, requires = "url")]
+        forge: Option<Forge>,
         /// Stop requiring a signature.
         #[arg(long, conflicts_with_all = ["minisign_key", "gpg_key", "attestation"])]
         no_signature: bool,
@@ -465,10 +473,13 @@ fn main() -> Result<()> {
             signature,
             no_signature,
             pattern,
+            url,
+            forge,
         } => {
             if signature.is_empty()
                 && !no_signature
                 && pattern.is_none()
+                && url.is_none()
                 && format.is_none()
                 && filter.is_none()
                 && !clear_filter
@@ -492,6 +503,19 @@ fn main() -> Result<()> {
             }
             if let Some(versions) = &versions {
                 version::requirement(versions)?;
+            }
+            if let Some(url) = url {
+                let current = &store.get(&id)?.source;
+                let source = match (current, forge) {
+                    (Source::Html { pattern: old, .. }, None | Some(Forge::Html)) => {
+                        Source::html(&url, pattern.as_deref().unwrap_or(old))?
+                    }
+                    _ => Source::from_url(&url, forge)?,
+                };
+                if let Some(other) = store.apps.iter().find(|a| a.id != id && a.source == source) {
+                    bail!("{} already tracks {source}", other.id);
+                }
+                store.get_mut(&id)?.source = source;
             }
             let app = store.get_mut(&id)?;
             if let Some(FormatPin(format)) = format {
@@ -936,13 +960,16 @@ struct CheckEntry {
     /// still holds it back.
     #[serde(skip_serializing_if = "Option::is_none")]
     waits_until: Option<String>,
+    /// The repository was archived or moved, or nothing was released for long.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    notices: Vec<Notice>,
     installs: Vec<InstallEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
 impl CheckEntry {
-    fn new(app: &App, status: &update::Status) -> CheckEntry {
+    fn new(app: &App, status: &update::Status, notices: Vec<Notice>) -> CheckEntry {
         CheckEntry {
             id: app.id.clone(),
             source: app.source.to_string(),
@@ -951,6 +978,7 @@ impl CheckEntry {
             skipped: status.skipped,
             track_only: app.track_only,
             waits_until: update::cooldown_until(app, &status.latest, update::now()),
+            notices,
             installs: status
                 .installs
                 .iter()
@@ -969,6 +997,7 @@ impl CheckEntry {
             skipped: false,
             track_only: app.track_only,
             waits_until: None,
+            notices: Vec::new(),
             installs: Vec::new(),
             error: Some(error),
         }
@@ -1011,12 +1040,25 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
             pending.push((app.id.clone(), status.latest.tag.clone()));
         }
         if json {
-            entries.push(CheckEntry::new(app, &status));
+            let notices = notice::for_app(app, &status.latest, update::now());
+            entries.push(CheckEntry::new(app, &status, notices));
             continue;
         }
         if quiet {
             continue;
         }
+        let notices = notice::for_app(app, &status.latest, update::now());
+        let noted = match notices.is_empty() {
+            true => String::new(),
+            false => format!(
+                " ({})",
+                notices.iter().map(Notice::to_string).collect::<Vec<_>>().join("; ")
+            ),
+        };
+        let moved = notices.iter().find_map(|n| match n {
+            Notice::Moved { url, .. } => Some(url.clone()),
+            _ => None,
+        });
 
         let latest = &status.latest.tag;
         if app.track_only {
@@ -1025,7 +1067,13 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
                 (State::Outdated, None) => format!("{latest} released"),
                 _ => format!("{latest} (seen)"),
             };
-            println!("{:<20} {:<30} {}", app.id, text, app.source.release_url(latest));
+            println!(
+                "{:<20} {:<30} {}",
+                app.id,
+                format!("{text}{noted}"),
+                app.source.release_url(latest)
+            );
+            print_moved(&app.id, moved.as_deref());
             continue;
         }
         let text = match (status.state, status.installs.as_slice()) {
@@ -1065,7 +1113,8 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
             Ok((asset, _)) => asset.name.clone(),
             Err(e) => e.to_string(),
         };
-        println!("{:<20} {:<30} {}", app.id, text, asset);
+        println!("{:<20} {:<30} {}", app.id, format!("{text}{noted}"), asset);
+        print_moved(&app.id, moved.as_deref());
     }
 
     if json {
@@ -1095,6 +1144,13 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
             .context("cannot show notification")?;
     }
     Ok(())
+}
+
+/// How to follow a project to its new address.
+fn print_moved(id: &str, url: Option<&str>) {
+    if let Some(url) = url {
+        println!("{:<20} to follow it: forager edit {id} --url {url}", "");
+    }
 }
 
 /// Summary and body of the background check's notification: updates to

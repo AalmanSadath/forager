@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use forager_core::install;
 use forager_core::matcher::select_asset;
 use forager_core::model::{App, Format, Installed, Release};
+use forager_core::notice::{self, Notice};
 use forager_core::platform::Platform;
 use forager_core::update::{self, State};
 use serde::Serialize;
@@ -45,6 +46,8 @@ pub struct StatusView {
     /// Installs were found on the system, removed, or at another version
     /// than recorded, and saved, so the app list is out of date.
     pub found: bool,
+    /// The repository was archived or moved, or nothing was released for long.
+    pub notices: Vec<Notice>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,6 +112,7 @@ pub fn status_of(
                 .collect();
             let repo_version = installs.first().and_then(|i| i.repo_version.clone());
             StatusView {
+                notices: notice::for_app(&app, &status.latest, update::now()),
                 release_url: app.source.release_url(&status.latest.tag),
                 waits_until: update::cooldown_until(&app, &status.latest, update::now()),
                 state: status.state,

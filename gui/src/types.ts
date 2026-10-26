@@ -88,7 +88,15 @@ export interface StatusView {
   waits_until: string | null;
   /** Installs were found on the system, removed, or at a new version, and saved. */
   found: boolean;
+  /** The repository was archived or moved, or nothing was released for long. */
+  notices: Notice[];
 }
+
+/** Something worth knowing about an app's project that is not an update. */
+export type Notice =
+  | { kind: 'archived' }
+  | { kind: 'moved'; to: string; url: string }
+  | { kind: 'stale'; since: string };
 
 export interface InstallStatusView {
   format: Format;

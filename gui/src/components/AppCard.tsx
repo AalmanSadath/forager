@@ -56,6 +56,9 @@ export default function AppCard({
               <span key={f} className="tag">{FORMAT_NAMES[f]}</span>
             ))}
             {app.signature && <span className="tag tag-accent">signed</span>}
+            {model.notices.map((kind) => (
+              <span key={kind} className="tag tag-warn">{kind}</span>
+            ))}
           </span>
         </div>
         <div className="card-sub">{model.versions}</div>
