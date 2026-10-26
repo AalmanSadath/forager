@@ -540,6 +540,16 @@ pub async fn app_link(id: String) -> CmdResult<String> {
     blocking(move || Ok(share::link(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
 }
 
+/// The app's own icon as a `data:` URL, or `None` when no install has one.
+#[tauri::command]
+pub async fn app_icon(id: String) -> CmdResult<Option<String>> {
+    blocking(move || {
+        let app = load_store()?.get(&id).cloned().map_err(|e| e.to_string())?;
+        Ok(forager_core::icons::find(&app).map(|icon| icon.data_url()))
+    })
+    .await
+}
+
 /// Markdown for an "Add to Forager" badge for `id`, for its project's README.
 #[tauri::command]
 pub async fn app_badge(id: String) -> CmdResult<String> {

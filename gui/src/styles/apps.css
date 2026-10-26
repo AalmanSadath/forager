@@ -106,3 +106,7 @@
   text-align: center;
 }
 .apps-empty svg { color: var(--accent); }
+
+.app-icon {
+  object-fit: contain;
+}

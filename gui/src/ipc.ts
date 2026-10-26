@@ -69,6 +69,7 @@ export const listReleases = (id: string, refresh = false) => invoke<ReleaseView[
 export const skipRelease = (id: string, tag: string | null) => invoke<AppView>('skip_release', { id, tag });
 export const unskipRelease = (id: string) => invoke<AppView>('unskip_release', { id });
 /** Marks a tracked-only app's release (the latest when null) as seen. */
+export const appIcon = (id: string) => invoke<string | null>('app_icon', { id });
 export const followMove = (id: string) => invoke<AppView>('follow_move', { id });
 export const markSeen = (id: string, tag: string | null) => invoke<AppView>('mark_seen', { id, tag });
 

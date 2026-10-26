@@ -19,8 +19,9 @@ import {
   type SettingsDraft,
   type SignatureDraft,
 } from './appPage/form';
+import AppIcon from './shared/AppIcon';
 import ConfirmModal from './shared/ConfirmModal';
-import { BackIcon, ExternalIcon, FormatIcon, FORGE_NAMES, FORMAT_NAMES } from './shared/icons';
+import { BackIcon, ExternalIcon, FORGE_NAMES, FORMAT_NAMES } from './shared/icons';
 
 /**
  * One app's own page: where it stands, what the latest release offers, and
@@ -158,7 +159,7 @@ function AppPageBody({ app }: { app: AppView }) {
           <BackIcon />
         </button>
         <div className="page-header-icon">
-          <FormatIcon format={model.format} size={26} />
+          <AppIcon app={app} format={model.format} size={26} />
         </div>
         <div className="page-header-title">
           <h1>{app.id}</h1>

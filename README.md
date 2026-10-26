@@ -50,7 +50,9 @@ forager edit forager --format flatpak                              # only if you
 
 The app page shows every asset of the latest release and why it was or
 wasn't chosen, live as you change settings. Updates show what will be
-installed and how it's verified before anything downloads.
+installed and how it's verified before anything downloads. Apps show their
+own icons: from the AppImage or tarball, the system package's menu entry,
+or the Flatpak.
 
 | App page | Adding an app |
 | --- | --- |

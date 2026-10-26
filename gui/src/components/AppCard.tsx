@@ -1,6 +1,7 @@
 import type { CardModel } from '../appsView';
 import type { AppView } from '../types';
-import { FormatIcon, FORMAT_NAMES } from './shared/icons';
+import AppIcon from './shared/AppIcon';
+import { FORMAT_NAMES } from './shared/icons';
 
 const ACTION_LABELS = {
   update: 'Update',
@@ -45,7 +46,7 @@ export default function AppCard({
       aria-label={`${app.id}, ${model.label}, ${model.versions}`}
     >
       <div className="app-card-icon">
-        <FormatIcon format={model.format} />
+        <AppIcon app={app} format={model.format} />
       </div>
       <div className="app-card-info">
         <div className="app-card-name-row">

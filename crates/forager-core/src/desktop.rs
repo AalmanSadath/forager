@@ -262,8 +262,15 @@ fn tarball_icon(dir: &Path, name: &str) -> Option<Icon> {
             .iter()
             .find_map(|ext| fs::read(hicolor.join(size).join("apps").join(format!("{name}.{ext}"))).ok())
     });
+    // Archives without a theme tree often keep the icon at the top.
+    let loose = [
+        format!("share/pixmaps/{name}.png"),
+        format!("{name}.svg"),
+        format!("{name}.png"),
+        ".DirIcon".into(),
+    ];
     from_theme
-        .or_else(|| fs::read(dir.join("share/pixmaps").join(format!("{name}.png"))).ok())
+        .or_else(|| loose.iter().find_map(|file| fs::read(dir.join(file)).ok()))
         .and_then(Icon::new)
 }
 
@@ -357,6 +364,14 @@ impl AppImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_a_tarballs_icon_at_its_top() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(tarball_icon(dir.path(), "tool").is_none());
+        fs::write(dir.path().join("tool.svg"), "<svg xmlns='http://www.w3.org/2000/svg'/>").unwrap();
+        assert!(tarball_icon(dir.path(), "tool").is_some_and(|icon| icon.svg));
+    }
 
     #[test]
     fn finds_the_squashfs_after_the_elf_runtime() {

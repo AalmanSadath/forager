@@ -95,6 +95,7 @@ pub fn run() {
             commands::edit::unskip_release,
             commands::edit::mark_seen,
             commands::edit::follow_move,
+            commands::edit::app_icon,
             commands::system::restart_self,
             commands::update::plan_update,
             commands::update::start_update,

@@ -10,6 +10,7 @@ pub mod error;
 pub mod history;
 pub mod host;
 pub mod http;
+pub mod icons;
 pub mod install;
 pub mod matcher;
 pub mod model;
