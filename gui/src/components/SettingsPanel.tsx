@@ -3,6 +3,7 @@ import AppearanceSection from './settings/AppearanceSection';
 import BackgroundSection from './settings/BackgroundSection';
 import TokensSection from './settings/TokensSection';
 import AppsSection from './settings/AppsSection';
+import SystemSection from './settings/SystemSection';
 import AboutSection from './settings/AboutSection';
 
 const SECTIONS = [
@@ -10,6 +11,7 @@ const SECTIONS = [
   { key: 'background', label: 'Background', body: <BackgroundSection /> },
   { key: 'tokens', label: 'Tokens', body: <TokensSection /> },
   { key: 'apps', label: 'Apps', body: <AppsSection /> },
+  { key: 'system', label: 'System check', body: <SystemSection /> },
   { key: 'about', label: 'About', body: <AboutSection /> },
 ] as const;
 

@@ -97,6 +97,7 @@ forager add https://github.com/ImranR98/Obtainium --track-only
 forager seen obtainium                          # stop reporting the latest as new
 
 # Other
+forager doctor                                  # check what Forager needs from the system, with fixes
 forager menu-entries                            # add missing menu entries
 forager history                                 # what was installed, updated, removed, failed
 forager completions bash|zsh|fish

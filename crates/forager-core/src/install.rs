@@ -8,7 +8,7 @@
 //! user's Flatpak installation.
 
 mod flatpak;
-mod packagekit;
+pub mod packagekit;
 mod tarball;
 
 use std::fs;

@@ -269,6 +269,12 @@ enum Command {
         #[arg(long)]
         badge: bool,
     },
+    /// Check what Forager needs from the system, with a fix for each problem.
+    Doctor {
+        /// Print the results as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Print a shell completion script, e.g.
     /// `forager completions bash > ~/.local/share/bash-completion/completions/forager`.
     Completions { shell: clap_complete::Shell },
@@ -374,6 +380,10 @@ fn main() -> Result<()> {
             return Ok(());
         }
         Command::Man { dir } => return write_man_pages(dir),
+        Command::Doctor { json } => {
+            let config = cli.config.clone().unwrap_or_else(Store::default_path);
+            return doctor(&config, *json);
+        }
         _ => {}
     }
     let explicit_config = cli.config.clone();
@@ -683,7 +693,9 @@ fn main() -> Result<()> {
             }
         }
         Command::Timer { action } => timer(action, explicit_config)?,
-        Command::Completions { .. } | Command::Man { .. } => unreachable!("handled before the config is loaded"),
+        Command::Completions { .. } | Command::Man { .. } | Command::Doctor { .. } => {
+            unreachable!("handled before the config is loaded")
+        }
         Command::Adopt {
             file,
             url,
@@ -812,6 +824,30 @@ fn main() -> Result<()> {
             }
             println!("Removed {id}.");
         }
+    }
+    Ok(())
+}
+
+/// Prints `doctor::run`'s checks; exits with 1 when one fails.
+fn doctor(config: &std::path::Path, json: bool) -> Result<()> {
+    let checks = forager_core::doctor::run(config);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&checks)?);
+    } else {
+        for check in &checks {
+            let level = match check.level {
+                forager_core::doctor::Level::Ok => "ok  ",
+                forager_core::doctor::Level::Warn => "warn",
+                forager_core::doctor::Level::Fail => "FAIL",
+            };
+            println!("{level}  {:<16} {}", check.name, check.detail);
+            if let Some(fix) = &check.fix {
+                println!("      {:<16} fix: {fix}", "");
+            }
+        }
+    }
+    if checks.iter().any(|c| c.level == forager_core::doctor::Level::Fail) {
+        std::process::exit(1);
     }
     Ok(())
 }

@@ -123,6 +123,21 @@ impl Store {
 }
 
 /// Forager's cache directory: `$XDG_CACHE_HOME/forager`.
+/// The apps in the config at `path`, read without taking its lock: for
+/// looking only, never for changing them.
+pub fn read_apps(path: &Path) -> Result<Vec<App>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(toml::from_str::<AppsFile>(&text)
+            .map_err(|source| Error::Config {
+                path: path.to_path_buf(),
+                source,
+            })?
+            .apps),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("forager")
 }

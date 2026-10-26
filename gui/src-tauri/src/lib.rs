@@ -102,6 +102,7 @@ pub fn run() {
             commands::settings::get_gui_settings,
             commands::settings::set_gui_settings,
             commands::settings::get_timer,
+            commands::settings::run_doctor,
             commands::settings::set_timer,
             commands::settings::get_tokens,
             commands::settings::set_tokens,

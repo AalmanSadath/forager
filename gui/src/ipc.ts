@@ -24,6 +24,7 @@ import type {
   AdoptInput,
   AppImageInfo,
   AddRequest,
+  DoctorCheck,
   ImportResult,
   SystemAppearance,
 } from './types';
@@ -85,6 +86,8 @@ export const restartSelf = () => invoke<void>('restart_self');
 export const getGuiSettings = () => invoke<GuiSettings>('get_gui_settings');
 export const setGuiSettings = (settings: GuiSettings) => invoke<void>('set_gui_settings', { settings });
 export const getTimer = () => invoke<TimerState>('get_timer');
+/** `forager doctor`'s checks. */
+export const runDoctor = () => invoke<DoctorCheck[]>('run_doctor');
 export const setTimer = (enabled: boolean, autoUpdate: boolean, skipMetered: boolean, skipOnBattery: boolean) =>
   invoke<TimerState>('set_timer', { enabled, autoUpdate, skipMetered, skipOnBattery });
 export const getTokens = () => invoke<Record<string, string>>('get_tokens');

@@ -94,6 +94,12 @@ fn timer_state() -> CmdResult<TimerState> {
     })
 }
 
+/// `forager doctor`'s checks for the config in use.
+#[tauri::command]
+pub async fn run_doctor() -> CmdResult<Vec<forager_core::doctor::Check>> {
+    blocking(|| Ok(forager_core::doctor::run(&config_path()))).await
+}
+
 #[tauri::command]
 pub async fn get_timer() -> CmdResult<TimerState> {
     blocking(timer_state).await

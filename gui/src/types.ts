@@ -314,3 +314,11 @@ export interface AboutInfo {
   apps_dir: string | null;
   opt_dir: string | null;
 }
+
+/** One of `forager doctor`'s checks. */
+export interface DoctorCheck {
+  name: string;
+  level: 'ok' | 'warn' | 'fail';
+  detail: string;
+  fix?: string;
+}
