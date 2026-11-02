@@ -58,6 +58,14 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.1" date="2026-11-02">
+      <description>
+        <ul>
+          <li>An app can be uninstalled while staying tracked, from its page or with forager uninstall; Install puts it back.</li>
+          <li>Background updates only update installed apps and no longer install ones that are not.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-10-27">
       <description>
         <ul>
