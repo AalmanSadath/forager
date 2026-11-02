@@ -61,6 +61,9 @@ export const saveApp = (id: string, settings: SettingsInput, signature: Signatur
 /** Stops tracking `id`, first uninstalling its installs in these formats and deleting the leftovers in `remove`. */
 export const removeApp = (id: string, uninstall: Format[], remove: string[]) =>
   invoke<void>('remove_app', { id, uninstall, delete: remove });
+/** Uninstalls `id`'s installs in these formats and keeps tracking it, deleting the leftovers in `remove`. */
+export const uninstallApp = (id: string, formats: Format[], remove: string[]) =>
+  invoke<AppView>('uninstall_app', { id, formats, delete: remove });
 export const appLeftovers = (id: string) => invoke<Leftover[]>('app_leftovers', { id });
 
 /** Adds the menu entries missing from AppImages and tarballs (of `ids`, or every app). */

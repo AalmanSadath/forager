@@ -83,6 +83,7 @@ pub fn run() {
             commands::edit::add_app,
             commands::edit::save_app,
             commands::edit::remove_app,
+            commands::edit::uninstall_app,
             commands::edit::list_releases,
             commands::edit::export_apps,
             commands::edit::inspect_appimage,

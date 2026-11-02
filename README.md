@@ -92,6 +92,7 @@ forager notes drawio-desktop                    # notes of every release since t
 forager install drawio-desktop --tag v24.0.0    # roll back; skips the newer release
 forager skip drawio-desktop                     # don't offer this release; newer ones are
 forager unskip drawio-desktop
+forager uninstall drawio-desktop                # uninstall but keep tracking it
 forager remove drawio-desktop
 
 # Track only: report releases, never install
@@ -153,7 +154,8 @@ The timer reads variables such as `GITHUB_TOKEN` from
 off updates on metered connections (NetworkManager) or battery (UPower);
 the check still runs. An app's `--cooldown` makes the timer wait until a
 release is that many days old, so a hijacked release has time to be pulled;
-releases with no date (most web pages) are not held back.
+releases with no date (most web pages) are not held back. The timer only
+updates apps that are installed; it never installs one that is not.
 
 `check` also notes projects that were archived, moved (`forager edit <id>
 --url <new>` follows them; the app page has a button) or have not released
@@ -239,6 +241,10 @@ in your home directory: folders named exactly after the app in
 `~/.config`, `~/.cache`, `~/.local/share` and `~/.local/state`, and a
 Flatpak's `~/.var/app/<id>`. These are deleted only if you agree
 (`--purge` without asking, `--keep-data` to skip the question).
+
+`forager uninstall <id>` (Uninstall on the app page) does the same but keeps
+tracking the app, so `forager update <id>` or Install puts it back.
+`--format` picks one of several installs.
 
 ### Tarballs
 

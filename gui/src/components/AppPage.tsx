@@ -55,16 +55,23 @@ function AppPageBody({ app }: { app: AppView }) {
   const [signature, setSignature] = useState<SignatureDraft>(() => signatureDraftOf(app));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [removing, setRemoving] = useState(false);
-  // Formats to uninstall when removing: every install unless unticked.
+  // The open confirmation: removing the app, or uninstalling it and keeping it tracked.
+  const [dialog, setDialog] = useState<'remove' | 'uninstall' | null>(null);
+  // Formats to uninstall: every install unless unticked.
   const [keep, setKeep] = useState<Format[]>([]);
   const uninstall = app.installs.map((i) => i.format).filter((f) => !keep.includes(f));
   // What the app left in the home directory, and which of it to delete.
   const [leftovers, setLeftovers] = useState<Leftover[]>([]);
   const [purge, setPurge] = useState<string[]>([]);
 
+  const openDialog = (kind: 'remove' | 'uninstall') => {
+    setKeep([]);
+    setPurge([]);
+    setDialog(kind);
+  };
+
   useEffect(() => {
-    if (!removing) return;
+    if (!dialog) return;
     let live = true;
     ipc
       .appLeftovers(app.id)
@@ -73,7 +80,7 @@ function AppPageBody({ app }: { app: AppView }) {
     return () => {
       live = false;
     };
-  }, [removing, app.id]);
+  }, [dialog, app.id]);
 
   const input = useMemo(() => toInput(draft), [draft]);
   const { preview, error: previewError, loading, refresh } = usePreview(app.spec, input, app.id);
@@ -85,11 +92,11 @@ function AppPageBody({ app }: { app: AppView }) {
   // Escape goes back, as it closes a drawer in BifroSSH.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !removing) setPage({ kind: 'apps' });
+      if (e.key === 'Escape' && !dialog) setPage({ kind: 'apps' });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [removing, setPage]);
+  }, [dialog, setPage]);
 
   const save = async () => {
     setSaving(true);
@@ -156,7 +163,7 @@ function AppPageBody({ app }: { app: AppView }) {
   };
 
   const remove = async () => {
-    setRemoving(false);
+    setDialog(null);
     try {
       await ipc.removeApp(app.id, uninstall, purge);
       setPage({ kind: 'apps' });
@@ -166,6 +173,24 @@ function AppPageBody({ app }: { app: AppView }) {
       toast('error', String(e));
     }
   };
+
+  const uninstallKeepTracking = async () => {
+    setDialog(null);
+    try {
+      await ipc.uninstallApp(app.id, uninstall, purge);
+      toast('success', `Uninstalled ${app.id}; still tracked.`);
+    } catch (e) {
+      toast('error', String(e));
+    } finally {
+      // Partly done on failure too: show what is left.
+      await loadApps();
+      checkApps([app.id]);
+    }
+  };
+
+  const systemHint = uninstall.some((f) => ['rpm', 'deb', 'pacman'].includes(f))
+    ? 'Uninstalling a system package asks for your password.'
+    : undefined;
 
   return (
     <div className="panel app-page">
@@ -338,20 +363,60 @@ function AppPageBody({ app }: { app: AppView }) {
           <section className="page-card danger-zone">
             <div>
               <h3>Remove</h3>
-              <p className="form-hint">Stop tracking this app, and uninstall it if you like.</p>
+              <p className="form-hint">
+                Uninstall it and keep watching for releases, or stop tracking it altogether.
+              </p>
             </div>
-            <button className="btn-danger" onClick={() => setRemoving(true)}>Remove app</button>
+            <div className="danger-zone-actions">
+              {app.installs.length > 0 && (
+                <button className="btn-secondary" onClick={() => openDialog('uninstall')}>Uninstall</button>
+              )}
+              <button className="btn-danger" onClick={() => openDialog('remove')}>Remove app</button>
+            </div>
           </section>
         </div>
       </div>
 
-      {removing && (
+      {dialog === 'uninstall' && (
+        <ConfirmModal
+          question={`Uninstall ${app.id}?`}
+          hint={
+            <>
+              Forager keeps tracking it; Install puts it back.
+              {systemHint && <> {systemHint}</>}
+            </>
+          }
+          confirmLabel="Uninstall"
+          confirmDisabled={uninstall.length === 0}
+          onConfirm={uninstallKeepTracking}
+          onCancel={() => setDialog(null)}
+        >
+          {app.installs.length > 1 &&
+            app.installs.map((installed) => (
+              <label key={installed.format} className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={!keep.includes(installed.format)}
+                  onChange={(e) =>
+                    setKeep((k) => (e.target.checked ? k.filter((f) => f !== installed.format) : [...k, installed.format]))
+                  }
+                />
+                <span>
+                  The {FORMAT_NAMES[installed.format]} {installed.tag}
+                </span>
+              </label>
+            ))}
+          <LeftoverChoices leftovers={leftovers} purge={purge} setPurge={setPurge} />
+        </ConfirmModal>
+      )}
+
+      {dialog === 'remove' && (
         <ConfirmModal
           question={`Remove ${app.id}?`}
-          hint={uninstall.some((f) => ['rpm', 'deb', 'pacman'].includes(f)) ? 'Uninstalling a system package asks for your password.' : undefined}
+          hint={systemHint}
           confirmLabel="Remove"
           onConfirm={remove}
-          onCancel={() => setRemoving(false)}
+          onCancel={() => setDialog(null)}
         >
           {app.installs.map((installed) => (
             <label key={installed.format} className="checkbox-row">
@@ -368,24 +433,42 @@ function AppPageBody({ app }: { app: AppView }) {
               </span>
             </label>
           ))}
-          {leftovers.length > 0 && <p className="form-hint">Its settings and data stay unless you tick them:</p>}
-          {leftovers.map((leftover) => (
-            <label key={leftover.path} className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={purge.includes(leftover.path)}
-                onChange={(e) =>
-                  setPurge((p) => (e.target.checked ? [...p, leftover.path] : p.filter((x) => x !== leftover.path)))
-                }
-              />
-              <span>
-                Delete <span className="mono">{leftover.path}</span> ({formatSize(leftover.bytes)})
-              </span>
-            </label>
-          ))}
+          <LeftoverChoices leftovers={leftovers} purge={purge} setPurge={setPurge} />
         </ConfirmModal>
       )}
     </div>
+  );
+}
+
+/** The app's leftover settings and data, each to tick for deletion. */
+function LeftoverChoices({
+  leftovers,
+  purge,
+  setPurge,
+}: {
+  leftovers: Leftover[];
+  purge: string[];
+  setPurge: (update: (purge: string[]) => string[]) => void;
+}) {
+  if (leftovers.length === 0) return null;
+  return (
+    <>
+      <p className="form-hint">Its settings and data stay unless you tick them:</p>
+      {leftovers.map((leftover) => (
+        <label key={leftover.path} className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={purge.includes(leftover.path)}
+            onChange={(e) =>
+              setPurge((p) => (e.target.checked ? [...p, leftover.path] : p.filter((x) => x !== leftover.path)))
+            }
+          />
+          <span>
+            Delete <span className="mono">{leftover.path}</span> ({formatSize(leftover.bytes)})
+          </span>
+        </label>
+      ))}
+    </>
   );
 }
 

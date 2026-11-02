@@ -305,6 +305,22 @@ enum Command {
         #[arg(long)]
         keep_data: bool,
     },
+    /// Uninstall an app but keep tracking it; `forager update <id>`
+    /// installs it again.
+    Uninstall {
+        id: String,
+        /// Uninstall only the install in this format; repeat for several.
+        /// Every install when not given.
+        #[arg(long)]
+        format: Vec<Format>,
+        /// Also delete the app's settings, caches and data in your home
+        /// directory without asking.
+        #[arg(long, conflicts_with = "keep_data")]
+        purge: bool,
+        /// Keep the app's settings, caches and data without asking.
+        #[arg(long)]
+        keep_data: bool,
+    },
 }
 
 /// Require assets to be signed by a key the user trusts.
@@ -850,19 +866,7 @@ fn main() -> Result<()> {
             for installed in &uninstall {
                 install::uninstall(installed, &platform)?;
             }
-            let delete = match leftovers.is_empty() || purge {
-                true => leftovers.iter().map(|l| l.path.clone()).collect(),
-                false => {
-                    println!("{id} left these in your home directory:");
-                    for leftover in &leftovers {
-                        println!("  {}  ({})", leftover.path.display(), size(leftover.bytes));
-                    }
-                    match io::stdin().is_terminal() && confirm("Delete them too?")? {
-                        true => leftovers.iter().map(|l| l.path.clone()).collect(),
-                        false => Vec::new(),
-                    }
-                }
-            };
+            let delete = choose_leftovers(&id, &leftovers, purge)?;
             let (count, bytes) = cleanup::remove(&leftovers, &delete)?;
             let app = store.remove(&id)?;
             store.save()?;
@@ -887,8 +891,74 @@ fn main() -> Result<()> {
             }
             println!("Removed {id}.");
         }
+        Command::Uninstall {
+            id,
+            format,
+            purge,
+            keep_data,
+        } => {
+            let app = store.get(&id)?;
+            let formats: Vec<Format> = match format.is_empty() {
+                true => app.installs().map(|i| i.format).collect(),
+                false => format,
+            };
+            if !app.installs().any(|i| formats.contains(&i.format)) {
+                bail!(
+                    "{id} is not installed{}",
+                    match app.installs().next() {
+                        Some(_) => " in that format",
+                        None => "",
+                    }
+                );
+            }
+            // Found before uninstalling, while the menu entries still name the app.
+            let leftovers = match keep_data {
+                true => Vec::new(),
+                false => cleanup::leftovers(app),
+            };
+            let result = install::uninstall_formats(store.get_mut(&id)?, &formats, &Platform::detect());
+            // Saved either way: what was uninstalled before a failure is gone.
+            store.save()?;
+            let uninstalled = result?;
+            let delete = choose_leftovers(&id, &leftovers, purge)?;
+            let (count, bytes) = cleanup::remove(&leftovers, &delete)?;
+            let deleted = (count > 0).then(|| format!("deleted {count} folders and files ({})", size(bytes)));
+            if let Some(deleted) = &deleted {
+                println!("{id}: {deleted}.");
+            }
+            for installed in &uninstalled {
+                let mut event = Event::new(&id, Kind::Removed, via);
+                event.from = Some(installed.tag.clone());
+                event.format = Some(installed.format);
+                event.message = deleted.clone();
+                history::record(&event).ok();
+                println!(
+                    "Uninstalled {id} ({}, {}); still tracked.",
+                    installed.tag, installed.format
+                );
+            }
+            if uninstalled.is_empty() {
+                println!("{id} was already gone; still tracked.");
+            }
+        }
     }
     Ok(())
+}
+
+/// Which of `leftovers` to delete: all with `purge`, else those the user
+/// agrees to on a terminal, else none.
+fn choose_leftovers(id: &str, leftovers: &[cleanup::Leftover], purge: bool) -> Result<Vec<PathBuf>> {
+    if leftovers.is_empty() || purge {
+        return Ok(leftovers.iter().map(|l| l.path.clone()).collect());
+    }
+    println!("{id} left these in your home directory:");
+    for leftover in leftovers {
+        println!("  {}  ({})", leftover.path.display(), size(leftover.bytes));
+    }
+    Ok(match io::stdin().is_terminal() && confirm("Delete them too?")? {
+        true => leftovers.iter().map(|l| l.path.clone()).collect(),
+        false => Vec::new(),
+    })
 }
 
 /// `bytes` for people: KiB below a MiB, else MiB.
@@ -1424,6 +1494,18 @@ fn run_plans(
     let mut failed = 0;
     let now = update::now();
     for plan in plans {
+        // Installing an app is a person's choice: the timer only updates
+        // what is installed, so an app uninstalled but still tracked stays so.
+        if let Ok(plan) = &plan
+            && tag.is_none()
+            && options.via == Via::Timer
+            && plan.from.is_none()
+            && plan.replaces.is_empty()
+            && !plan.missing
+        {
+            println!("{id}: not installed; background updates only update installed apps");
+            continue;
+        }
         // The timer waits out the app's cooldown; updating by hand does not.
         if let Ok(plan) = &plan
             && tag.is_none()

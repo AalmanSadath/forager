@@ -6,6 +6,7 @@ export default function ConfirmModal({
   hint,
   children,
   confirmLabel = 'Remove',
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: {
@@ -14,6 +15,7 @@ export default function ConfirmModal({
   /** Extra controls, such as an "also uninstall" checkbox. */
   children?: ReactNode;
   confirmLabel?: string;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -26,7 +28,7 @@ export default function ConfirmModal({
         {children}
         <div className="confirm-actions">
           <button className="btn-secondary btn-sm" onClick={onCancel}>Cancel</button>
-          <button className="btn-danger btn-sm" onClick={onConfirm}>{confirmLabel}</button>
+          <button className="btn-danger btn-sm" onClick={onConfirm} disabled={confirmDisabled}>{confirmLabel}</button>
         </div>
       </div>
     </>

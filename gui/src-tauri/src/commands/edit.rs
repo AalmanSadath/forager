@@ -569,6 +569,38 @@ pub async fn app_leftovers(id: String) -> CmdResult<Vec<cleanup::Leftover>> {
     blocking(move || Ok(cleanup::leftovers(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
 }
 
+/// Uninstalls `id`'s installs in `formats` and keeps tracking it, deleting
+/// the leftovers in `delete`.
+#[tauri::command]
+pub async fn uninstall_app(id: String, formats: Vec<Format>, delete: Vec<PathBuf>) -> CmdResult<AppView> {
+    blocking(move || {
+        let mut store = load_store()?;
+        let app = store.get(&id).map_err(|e| e.to_string())?;
+        // Worked out here, before uninstalling, as in `remove_app`.
+        let leftovers = cleanup::leftovers(app);
+        if let Some(path) = delete.iter().find(|p| !leftovers.iter().any(|l| l.path == **p)) {
+            return Err(format!("{} is not {id}'s to delete", path.display()));
+        }
+        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
+        let result = install::uninstall_formats(app, &formats, &Platform::detect());
+        let view = AppView::from(&*app);
+        // Saved either way: what was uninstalled before a failure is gone.
+        store.save().map_err(|e| e.to_string())?;
+        let uninstalled = result.map_err(|e| e.to_string())?;
+        let (count, bytes) = cleanup::remove(&leftovers, &delete).map_err(|e| e.to_string())?;
+        let deleted = (count > 0).then(|| format!("deleted {count} folders and files ({} KiB)", bytes.div_ceil(1024)));
+        for installed in &uninstalled {
+            let mut event = Event::new(&id, Kind::Removed, Via::Gui);
+            event.from = Some(installed.tag.clone());
+            event.format = Some(installed.format);
+            event.message = deleted.clone();
+            history::record(&event).ok();
+        }
+        Ok(view)
+    })
+    .await
+}
+
 /// Stops tracking `id`, first uninstalling its installs in the `uninstall` formats.
 #[tauri::command]
 pub async fn remove_app(id: String, uninstall: Vec<Format>, delete: Vec<PathBuf>) -> CmdResult<()> {

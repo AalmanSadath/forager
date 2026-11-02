@@ -429,6 +429,37 @@ fn replace_menu_entry(app: &App) {
     }
 }
 
+/// Uninstalls `app`'s installs in `formats` and forgets them, keeping the
+/// app tracked with its other installs. A record whose install is already
+/// gone is forgotten too. Gives what was uninstalled. When an uninstall
+/// fails, those done before it are still forgotten.
+pub fn uninstall_formats(app: &mut App, formats: &[Format], platform: &Platform) -> Result<Vec<Installed>> {
+    let mut kept = Vec::new();
+    let mut done = Vec::new();
+    let mut failure = None;
+    for installed in app.install_list() {
+        if failure.is_some() || !formats.contains(&installed.format) {
+            kept.push(installed);
+            continue;
+        }
+        if !is_present(&installed) {
+            continue;
+        }
+        match uninstall(&installed, platform) {
+            Ok(()) => done.push(installed),
+            Err(e) => {
+                kept.push(installed);
+                failure = Some(e);
+            }
+        }
+    }
+    app.set_installs(kept);
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(done),
+    }
+}
+
 pub fn uninstall(installed: &Installed, platform: &Platform) -> Result<()> {
     desktop::remove(&installed.desktop);
     match (
@@ -569,6 +600,42 @@ mod tests {
             package_guesses("bifrossh.flatpak", Format::Flatpak, "BifroSSH"),
             ["bifrossh"]
         );
+    }
+
+    #[test]
+    fn uninstalls_some_formats_and_keeps_tracking() {
+        let dir = tempfile::tempdir().unwrap();
+        let appimage = dir.path().join("tool.AppImage");
+        fs::write(&appimage, b"").unwrap();
+        let install = |format, path: std::path::PathBuf| Installed {
+            tag: "v1".into(),
+            format,
+            asset: "tool".into(),
+            package: None,
+            path: Some(path),
+            links: Vec::new(),
+            desktop: Vec::new(),
+        };
+        let mut app = App::new(
+            crate::source::Source::Direct {
+                url: "https://x".into(),
+            },
+            "tool".into(),
+        );
+        app.set_installs(vec![
+            install(Format::Tarball, dir.path().join("gone")),
+            install(Format::AppImage, appimage.clone()),
+            install(Format::Flatpak, dir.path().join("missing")),
+        ]);
+        let platform = Platform::detect();
+
+        let done = uninstall_formats(&mut app, &[Format::AppImage, Format::Flatpak], &platform).unwrap();
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].format, Format::AppImage);
+        assert!(!appimage.exists());
+        // The missing Flatpak record goes too; the Tarball was not chosen.
+        let left: Vec<Format> = app.installs().map(|i| i.format).collect();
+        assert_eq!(left, [Format::Tarball]);
     }
 
     /// Needs an rpm system: `cargo test -- --ignored owner`.
