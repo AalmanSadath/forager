@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
-import type { AppView, Format, InstalledView, Leftover, Notice, UpdateState } from '../types';
+import type { AppView, Cleanup, Format, InstalledView, Notice, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import VersionsSection from './appPage/VersionsSection';
 import SettingsSection from './appPage/SettingsSection';
@@ -60,13 +60,19 @@ function AppPageBody({ app }: { app: AppView }) {
   // Formats to uninstall: every install unless unticked.
   const [keep, setKeep] = useState<Format[]>([]);
   const uninstall = app.installs.map((i) => i.format).filter((f) => !keep.includes(f));
-  // What the app left in the home directory, and which of it to delete.
-  const [leftovers, setLeftovers] = useState<Leftover[]>([]);
+  // What may go with the app (its leftovers, and Flatpak repositories only
+  // it uses), and which of it the user ticked.
+  const [cleanup, setCleanup] = useState<Cleanup>({ leftovers: [], remotes: [] });
   const [purge, setPurge] = useState<string[]>([]);
+  const [dropRepos, setDropRepos] = useState<string[]>([]);
+  // A repository can only go with the Flatpak installed from it.
+  const remotes = uninstall.includes('flatpak') ? cleanup.remotes : [];
+  const repos = dropRepos.filter((name) => remotes.some((r) => r.name === name));
 
   const openDialog = (kind: 'remove' | 'uninstall') => {
     setKeep([]);
     setPurge([]);
+    setDropRepos([]);
     setDialog(kind);
   };
 
@@ -74,8 +80,8 @@ function AppPageBody({ app }: { app: AppView }) {
     if (!dialog) return;
     let live = true;
     ipc
-      .appLeftovers(app.id)
-      .then((found) => live && setLeftovers(found))
+      .appCleanup(app.id)
+      .then((found) => live && setCleanup(found))
       .catch(() => {});
     return () => {
       live = false;
@@ -165,7 +171,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const remove = async () => {
     setDialog(null);
     try {
-      await ipc.removeApp(app.id, uninstall, purge);
+      await ipc.removeApp(app.id, uninstall, purge, repos);
       setPage({ kind: 'apps' });
       await loadApps();
       toast('success', uninstall.length > 0 ? `Removed and uninstalled ${app.id}.` : `Stopped tracking ${app.id}.`);
@@ -177,7 +183,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const uninstallKeepTracking = async () => {
     setDialog(null);
     try {
-      await ipc.uninstallApp(app.id, uninstall, purge);
+      await ipc.uninstallApp(app.id, uninstall, purge, repos);
       toast('success', `Uninstalled ${app.id}; still tracked.`);
     } catch (e) {
       toast('error', String(e));
@@ -406,7 +412,13 @@ function AppPageBody({ app }: { app: AppView }) {
                 </span>
               </label>
             ))}
-          <LeftoverChoices leftovers={leftovers} purge={purge} setPurge={setPurge} />
+          <CleanupChoices
+            cleanup={{ leftovers: cleanup.leftovers, remotes }}
+            purge={purge}
+            setPurge={setPurge}
+            dropRepos={dropRepos}
+            setDropRepos={setDropRepos}
+          />
         </ConfirmModal>
       )}
 
@@ -433,40 +445,66 @@ function AppPageBody({ app }: { app: AppView }) {
               </span>
             </label>
           ))}
-          <LeftoverChoices leftovers={leftovers} purge={purge} setPurge={setPurge} />
+          <CleanupChoices
+            cleanup={{ leftovers: cleanup.leftovers, remotes }}
+            purge={purge}
+            setPurge={setPurge}
+            dropRepos={dropRepos}
+            setDropRepos={setDropRepos}
+          />
         </ConfirmModal>
       )}
     </div>
   );
 }
 
-/** The app's leftover settings and data, each to tick for deletion. */
-function LeftoverChoices({
-  leftovers,
+type Toggle = (update: (ticked: string[]) => string[]) => void;
+
+/** A checkbox adding `value` to, or taking it from, a ticked list. */
+function TickRow({ value, ticked, set, children }: { value: string; ticked: string[]; set: Toggle; children: ReactNode }) {
+  return (
+    <label className="checkbox-row">
+      <input
+        type="checkbox"
+        checked={ticked.includes(value)}
+        onChange={(e) => set((t) => (e.target.checked ? [...t, value] : t.filter((x) => x !== value)))}
+      />
+      <span>{children}</span>
+    </label>
+  );
+}
+
+/**
+ * The app's leftover settings and data, and the Flatpak repositories only
+ * it uses, each to tick for deletion.
+ */
+function CleanupChoices({
+  cleanup,
   purge,
   setPurge,
+  dropRepos,
+  setDropRepos,
 }: {
-  leftovers: Leftover[];
+  cleanup: Cleanup;
   purge: string[];
-  setPurge: (update: (purge: string[]) => string[]) => void;
+  setPurge: Toggle;
+  dropRepos: string[];
+  setDropRepos: Toggle;
 }) {
-  if (leftovers.length === 0) return null;
+  if (cleanup.leftovers.length === 0 && cleanup.remotes.length === 0) return null;
   return (
     <>
-      <p className="form-hint">Its settings and data stay unless you tick them:</p>
-      {leftovers.map((leftover) => (
-        <label key={leftover.path} className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={purge.includes(leftover.path)}
-            onChange={(e) =>
-              setPurge((p) => (e.target.checked ? [...p, leftover.path] : p.filter((x) => x !== leftover.path)))
-            }
-          />
-          <span>
-            Delete <span className="mono">{leftover.path}</span> ({formatSize(leftover.bytes)})
-          </span>
-        </label>
+      <p className="form-hint">These stay unless you tick them:</p>
+      {cleanup.leftovers.map((leftover) => (
+        <TickRow key={leftover.path} value={leftover.path} ticked={purge} set={setPurge}>
+          Delete <span className="mono">{leftover.path}</span> ({formatSize(leftover.bytes)})
+        </TickRow>
+      ))}
+      {cleanup.remotes.map((remote) => (
+        <TickRow key={remote.name} value={remote.name} ticked={dropRepos} set={setDropRepos}>
+          Remove the <span className="mono">{remote.name}</span> Flatpak repository (
+          <span className="mono">{remote.url}</span>), which nothing else uses
+        </TickRow>
       ))}
     </>
   );

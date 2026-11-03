@@ -27,7 +27,7 @@ import type {
   DoctorCheck,
   ImportResult,
   SystemAppearance,
-  Leftover,
+  Cleanup,
 } from './types';
 
 // ── activity ────────────────────────────────────────────────────
@@ -58,13 +58,14 @@ export const addApp = (
 export const inspectAppImage = (path: string) => invoke<AppImageInfo>('inspect_appimage', { path });
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('save_app', { id, settings, signature });
-/** Stops tracking `id`, first uninstalling its installs in these formats and deleting the leftovers in `remove`. */
-export const removeApp = (id: string, uninstall: Format[], remove: string[]) =>
-  invoke<void>('remove_app', { id, uninstall, delete: remove });
-/** Uninstalls `id`'s installs in these formats and keeps tracking it, deleting the leftovers in `remove`. */
-export const uninstallApp = (id: string, formats: Format[], remove: string[]) =>
-  invoke<AppView>('uninstall_app', { id, formats, delete: remove });
-export const appLeftovers = (id: string) => invoke<Leftover[]>('app_leftovers', { id });
+/** Stops tracking `id`, first uninstalling its installs in these formats, deleting the leftovers in `remove` and removing the repositories in `remotes`. */
+export const removeApp = (id: string, uninstall: Format[], remove: string[], remotes: string[]) =>
+  invoke<void>('remove_app', { id, uninstall, delete: remove, remotes });
+/** Uninstalls `id`'s installs in these formats and keeps tracking it, deleting the leftovers in `remove` and removing the repositories in `remotes`. */
+export const uninstallApp = (id: string, formats: Format[], remove: string[], remotes: string[]) =>
+  invoke<AppView>('uninstall_app', { id, formats, delete: remove, remotes });
+/** What may go with `id` when it is uninstalled or removed. */
+export const appCleanup = (id: string) => invoke<Cleanup>('app_cleanup', { id });
 
 /** Adds the menu entries missing from AppImages and tarballs (of `ids`, or every app). */
 export const createMenuEntries = (ids: string[] | null = null) =>

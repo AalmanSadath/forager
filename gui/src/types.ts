@@ -98,6 +98,20 @@ export interface Leftover {
   bytes: number;
 }
 
+/** A Flatpak repository an app was installed from. */
+export interface Remote {
+  name: string;
+  url: string;
+  /** In the system installation rather than the user's. */
+  system: boolean;
+}
+
+/** What may go with an app: its leftovers, and repositories only it uses. */
+export interface Cleanup {
+  leftovers: Leftover[];
+  remotes: Remote[];
+}
+
 /** Something worth knowing about an app's project that is not an update. */
 export type Notice =
   | { kind: 'archived' }

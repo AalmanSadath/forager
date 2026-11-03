@@ -97,7 +97,7 @@ pub fn run() {
             commands::edit::mark_seen,
             commands::edit::follow_move,
             commands::edit::app_icon,
-            commands::edit::app_leftovers,
+            commands::edit::app_cleanup,
             commands::system::restart_self,
             commands::update::plan_update,
             commands::update::start_update,

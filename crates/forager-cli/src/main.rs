@@ -304,6 +304,10 @@ enum Command {
         /// Keep the app's settings, caches and data without asking.
         #[arg(long)]
         keep_data: bool,
+        /// Also remove the Flatpak repository the app came from, when
+        /// nothing else installed uses it, without asking.
+        #[arg(long)]
+        remove_repo: bool,
     },
     /// Uninstall an app but keep tracking it; `forager update <id>`
     /// installs it again.
@@ -320,6 +324,10 @@ enum Command {
         /// Keep the app's settings, caches and data without asking.
         #[arg(long)]
         keep_data: bool,
+        /// Also remove the Flatpak repository the app came from, when
+        /// nothing else installed uses it, without asking.
+        #[arg(long)]
+        remove_repo: bool,
     },
 }
 
@@ -845,6 +853,7 @@ fn main() -> Result<()> {
             keep_installed,
             purge,
             keep_data,
+            remove_repo,
         } => {
             let app = store.get(&id)?;
             // Found before uninstalling, while the menu entries still name the app.
@@ -852,6 +861,7 @@ fn main() -> Result<()> {
                 true => Vec::new(),
                 false => cleanup::leftovers(app),
             };
+            let remotes = install::removable_remotes(app);
             let present: Vec<Installed> = app.installs().filter(|i| install::is_present(i)).cloned().collect();
             let mut uninstall = Vec::new();
             if !keep_installed {
@@ -870,7 +880,9 @@ fn main() -> Result<()> {
             let (count, bytes) = cleanup::remove(&leftovers, &delete)?;
             let app = store.remove(&id)?;
             store.save()?;
-            let deleted = (count > 0).then(|| format!("deleted {count} folders and files ({})", size(bytes)));
+            let flatpak_gone = uninstall.iter().any(|i| i.format == Format::Flatpak);
+            let repos = remove_repos(&id, &remotes, flatpak_gone, remove_repo)?;
+            let deleted = cleanup_message(count, bytes, &repos);
             if let Some(deleted) = &deleted {
                 println!("{id}: {deleted}.");
             }
@@ -896,6 +908,7 @@ fn main() -> Result<()> {
             format,
             purge,
             keep_data,
+            remove_repo,
         } => {
             let app = store.get(&id)?;
             let formats: Vec<Format> = match format.is_empty() {
@@ -916,13 +929,16 @@ fn main() -> Result<()> {
                 true => Vec::new(),
                 false => cleanup::leftovers(app),
             };
+            let remotes = install::removable_remotes(app);
             let result = install::uninstall_formats(store.get_mut(&id)?, &formats, &Platform::detect());
             // Saved either way: what was uninstalled before a failure is gone.
             store.save()?;
             let uninstalled = result?;
             let delete = choose_leftovers(&id, &leftovers, purge)?;
             let (count, bytes) = cleanup::remove(&leftovers, &delete)?;
-            let deleted = (count > 0).then(|| format!("deleted {count} folders and files ({})", size(bytes)));
+            let flatpak_gone = uninstalled.iter().any(|i| i.format == Format::Flatpak);
+            let repos = remove_repos(&id, &remotes, flatpak_gone, remove_repo)?;
+            let deleted = cleanup_message(count, bytes, &repos);
             if let Some(deleted) = &deleted {
                 println!("{id}: {deleted}.");
             }
@@ -943,6 +959,44 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Removes the Flatpak repositories of `remotes` once the app's Flatpak is
+/// uninstalled (`flatpak_gone`): all with `remove_repo`, else those the
+/// user agrees to on a terminal. Gives their names.
+fn remove_repos(
+    id: &str,
+    remotes: &[install::flatpak::Remote],
+    flatpak_gone: bool,
+    remove_repo: bool,
+) -> Result<Vec<String>> {
+    if !flatpak_gone {
+        return Ok(Vec::new());
+    }
+    let mut chosen = Vec::new();
+    for remote in remotes {
+        let agreed = remove_repo || {
+            println!(
+                "{id} was installed from the {} Flatpak repository ({}), which nothing else uses.",
+                remote.name, remote.url
+            );
+            io::stdin().is_terminal() && confirm("Remove the repository too?")?
+        };
+        if agreed {
+            chosen.push(remote.name.clone());
+        }
+    }
+    Ok(install::remove_remotes(remotes, &chosen)?)
+}
+
+/// The history note on what a removal cleaned up, if anything.
+fn cleanup_message(count: usize, bytes: u64, repos: &[String]) -> Option<String> {
+    let mut parts = Vec::new();
+    if count > 0 {
+        parts.push(format!("deleted {count} folders and files ({})", size(bytes)));
+    }
+    parts.extend(repos.iter().map(|name| format!("removed the {name} repository")));
+    (!parts.is_empty()).then(|| parts.join("; "))
 }
 
 /// Which of `leftovers` to delete: all with `purge`, else those the user

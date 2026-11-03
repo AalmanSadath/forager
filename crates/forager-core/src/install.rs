@@ -435,6 +435,33 @@ fn replace_menu_entry(app: &App) {
     }
 }
 
+/// The Flatpak repositories `app`'s installs came from that nothing else
+/// installed uses, so they may go with it. Work them out before
+/// uninstalling.
+pub fn removable_remotes(app: &App) -> Vec<flatpak::Remote> {
+    app.installs()
+        .filter(|i| i.format == Format::Flatpak)
+        .filter_map(|i| i.package.as_deref())
+        .filter_map(flatpak::removable_remote)
+        .collect()
+}
+
+/// Removes the repositories of `allowed` named in `names`: `allowed` comes
+/// from `removable_remotes`, worked out by the caller, never from whoever
+/// asks. Gives the names removed.
+pub fn remove_remotes(allowed: &[flatpak::Remote], names: &[String]) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
+    for name in names {
+        let remote = allowed
+            .iter()
+            .find(|r| r.name == *name)
+            .ok_or_else(|| Error::CommandFailed(format!("{name} is not the app's repository to remove")))?;
+        flatpak::remove_remote(remote)?;
+        removed.push(name.clone());
+    }
+    Ok(removed)
+}
+
 /// Uninstalls `app`'s installs in `formats` and forgets them, keeping the
 /// app tracked with its other installs. A record whose install is already
 /// gone is forgotten too. Gives what was uninstalled. When an uninstall
