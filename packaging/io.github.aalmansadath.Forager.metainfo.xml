@@ -58,6 +58,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.2" date="2026-11-03">
+      <description>
+        <ul>
+          <li>Flatpaks installed from a project's repository (a .flatpakref, a .flatpakrepo, or a bundle that names its repository) are updated with flatpak update instead of downloading the bundle again.</li>
+          <li>Rolling a Flatpak back uses the repository's commit of that version when it still has one.</li>
+          <li>Uninstalling or removing an app offers to remove the Flatpak repository it came from when nothing else uses it.</li>
+          <li>System-wide Flatpak changes can ask for the administrator password, and failures show Flatpak's own error.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-11-02">
       <description>
         <ul>
