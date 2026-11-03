@@ -36,17 +36,49 @@ fn find_app_id(header: &[u8]) -> Option<String> {
 /// installed from somewhere else. App data in `~/.var/app` is kept.
 pub fn install(file: &Path) -> Result<()> {
     let id = app_id(file)?;
-    super::run(
-        host::command("flatpak")
-            .args([
-                "install",
-                installation(&id),
-                "--noninteractive",
-                "--reinstall",
-                "--bundle",
-            ])
-            .arg(file),
-    )
+    let inst = installation(&id);
+    run(host::command("flatpak")
+        .args(["install", inst, no_questions(inst), "--reinstall", "--bundle"])
+        .arg(file))
+}
+
+/// The flag that keeps flatpak from asking questions on the terminal. In
+/// the system installation, `--noninteractive` would also stop polkit from
+/// asking for the password that adding a repository (for a bundle that
+/// names one) needs, so the answers are given with `--assumeyes` instead.
+fn no_questions(installation: &str) -> &'static str {
+    match installation {
+        "--system" => "--assumeyes",
+        _ => "--noninteractive",
+    }
+}
+
+/// Runs a flatpak command; when it fails, the error says why, from what
+/// flatpak printed, not only its exit status.
+fn run(command: &mut std::process::Command) -> Result<()> {
+    let out = command.stderr(std::process::Stdio::piped()).output()?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Still shown on a terminal, as without capturing.
+    eprint!("{stderr}");
+    match out.status.success() {
+        true => Ok(()),
+        false => Err(Error::CommandFailed(match reason(&stderr) {
+            Some(reason) => format!("flatpak: {reason}"),
+            None => format!("{command:?} exited with {}", out.status),
+        })),
+    }
+}
+
+/// The error flatpak gave, from its output: the last `error:` line, else
+/// the last line.
+fn reason(stderr: &str) -> Option<String> {
+    let lines: Vec<&str> = stderr.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    lines
+        .iter()
+        .rev()
+        .find_map(|l| l.strip_prefix("error:"))
+        .or(lines.last().copied())
+        .map(|l| l.trim().to_string())
 }
 
 /// Installs the app a `.flatpakref` names from the repository it points
@@ -55,11 +87,10 @@ pub fn install(file: &Path) -> Result<()> {
 pub fn install_ref(file: &Path) -> Result<String> {
     let id = ref_app_id(&std::fs::read_to_string(file)?)
         .ok_or_else(|| Error::Archive("not a Flatpak app reference".into()))?;
-    super::run(
-        host::command("flatpak")
-            .args(["install", installation(&id), "--noninteractive", "--from"])
-            .arg(file),
-    )?;
+    let inst = installation(&id);
+    run(host::command("flatpak")
+        .args(["install", inst, no_questions(inst), "--from"])
+        .arg(file))?;
     Ok(id)
 }
 
@@ -76,17 +107,16 @@ pub fn install_from_repo_file(file: &Path, id: &str) -> Result<()> {
         Some((_, other)) if other.trim_end_matches('/') != url.trim_end_matches('/') => format!("{base}-forager"),
         _ => base,
     };
-    super::run(
-        host::command("flatpak")
-            .args(["remote-add", inst, "--if-not-exists", "--from", &name])
-            .arg(file),
-    )?;
-    super::run(host::command("flatpak").args(["install", inst, "--noninteractive", "--reinstall", &name, id]))
+    run(host::command("flatpak")
+        .args(["remote-add", inst, "--if-not-exists", "--from", &name])
+        .arg(file))?;
+    run(host::command("flatpak").args(["install", inst, no_questions(inst), "--reinstall", &name, id]))
 }
 
 /// Updates `id` from the repository it was installed from.
 pub fn update(id: &str) -> Result<()> {
-    super::run(host::command("flatpak").args(["update", installation(id), "--noninteractive", id]))
+    let inst = installation(id);
+    run(host::command("flatpak").args(["update", inst, no_questions(inst), id]))
 }
 
 /// A Flatpak repository, as configured in one installation.
@@ -144,7 +174,7 @@ pub fn remove_remote(remote: &Remote) -> Result<()> {
     if !remotes(remote.installation()).iter().any(|(n, _)| *n == remote.name) {
         return Ok(());
     }
-    super::run(host::command("flatpak").args(["remote-delete", remote.installation(), &remote.name]))
+    run(host::command("flatpak").args(["remote-delete", remote.installation(), &remote.name]))
 }
 
 /// Whether only `id` (and its own extensions, such as its `.Locale`) comes
@@ -220,7 +250,8 @@ fn remote_name(file: &Path) -> String {
 }
 
 pub fn uninstall(id: &str) -> Result<()> {
-    super::run(host::command("flatpak").args(["uninstall", installation(id), "--noninteractive", id]))
+    let inst = installation(id);
+    run(host::command("flatpak").args(["uninstall", inst, no_questions(inst), id]))
 }
 
 /// Whether `id` is installed, in the user or the system installation.
@@ -306,6 +337,20 @@ mod tests {
         let shared = refs(&[("org.example.Tool", "tool"), ("org.example.Toolbox", "tool")]);
         assert!(!only_used_by("tool", "org.example.Tool", &shared));
         assert!(!only_used_by("flathub", "org.gnome.Platform", &own));
+    }
+
+    #[test]
+    fn says_why_flatpak_failed() {
+        let stderr =
+            "Installing app/x\nF: warning\nerror: Flatpak system operation ConfigureRemote not allowed for user\n";
+        assert_eq!(
+            reason(stderr).as_deref(),
+            Some("Flatpak system operation ConfigureRemote not allowed for user")
+        );
+        assert_eq!(reason("something broke\n\n").as_deref(), Some("something broke"));
+        assert_eq!(reason(""), None);
+        assert_eq!(no_questions("--system"), "--assumeyes");
+        assert_eq!(no_questions("--user"), "--noninteractive");
     }
 
     #[test]
