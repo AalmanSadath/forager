@@ -1184,8 +1184,8 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
     let mut prefetched = update::prefetch(&store.apps);
     for index in 0..store.apps.len() {
         let status = match prefetched.remove(&index) {
-            Some(releases) => update::status_in(&store.apps[index], releases),
-            None => update::status(&store.apps[index]),
+            Some(releases) => update::status_in(&store.apps[index], releases, &platform),
+            None => update::status(&store.apps[index], &platform),
         };
         let status = match status {
             Ok(status) => status,

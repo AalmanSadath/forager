@@ -81,7 +81,7 @@ pub fn status_of(
         cache.put(app, releases.clone());
     }
     let result = releases
-        .and_then(|releases| update::status_in(app, releases))
+        .and_then(|releases| update::status_in(app, releases, platform))
         .map(|status| {
             let found = status
                 .found

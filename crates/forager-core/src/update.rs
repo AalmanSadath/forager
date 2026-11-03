@@ -262,18 +262,17 @@ pub fn prefetch(apps: &[App]) -> std::collections::HashMap<usize, Vec<Release>> 
 }
 
 /// Fetches the latest release and compares it with the installs.
-pub fn status(app: &App) -> Result<Status> {
-    status_in(app, app.releases()?)
+pub fn status(app: &App, platform: &Platform) -> Result<Status> {
+    status_in(app, app.releases()?, platform)
 }
 
 /// `status` against releases already fetched, newest first.
-pub fn status_in(app: &App, releases: Vec<Release>) -> Result<Status> {
-    let platform = Platform::detect();
-    let latest = latest(app, releases, &platform)?;
+pub fn status_in(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<Status> {
+    let latest = latest(app, releases, platform)?;
     if app.track_only {
         return Ok(track_only_status(app, latest));
     }
-    let observed = observe(app, &latest, &platform);
+    let observed = observe(app, &latest, platform);
     let found = (observed != app.install_list()).then(|| observed.clone());
     let skipped = app.skipped.as_deref() == Some(latest.tag.as_str());
     let installs: Vec<InstallState> = observed
@@ -537,7 +536,7 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
         return Ok(Vec::new());
     }
     let releases = app.releases()?;
-    let status = status_in(app, releases.clone())?;
+    let status = status_in(app, releases.clone(), platform)?;
     if let Some(found) = status.found {
         app.set_installs(found);
     }
@@ -573,7 +572,7 @@ pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Re
         .find(|r| r.tag == tag)
         .cloned()
         .ok_or_else(|| Error::ReleaseNotFound(tag.to_string()))?;
-    let status = status_in(app, releases.clone())?;
+    let status = status_in(app, releases.clone(), platform)?;
     if let Some(found) = status.found {
         app.set_installs(found);
     }
