@@ -14,7 +14,7 @@ the system package manager. Think
 
 - **Sources:** GitHub, GitLab, Forgejo/Codeberg (hosted or self-hosted),
   SourceForge, SourceHut, Jenkins, direct links, download pages.
-- **Formats:** rpm, deb, Arch packages, Flatpak bundles, AppImages, tarballs.
+- **Formats:** rpm, deb, Arch packages, Flatpak bundles and references, AppImages, tarballs.
 - **Verification:** SHA-256 checksums; minisign, GPG or GitHub attestations.
 - **AppImages:** delta updates via `.zsync`; adopt ones downloaded by hand.
 - **Track-only** apps, **background checks**, **export/import** and
@@ -246,6 +246,10 @@ Flatpak's `~/.var/app/<id>`. These are deleted only if you agree
 tracking the app, so `forager update <id>` or Install puts it back.
 `--format` picks one of several installs.
 
+Both offer to remove the Flatpak repository the app came from when nothing
+else installed uses it (`--remove-repo` without asking). Flathub is never
+offered.
+
 ### Tarballs
 
 - Unpacked to `~/.local/opt/<id>`. The executable (at the top, in `bin/`,
@@ -253,6 +257,20 @@ tracking the app, so `forager update <id>` or Install puts it back.
 - Shipped menu entries, man pages and completions are linked into
   `~/.local/share`. zsh needs `fpath+=~/.local/share/zsh/site-functions`.
 - Files Forager didn't create are never replaced.
+
+### Flatpaks
+
+- Installed into your user installation, unless the app is already in the
+  system one.
+- A `.flatpakref` in the release is preferred to a bundle: it installs from
+  the project's repository, which Flatpak adds as a remote. A bundle built
+  with a repository address sets one up too, and a `.flatpakrepo` published
+  next to a bundle without one is added after it.
+- Once a Flatpak's remote has an address, updates run `flatpak update`
+  instead of downloading the bundle again; Flatpak verifies them with the
+  repository's key. If the repository doesn't have the release yet, the
+  update fails and is tried again later. Apps with a `--minisign-key`, `--gpg-key`
+  or attestation check, and rollbacks, keep using the release file.
 
 ### System packages
 
