@@ -269,8 +269,13 @@ offered.
 - Once a Flatpak's remote has an address, updates run `flatpak update`
   instead of downloading the bundle again; Flatpak verifies them with the
   repository's key. If the repository doesn't have the release yet, the
-  update fails and is tried again later. Apps with a `--minisign-key`, `--gpg-key`
-  or attestation check, and rollbacks, keep using the release file.
+  update fails and is tried again later.
+- Installing an older release, or one short of the latest, uses the
+  repository's commit whose subject names that version
+  (`flatpak update --commit`); if the repository no longer has it, the
+  release file is installed instead.
+- Apps with a `--minisign-key`, `--gpg-key` or attestation check keep
+  using the release file.
 
 ### System packages
 

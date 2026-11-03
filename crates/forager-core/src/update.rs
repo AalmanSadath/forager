@@ -54,6 +54,9 @@ pub struct Plan {
     /// The Flatpak repository the install came from: the update is a
     /// `flatpak update` from it, and nothing is downloaded.
     pub via_repo: Option<String>,
+    /// The repository's commit of the release, when it is not the newest
+    /// one there: going back, or to a release short of the latest.
+    pub repo_commit: Option<String>,
     /// The release's `.flatpakrepo`, fetched with a Flatpak bundle that
     /// names no repository of its own, so the app is then installed from
     /// that repository and updated from it.
@@ -97,10 +100,14 @@ pub struct SummaryLine {
 pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
     let line = |label, value: String, tone| SummaryLine { label, value, tone };
     if let Some(remote) = &plan.via_repo {
+        let how = match &plan.repo_commit {
+            Some(commit) => format!("flatpak update --commit={}", &commit[..commit.len().min(12)]),
+            None => "flatpak update".into(),
+        };
         return vec![
             line(
                 "from",
-                format!("the {remote} Flatpak repository (flatpak update), no download"),
+                format!("the {remote} Flatpak repository ({how}), no download"),
                 Tone::Normal,
             ),
             line("source", app.source.to_string(), Tone::Normal),
@@ -617,16 +624,31 @@ fn plan_one(
     let downgrade = current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag));
     // An installed Flatpak with a repository behind it updates from there,
     // unless the app must be checked against a signature on the release
-    // file, or it goes back a version, which `flatpak update` cannot do.
-    let via_repo = match current {
-        Some(current) if format == Format::Flatpak && signature.is_none() && !downgrade => current
+    // file.
+    let origin = match current {
+        Some(current) if format == Format::Flatpak && current.installed.format == Format::Flatpak => current
             .installed
             .package
             .as_deref()
-            .filter(|_| current.installed.format == Format::Flatpak)
-            .and_then(install::flatpak::origin)
-            .map(|remote| remote.name),
+            .filter(|_| signature.is_none())
+            .and_then(|id| Some((id, install::flatpak::origin(id)?))),
         _ => None,
+    };
+    // Any release but the latest (going back, or short of the latest) is
+    // the repository's commit of that version, when it still has one;
+    // otherwise the release file is installed instead.
+    let (via_repo, repo_commit) = match origin {
+        Some((id, remote)) if downgrade || skip_after.is_some() => {
+            match install::flatpak::history(&remote, id)
+                .into_iter()
+                .find(|(_, subject)| names_version(subject, &release.tag))
+            {
+                Some((commit, _)) => (Some(remote.name), Some(commit)),
+                None => (None, None),
+            }
+        }
+        Some((_, remote)) => (Some(remote.name), None),
+        None => (None, None),
     };
     let repo_file = match via_repo.is_none() && format == Format::Flatpak && asset.name.ends_with(".flatpak") {
         true => release
@@ -640,6 +662,7 @@ fn plan_one(
         // Nothing is downloaded from the release when the repository updates it.
         asset_changed: asset_changed.filter(|_| via_repo.is_none()),
         via_repo,
+        repo_commit,
         repo_file,
         delta,
         from: current
@@ -942,7 +965,7 @@ pub fn install(
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Installed> {
     let installed = match &plan.via_repo {
-        Some(remote) => update_from_repo(store.get(id)?, remote, &plan.release.tag)?,
+        Some(remote) => update_from_repo(store.get(id)?, remote, plan.repo_commit.as_deref(), &plan.release.tag)?,
         None => {
             let installed = install::install(
                 &download.path,
@@ -997,12 +1020,19 @@ pub fn install(
 /// Updates `app`'s Flatpak from the repository `remote` it came from, and
 /// gives the install as at `tag`. Fails when the repository has not caught
 /// up with the release yet, leaving the record as it was.
-fn update_from_repo(app: &App, remote: &str, tag: &str) -> Result<Installed> {
+fn update_from_repo(app: &App, remote: &str, commit: Option<&str>, tag: &str) -> Result<Installed> {
     let current = app
         .install_of(Format::Flatpak)
         .filter(|i| i.package.is_some())
         .ok_or_else(|| Error::CommandFailed(format!("{} has no Flatpak install to update", app.id)))?;
     let flatpak_id = current.package.as_deref().unwrap_or_default();
+    if let Some(commit) = commit {
+        install::flatpak::update_to(flatpak_id, commit)?;
+        return Ok(Installed {
+            tag: tag.to_string(),
+            ..current.clone()
+        });
+    }
     install::flatpak::update(flatpak_id)?;
     if let Some(actual) = install::flatpak_version(flatpak_id)
         && repo_behind(&actual, tag)
@@ -1015,6 +1045,19 @@ fn update_from_repo(app: &App, remote: &str, tag: &str) -> Result<Installed> {
         tag: tag.to_string(),
         ..current.clone()
     })
+}
+
+/// Whether a repository commit's `subject` (`Tool 1.2.0`) names the version
+/// of the release `tag`.
+fn names_version(subject: &str, tag: &str) -> bool {
+    static VERSION: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"v?\d+(\.\d+)+(-[0-9A-Za-z.]+)?").unwrap());
+    let Some(wanted) = version::parse_tag(tag) else {
+        return false;
+    };
+    VERSION
+        .find_iter(subject)
+        .any(|m| version::parse_tag(m.as_str()).is_some_and(|v| v == wanted))
 }
 
 /// Whether the version a repository installed, `actual`, is older than the
@@ -1172,6 +1215,7 @@ mod tests {
             skip_after: None,
             asset_changed: None,
             via_repo: None,
+            repo_commit: None,
             repo_file: None,
         }
     }
@@ -1652,6 +1696,11 @@ mod tests {
         assert!(!repo_behind("1.3.0", "v1.3.0"));
         assert!(!repo_behind("1.4.0", "v1.3.0"));
         assert!(!repo_behind("nightly", "v1.3.0"));
+
+        assert!(names_version("BifroSSH 0.17.0", "v0.17.0"));
+        assert!(!names_version("BifroSSH 0.17.1", "v0.17.0"));
+        assert!(!names_version("BifroSSH 0.17.0", "nightly"));
+        assert!(names_version("Release v2.0.0-rc.1", "2.0.0-rc.1"));
     }
 
     #[test]

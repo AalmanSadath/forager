@@ -119,6 +119,45 @@ pub fn update(id: &str) -> Result<()> {
     run(host::command("flatpak").args(["update", inst, no_questions(inst), id]))
 }
 
+/// Moves `id` to `commit` of the repository it came from, older or newer
+/// than the one installed.
+pub fn update_to(id: &str, commit: &str) -> Result<()> {
+    let inst = installation(id);
+    run(host::command("flatpak")
+        .args(["update", inst, no_questions(inst)])
+        .arg(format!("--commit={commit}"))
+        .arg(id))
+}
+
+/// The commits of `id` that `remote` still has, newest first, as
+/// `(commit, subject)`. Projects usually name the version in the subject.
+pub fn history(remote: &Remote, id: &str) -> Vec<(String, String)> {
+    host::query("flatpak")
+        .args(["remote-info", remote.installation(), "--log", &remote.name, id])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| parse_log(&String::from_utf8_lossy(&out.stdout)))
+        .unwrap_or_default()
+}
+
+/// Pairs each `Commit:` of `flatpak remote-info --log` with the
+/// `Subject:` after it.
+fn parse_log(text: &str) -> Vec<(String, String)> {
+    let mut commits = Vec::new();
+    let mut commit: Option<String> = None;
+    for line in text.lines().map(str::trim) {
+        if let Some(value) = line.strip_prefix("Commit:") {
+            commit = Some(value.trim().to_string());
+        } else if let Some(value) = line.strip_prefix("Subject:")
+            && let Some(commit) = commit.take()
+        {
+            commits.push((commit, value.trim().to_string()));
+        }
+    }
+    commits
+}
+
 /// A Flatpak repository, as configured in one installation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Remote {
@@ -337,6 +376,18 @@ mod tests {
         let shared = refs(&[("org.example.Tool", "tool"), ("org.example.Toolbox", "tool")]);
         assert!(!only_used_by("tool", "org.example.Tool", &shared));
         assert!(!only_used_by("flathub", "org.gnome.Platform", &own));
+    }
+
+    #[test]
+    fn reads_a_repositorys_history() {
+        let log = "        Commit: aaa\n        Parent: bbb\n       Subject: Tool 1.1.0\n          Date: x\n       History: \n\n        Commit: bbb\n       Subject: Tool 1.0.0\n          Date: y\n";
+        assert_eq!(
+            parse_log(log),
+            [
+                ("aaa".to_string(), "Tool 1.1.0".to_string()),
+                ("bbb".to_string(), "Tool 1.0.0".to_string())
+            ]
+        );
     }
 
     #[test]
