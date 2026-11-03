@@ -1,44 +1,22 @@
 //! Looking up a project, previewing which asset settings would pick, and
-//! adding, saving and removing apps.
+//! adding and saving apps.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use forager_core::appimage::{self, AppImageInfo};
 use forager_core::history::{self, Event, Kind, Via};
 use forager_core::matcher::{self, Verdict};
-use forager_core::model::{App, Format, Release, Signature};
+use forager_core::model::{App, Format, Signature};
 use forager_core::platform::Platform;
 use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
-use forager_core::{Error, cleanup, install, share, update, version};
+use forager_core::{Error, update, version};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::apps::AppView;
+use super::releases::{ReleaseCache, ReleaseView, latest_tag, releases_of};
 use crate::state::{CmdResult, blocking, load_store};
-
-/// Latest release per source and prerelease setting, so previews while the
-/// user types a filter need no network.
-#[derive(Default)]
-pub struct ReleaseCache(Mutex<HashMap<String, Vec<Release>>>);
-
-impl ReleaseCache {
-    /// The whole source, not its display name: a web page's releases depend
-    /// on its pattern too. Apps with a version limit fetch a longer list.
-    fn key(app: &App) -> String {
-        format!("{:?} {}", app.source, app.versions.is_some())
-    }
-
-    pub fn put(&self, app: &App, releases: Vec<Release>) {
-        self.0.lock().unwrap().insert(Self::key(app), releases);
-    }
-
-    fn get(&self, app: &App) -> Option<Vec<Release>> {
-        self.0.lock().unwrap().get(&Self::key(app)).cloned()
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SourceInfo {
@@ -120,27 +98,6 @@ impl SettingsInput {
         app.bins = self.bins.iter().filter(|b| !b.trim().is_empty()).cloned().collect();
         app.track_only = self.track_only;
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ReleaseView {
-    pub tag: String,
-    pub name: Option<String>,
-    pub published_at: Option<String>,
-    pub prerelease: bool,
-    pub notes: Option<String>,
-}
-
-impl From<&Release> for ReleaseView {
-    fn from(release: &Release) -> ReleaseView {
-        ReleaseView {
-            tag: release.tag.clone(),
-            name: release.name.clone(),
-            published_at: release.published_at.clone(),
-            prerelease: release.prerelease,
-            notes: release.notes.clone(),
-        }
     }
 }
 
@@ -328,84 +285,6 @@ pub async fn add_app(
     .await
 }
 
-/// The tag of the latest release `app` takes, from the cache if it is there.
-async fn latest_tag(cache: &ReleaseCache, app: &App) -> CmdResult<String> {
-    let releases = releases_of(cache, app, false).await?;
-    Ok(update::latest(app, releases, &Platform::detect())
-        .map_err(|e| e.to_string())?
-        .tag)
-}
-
-/// Marks a tracked-only app's release `tag` (the latest when `None`) as
-/// seen, so it is no longer reported as new.
-#[tauri::command]
-pub async fn mark_seen(cache: State<'_, ReleaseCache>, id: String, tag: Option<String>) -> CmdResult<AppView> {
-    let tag = match tag {
-        Some(tag) => tag,
-        None => {
-            let key = id.clone();
-            let app = blocking(move || load_store()?.get(&key).cloned().map_err(|e| e.to_string())).await?;
-            latest_tag(&cache, &app).await?
-        }
-    };
-    blocking(move || {
-        let mut store = load_store()?;
-        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
-        app.seen = Some(tag);
-        let view = AppView::from(&*app);
-        store.save().map_err(|e| e.to_string())?;
-        Ok(view)
-    })
-    .await
-}
-
-/// Points the app at the address its repository moved to, as the forge
-/// reports it. Installs and settings stay.
-#[tauri::command]
-pub async fn follow_move(id: String) -> CmdResult<AppView> {
-    blocking(move || {
-        let mut store = load_store()?;
-        let source = store.get(&id).map_err(|e| e.to_string())?.source.clone();
-        let moved = source
-            .repo_info()
-            .and_then(|info| source.moved_to(&info))
-            .ok_or_else(|| format!("{source} has not moved"))?;
-        if let Some(other) = store.apps.iter().find(|a| a.id != id && a.source == moved) {
-            return Err(format!("{} already tracks {moved}", other.id));
-        }
-        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
-        app.source = moved;
-        let view = AppView::from(&*app);
-        store.save().map_err(|e| e.to_string())?;
-        Ok(view)
-    })
-    .await
-}
-
-/// Releases of `app`'s source, from the cache unless `refresh` is set.
-async fn releases_of(cache: &ReleaseCache, app: &App, refresh: bool) -> CmdResult<Vec<Release>> {
-    if let Some(releases) = (!refresh).then(|| cache.get(app)).flatten() {
-        return Ok(releases);
-    }
-    let fetch = app.clone();
-    let releases = blocking(move || fetch.releases().map_err(|e| e.to_string())).await?;
-    cache.put(app, releases.clone());
-    Ok(releases)
-}
-
-/// The app's releases, newest first, as its settings see them: tags its tag
-/// filter and version limit accept, and prereleases only if it follows them.
-#[tauri::command]
-pub async fn list_releases(cache: State<'_, ReleaseCache>, id: String, refresh: bool) -> CmdResult<Vec<ReleaseView>> {
-    let app = blocking(move || load_store()?.get(&id).cloned().map_err(|e| e.to_string())).await?;
-    let releases = releases_of(&cache, &app, refresh).await?;
-    Ok(update::eligible(&app, releases)
-        .map_err(|e| e.to_string())?
-        .iter()
-        .map(ReleaseView::from)
-        .collect())
-}
-
 /// One app's result from `create_menu_entries`.
 #[derive(Debug, Clone, Serialize)]
 pub struct MenuEntryResult {
@@ -427,38 +306,6 @@ pub async fn create_menu_entries(ids: Option<Vec<String>>) -> CmdResult<Vec<Menu
                 error: result.err().map(|e| e.to_string()),
             })
             .collect())
-    })
-    .await
-}
-
-/// Stops offering `tag` (the latest release when `None`) as an update.
-#[tauri::command]
-pub async fn skip_release(cache: State<'_, ReleaseCache>, id: String, tag: Option<String>) -> CmdResult<AppView> {
-    let tag = match tag {
-        Some(tag) => tag,
-        None => {
-            let key = id.clone();
-            let app = blocking(move || load_store()?.get(&key).cloned().map_err(|e| e.to_string())).await?;
-            latest_tag(&cache, &app).await?
-        }
-    };
-    set_skipped(id, Some(tag)).await
-}
-
-/// Offers the skipped release again.
-#[tauri::command]
-pub async fn unskip_release(id: String) -> CmdResult<AppView> {
-    set_skipped(id, None).await
-}
-
-async fn set_skipped(id: String, tag: Option<String>) -> CmdResult<AppView> {
-    blocking(move || {
-        let mut store = load_store()?;
-        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
-        app.skipped = tag;
-        let view = AppView::from(&*app);
-        store.save().map_err(|e| e.to_string())?;
-        Ok(view)
     })
     .await
 }
@@ -496,206 +343,12 @@ pub async fn save_app(
     .await
 }
 
-/// Writes every tracked app's settings to `path`, as `forager export` does.
-#[tauri::command]
-pub async fn export_apps(path: PathBuf) -> CmdResult<usize> {
-    blocking(move || {
-        let store = load_store()?;
-        let text = share::export(&store).map_err(|e| e.to_string())?;
-        std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        Ok(store.apps.len())
-    })
-    .await
-}
-
-/// One app's result from `import_apps`.
-#[derive(Debug, Clone, Serialize)]
-pub struct ImportResult {
-    pub id: String,
-    pub error: Option<String>,
-}
-
-/// Tracks the apps in an export file that are not tracked yet.
-#[tauri::command]
-pub async fn import_apps(path: PathBuf) -> CmdResult<Vec<ImportResult>> {
-    blocking(move || {
-        let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let mut store = load_store()?;
-        let results = share::import(&mut store, &text).map_err(|e| e.to_string())?;
-        store.save().map_err(|e| e.to_string())?;
-        Ok(results
-            .into_iter()
-            .map(|(id, result)| ImportResult {
-                id,
-                error: result.err().map(|e| e.to_string()),
-            })
-            .collect())
-    })
-    .await
-}
-
-/// A `forager://add?…` link with the app's settings, to share it.
-#[tauri::command]
-pub async fn app_link(id: String) -> CmdResult<String> {
-    blocking(move || Ok(share::link(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
-}
-
 /// The app's own icon as a `data:` URL, or `None` when no install has one.
 #[tauri::command]
 pub async fn app_icon(id: String) -> CmdResult<Option<String>> {
     blocking(move || {
         let app = load_store()?.get(&id).cloned().map_err(|e| e.to_string())?;
         Ok(forager_core::icons::find(&app).map(|icon| icon.data_url()))
-    })
-    .await
-}
-
-/// Markdown for an "Add to Forager" badge for `id`, for its project's README.
-#[tauri::command]
-pub async fn app_badge(id: String) -> CmdResult<String> {
-    blocking(move || Ok(share::badge(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
-}
-
-/// Reads a `forager://add?…` link, or the badge page's address, pasted
-/// into the Add page.
-#[tauri::command]
-pub fn parse_link(text: String) -> CmdResult<share::AddRequest> {
-    share::parse_link(&text).map_err(|e| e.to_string())
-}
-
-/// What may go with an app when it is uninstalled or removed: what it left
-/// in the home directory, and the Flatpak repositories only it uses.
-#[derive(Debug, Clone, Serialize)]
-pub struct CleanupView {
-    pub leftovers: Vec<cleanup::Leftover>,
-    pub remotes: Vec<install::flatpak::Remote>,
-}
-
-impl CleanupView {
-    /// Worked out before uninstalling: menu entries name the app, and its
-    /// Flatpak's repository is known while it is installed.
-    fn of(app: &App) -> CleanupView {
-        CleanupView {
-            leftovers: cleanup::leftovers(app),
-            remotes: install::removable_remotes(app),
-        }
-    }
-
-    /// Fails unless every path in `delete` and repository in `remotes` is
-    /// one of these, whatever the window asks for.
-    fn check(&self, id: &str, delete: &[PathBuf], remotes: &[String]) -> CmdResult<()> {
-        if let Some(path) = delete.iter().find(|p| !self.leftovers.iter().any(|l| l.path == **p)) {
-            return Err(format!("{} is not {id}'s to delete", path.display()));
-        }
-        if let Some(name) = remotes.iter().find(|n| !self.remotes.iter().any(|r| r.name == **n)) {
-            return Err(format!("{name} is not {id}'s repository to remove"));
-        }
-        Ok(())
-    }
-
-    /// Deletes `delete` and, once the Flatpak is uninstalled
-    /// (`flatpak_gone`), removes `remotes`. Gives the note for history.
-    fn apply(&self, delete: &[PathBuf], remotes: &[String], flatpak_gone: bool) -> CmdResult<Option<String>> {
-        let (count, bytes) = cleanup::remove(&self.leftovers, delete).map_err(|e| e.to_string())?;
-        let removed = match flatpak_gone {
-            true => install::remove_remotes(&self.remotes, remotes).map_err(|e| e.to_string())?,
-            false => Vec::new(),
-        };
-        let mut parts = Vec::new();
-        if count > 0 {
-            parts.push(format!(
-                "deleted {count} folders and files ({} KiB)",
-                bytes.div_ceil(1024)
-            ));
-        }
-        parts.extend(removed.iter().map(|name| format!("removed the {name} repository")));
-        Ok((!parts.is_empty()).then(|| parts.join("; ")))
-    }
-}
-
-/// What may go with `id`, for the Uninstall and Remove dialogs to offer.
-#[tauri::command]
-pub async fn app_cleanup(id: String) -> CmdResult<CleanupView> {
-    blocking(move || Ok(CleanupView::of(load_store()?.get(&id).map_err(|e| e.to_string())?))).await
-}
-
-/// Uninstalls `id`'s installs in `formats` and keeps tracking it, deleting
-/// the leftovers in `delete` and removing the repositories in `remotes`.
-#[tauri::command]
-pub async fn uninstall_app(
-    id: String,
-    formats: Vec<Format>,
-    delete: Vec<PathBuf>,
-    remotes: Vec<String>,
-) -> CmdResult<AppView> {
-    blocking(move || {
-        let mut store = load_store()?;
-        let allowed = CleanupView::of(store.get(&id).map_err(|e| e.to_string())?);
-        allowed.check(&id, &delete, &remotes)?;
-        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
-        let result = install::uninstall_formats(app, &formats, &Platform::detect());
-        let view = AppView::from(&*app);
-        // Saved either way: what was uninstalled before a failure is gone.
-        store.save().map_err(|e| e.to_string())?;
-        let uninstalled = result.map_err(|e| e.to_string())?;
-        let flatpak_gone = uninstalled.iter().any(|i| i.format == Format::Flatpak);
-        let note = allowed.apply(&delete, &remotes, flatpak_gone)?;
-        for installed in &uninstalled {
-            let mut event = Event::new(&id, Kind::Removed, Via::Gui);
-            event.from = Some(installed.tag.clone());
-            event.format = Some(installed.format);
-            event.message = note.clone();
-            history::record(&event).ok();
-        }
-        Ok(view)
-    })
-    .await
-}
-
-/// Stops tracking `id`, first uninstalling its installs in the `uninstall`
-/// formats, deleting the leftovers in `delete` and removing the
-/// repositories in `remotes`.
-#[tauri::command]
-pub async fn remove_app(
-    id: String,
-    uninstall: Vec<Format>,
-    delete: Vec<PathBuf>,
-    remotes: Vec<String>,
-) -> CmdResult<()> {
-    blocking(move || {
-        let mut store = load_store()?;
-        let app = store.get(&id).map_err(|e| e.to_string())?;
-        let allowed = CleanupView::of(app);
-        allowed.check(&id, &delete, &remotes)?;
-        let chosen: Vec<_> = app
-            .installs()
-            .filter(|i| uninstall.contains(&i.format) && install::is_present(i))
-            .cloned()
-            .collect();
-        let platform = Platform::detect();
-        for installed in &chosen {
-            install::uninstall(installed, &platform).map_err(|e| e.to_string())?;
-        }
-        let flatpak_gone = chosen.iter().any(|i| i.format == Format::Flatpak);
-        let note = allowed.apply(&delete, &remotes, flatpak_gone)?;
-        let app = store.remove(&id).map_err(|e| e.to_string())?;
-        store.save().map_err(|e| e.to_string())?;
-        if let Some(Signature::Gpg { keyring }) = &app.signature {
-            std::fs::remove_file(keyring).ok();
-        }
-        if chosen.is_empty() {
-            let mut event = Event::new(&id, Kind::Removed, Via::Gui);
-            event.message = note.clone();
-            history::record(&event).ok();
-        }
-        for installed in &chosen {
-            let mut event = Event::new(&id, Kind::Removed, Via::Gui);
-            event.from = Some(installed.tag.clone());
-            event.format = Some(installed.format);
-            event.message = note.clone();
-            history::record(&event).ok();
-        }
-        Ok(())
     })
     .await
 }

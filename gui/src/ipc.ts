@@ -58,6 +58,24 @@ export const addApp = (
 export const inspectAppImage = (path: string) => invoke<AppImageInfo>('inspect_appimage', { path });
 export const saveApp = (id: string, settings: SettingsInput, signature: SignatureForm) =>
   invoke<AppView>('save_app', { id, settings, signature });
+
+/** Adds the menu entries missing from AppImages and tarballs (of `ids`, or every app). */
+export const createMenuEntries = (ids: string[] | null = null) =>
+  invoke<MenuEntryResult[]>('create_menu_entries', { ids });
+/** The app's own icon as a `data:` URL, or null when no install has one. */
+export const appIcon = (id: string) => invoke<string | null>('app_icon', { id });
+
+// ── releases ────────────────────────────────────────────────────
+/** The app's releases, newest first, as its settings see them. */
+export const listReleases = (id: string, refresh = false) => invoke<ReleaseView[]>('list_releases', { id, refresh });
+/** Stops offering `tag` (the latest release when null) as an update. */
+export const skipRelease = (id: string, tag: string | null) => invoke<AppView>('skip_release', { id, tag });
+export const unskipRelease = (id: string) => invoke<AppView>('unskip_release', { id });
+export const followMove = (id: string) => invoke<AppView>('follow_move', { id });
+/** Marks a tracked-only app's release (the latest when null) as seen. */
+export const markSeen = (id: string, tag: string | null) => invoke<AppView>('mark_seen', { id, tag });
+
+// ── remove ──────────────────────────────────────────────────────
 /** Stops tracking `id`, first uninstalling its installs in these formats, deleting the leftovers in `remove` and removing the repositories in `remotes`. */
 export const removeApp = (id: string, uninstall: Format[], remove: string[], remotes: string[]) =>
   invoke<void>('remove_app', { id, uninstall, delete: remove, remotes });
@@ -66,19 +84,6 @@ export const uninstallApp = (id: string, formats: Format[], remove: string[], re
   invoke<AppView>('uninstall_app', { id, formats, delete: remove, remotes });
 /** What may go with `id` when it is uninstalled or removed. */
 export const appCleanup = (id: string) => invoke<Cleanup>('app_cleanup', { id });
-
-/** Adds the menu entries missing from AppImages and tarballs (of `ids`, or every app). */
-export const createMenuEntries = (ids: string[] | null = null) =>
-  invoke<MenuEntryResult[]>('create_menu_entries', { ids });
-/** The app's releases, newest first, as its settings see them. */
-export const listReleases = (id: string, refresh = false) => invoke<ReleaseView[]>('list_releases', { id, refresh });
-/** Stops offering `tag` (the latest release when null) as an update. */
-export const skipRelease = (id: string, tag: string | null) => invoke<AppView>('skip_release', { id, tag });
-export const unskipRelease = (id: string) => invoke<AppView>('unskip_release', { id });
-/** Marks a tracked-only app's release (the latest when null) as seen. */
-export const appIcon = (id: string) => invoke<string | null>('app_icon', { id });
-export const followMove = (id: string) => invoke<AppView>('follow_move', { id });
-export const markSeen = (id: string, tag: string | null) => invoke<AppView>('mark_seen', { id, tag });
 
 // ── update ──────────────────────────────────────────────────────
 /** One plan per install that needs updating, each in its own format; empty when up to date. */
@@ -106,6 +111,8 @@ export const aboutInfo = () => invoke<AboutInfo>('about_info');
 // ── system ──────────────────────────────────────────────────────
 export const systemAppearance = () => invoke<SystemAppearance>('system_appearance');
 export const startRequest = () => invoke<StartRequest | null>('start_request');
+
+// ── share ───────────────────────────────────────────────────────
 /** Writes every tracked app's settings to `path`; returns how many. */
 export const exportApps = (path: string) => invoke<number>('export_apps', { path });
 /** Tracks the apps in an export file that are not tracked yet. */

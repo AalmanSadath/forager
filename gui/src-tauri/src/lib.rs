@@ -67,7 +67,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::edit::ReleaseCache::default())
+        .manage(commands::releases::ReleaseCache::default())
         .manage(commands::update::Updates::default())
         .setup(|app| {
             appearance::watch(app.handle().clone());
@@ -82,22 +82,22 @@ pub fn run() {
             commands::edit::preview,
             commands::edit::add_app,
             commands::edit::save_app,
-            commands::edit::remove_app,
-            commands::edit::uninstall_app,
-            commands::edit::list_releases,
-            commands::edit::export_apps,
+            commands::remove::remove_app,
+            commands::remove::uninstall_app,
+            commands::releases::list_releases,
+            commands::share::export_apps,
             commands::edit::inspect_appimage,
-            commands::edit::import_apps,
-            commands::edit::app_link,
-            commands::edit::app_badge,
-            commands::edit::parse_link,
+            commands::share::import_apps,
+            commands::share::app_link,
+            commands::share::app_badge,
+            commands::share::parse_link,
             commands::edit::create_menu_entries,
-            commands::edit::skip_release,
-            commands::edit::unskip_release,
-            commands::edit::mark_seen,
-            commands::edit::follow_move,
+            commands::releases::skip_release,
+            commands::releases::unskip_release,
+            commands::releases::mark_seen,
+            commands::releases::follow_move,
             commands::edit::app_icon,
-            commands::edit::app_cleanup,
+            commands::remove::app_cleanup,
             commands::system::restart_self,
             commands::update::plan_update,
             commands::update::start_update,

@@ -12,7 +12,7 @@ use forager_core::update::{self, State};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use super::edit::ReleaseCache;
+use super::releases::ReleaseCache;
 
 use crate::state::{CmdResult, blocking, load_store};
 
