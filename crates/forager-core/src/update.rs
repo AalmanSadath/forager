@@ -51,6 +51,13 @@ pub struct Plan {
     /// than the version (another architecture, libc or format), so the
     /// user is asked before it is installed; see `asset_shape`.
     pub asset_changed: Option<String>,
+    /// The Flatpak repository the install came from: the update is a
+    /// `flatpak update` from it, and nothing is downloaded.
+    pub via_repo: Option<String>,
+    /// The release's `.flatpakrepo`, fetched with a Flatpak bundle that
+    /// names no repository of its own, so the app is then installed from
+    /// that repository and updated from it.
+    pub repo_file: Option<Asset>,
 }
 
 /// An installed file and the control file to update it from; see `zsync`.
@@ -63,7 +70,8 @@ pub struct Delta {
 impl Plan {
     /// Neither a checksum nor a signature can vouch for the download.
     pub fn unverified(&self) -> bool {
-        self.checksum.is_none() && self.signature.is_none()
+        // Flatpak checks what comes from a repository against its key.
+        self.via_repo.is_none() && self.checksum.is_none() && self.signature.is_none()
     }
 }
 
@@ -88,6 +96,21 @@ pub struct SummaryLine {
 /// and anything the user should know before agreeing.
 pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
     let line = |label, value: String, tone| SummaryLine { label, value, tone };
+    if let Some(remote) = &plan.via_repo {
+        return vec![
+            line(
+                "from",
+                format!("the {remote} Flatpak repository (flatpak update), no download"),
+                Tone::Normal,
+            ),
+            line("source", app.source.to_string(), Tone::Normal),
+            line(
+                "note",
+                "flatpak checks the update against the repository's key".into(),
+                Tone::Normal,
+            ),
+        ];
+    }
     // GitLab does not report asset sizes.
     let size = match plan.asset.size {
         0 => String::new(),
@@ -125,8 +148,15 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
         lines.push(line("note", "package scripts run as root".into(), Tone::Warn));
     }
     if plan.format == Format::Flatpak {
-        let value = "a missing runtime is fetched from the bundle's runtime repo (usually Flathub)".into();
-        lines.push(line("note", value, Tone::Normal));
+        let value = match plan.asset.name.to_ascii_lowercase().ends_with(".flatpakref") {
+            true => "installed from the project's repository, which later updates come from",
+            false => "a missing runtime is fetched from the bundle's runtime repo (usually Flathub)",
+        };
+        lines.push(line("note", value.into(), Tone::Normal));
+    }
+    if let Some(repo) = &plan.repo_file {
+        let value = format!("then installed from the repository in {}, for later updates", repo.name);
+        lines.push(line("repo", value, Tone::Normal));
     }
     for previous in &plan.replaces {
         let value = format!("replaces the {} install, which will be removed", previous.format);
@@ -584,8 +614,33 @@ fn plan_one(
         .map(|i| &i.installed)
         .filter(|i| !i.asset.is_empty() && asset_shape(&i.asset, &i.tag) != asset_shape(&asset.name, &release.tag))
         .map(|i| i.asset.clone());
+    let downgrade = current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag));
+    // An installed Flatpak with a repository behind it updates from there,
+    // unless the app must be checked against a signature on the release
+    // file, or it goes back a version, which `flatpak update` cannot do.
+    let via_repo = match current {
+        Some(current) if format == Format::Flatpak && signature.is_none() && !downgrade => current
+            .installed
+            .package
+            .as_deref()
+            .filter(|_| current.installed.format == Format::Flatpak)
+            .and_then(install::flatpak::origin)
+            .map(|remote| remote.name),
+        _ => None,
+    };
+    let repo_file = match via_repo.is_none() && format == Format::Flatpak && asset.name.ends_with(".flatpak") {
+        true => release
+            .assets
+            .iter()
+            .find(|a| a.name.to_ascii_lowercase().ends_with(".flatpakrepo"))
+            .cloned(),
+        false => None,
+    };
     Ok(Plan {
-        asset_changed,
+        // Nothing is downloaded from the release when the repository updates it.
+        asset_changed: asset_changed.filter(|_| via_repo.is_none()),
+        via_repo,
+        repo_file,
         delta,
         from: current
             .map(|i| i.installed.tag.clone())
@@ -596,7 +651,7 @@ fn plan_one(
         checksum,
         missing: current.is_some_and(|i| i.state == State::Missing),
         signature,
-        downgrade: current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag)),
+        downgrade,
         replaces,
         skip_after,
         changes: vec![release.clone()],
@@ -747,6 +802,8 @@ pub struct Download {
     pub repo_version: Option<String>,
     /// How the delta download went, when the plan had one.
     pub delta: Option<DeltaOutcome>,
+    /// The plan's `.flatpakrepo`, downloaded.
+    pub repo_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -774,6 +831,9 @@ impl std::fmt::Display for DeltaOutcome {
 impl Drop for Download {
     fn drop(&mut self) {
         fs::remove_file(&self.path).ok();
+        if let Some(repo_file) = &self.repo_file {
+            fs::remove_file(repo_file).ok();
+        }
     }
 }
 
@@ -784,6 +844,15 @@ pub fn download(
     platform: &Platform,
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Download> {
+    if plan.via_repo.is_some() {
+        return Ok(Download {
+            path: PathBuf::new(),
+            package: None,
+            repo_version: None,
+            delta: None,
+            repo_file: None,
+        });
+    }
     let dir = store::download_dir();
     let mut on_bytes = |done, total| progress(Progress::Download { done, total });
     let mut delta = None;
@@ -810,8 +879,26 @@ pub fn download(
         package: None,
         repo_version: None,
         delta,
+        repo_file: None,
     };
     check_checksum(plan, &download.path, &actual)?;
+    if let Some(repo) = &plan.repo_file {
+        let (path, sha256) = verify::download(repo, &dir, &mut |_, _| ControlFlow::Continue(()))?;
+        download.repo_file = Some(path.clone());
+        if let Some(expected) = verify::expected(repo, &plan.release)? {
+            let actual = match expected.algorithm {
+                Algorithm::Sha256 => sha256,
+                algorithm => verify::hash_file(&path, algorithm)?,
+            };
+            if actual != expected.hex {
+                return Err(Error::ChecksumMismatch {
+                    asset: repo.name.clone(),
+                    expected: expected.hex,
+                    actual,
+                });
+            }
+        }
+    }
     if let Some(check) = &plan.signature {
         signature::check(&check.signature, &check.signed, &check.source, &download.path, &actual)?;
     }
@@ -854,18 +941,30 @@ pub fn install(
     platform: &Platform,
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Installed> {
-    let installed = install::install(
-        &download.path,
-        plan.format,
-        store.get(id)?,
-        &plan.release.tag,
-        plan.downgrade,
-        platform,
-        // A package manager cannot be stopped halfway, so `Break` is ignored.
-        &mut |percent| {
-            let _ = progress(Progress::Install { percent });
-        },
-    )?;
+    let installed = match &plan.via_repo {
+        Some(remote) => update_from_repo(store.get(id)?, remote, &plan.release.tag)?,
+        None => {
+            let installed = install::install(
+                &download.path,
+                plan.format,
+                store.get(id)?,
+                &plan.release.tag,
+                plan.downgrade,
+                platform,
+                // A package manager cannot be stopped halfway, so `Break` is ignored.
+                &mut |percent| {
+                    let _ = progress(Progress::Install { percent });
+                },
+            )?;
+            // A bundle naming no repository: install from the release's.
+            if let (Some(repo_file), Some(flatpak_id)) = (&download.repo_file, installed.package.as_deref())
+                && install::flatpak::origin(flatpak_id).is_none()
+            {
+                install::flatpak::install_from_repo_file(repo_file, flatpak_id)?;
+            }
+            installed
+        }
+    };
     let app = store.get_mut(id)?;
     let mut installs: Vec<Installed> = app.installs().filter(|i| i.format != plan.format).cloned().collect();
     installs.push(installed.clone());
@@ -893,6 +992,38 @@ pub fn install(
         store.save()?;
     }
     Ok(installed)
+}
+
+/// Updates `app`'s Flatpak from the repository `remote` it came from, and
+/// gives the install as at `tag`. Fails when the repository has not caught
+/// up with the release yet, leaving the record as it was.
+fn update_from_repo(app: &App, remote: &str, tag: &str) -> Result<Installed> {
+    let current = app
+        .install_of(Format::Flatpak)
+        .filter(|i| i.package.is_some())
+        .ok_or_else(|| Error::CommandFailed(format!("{} has no Flatpak install to update", app.id)))?;
+    let flatpak_id = current.package.as_deref().unwrap_or_default();
+    install::flatpak::update(flatpak_id)?;
+    if let Some(actual) = install::flatpak_version(flatpak_id)
+        && repo_behind(&actual, tag)
+    {
+        return Err(Error::CommandFailed(format!(
+            "the {remote} repository has {actual}, not {tag} yet; try again later"
+        )));
+    }
+    Ok(Installed {
+        tag: tag.to_string(),
+        ..current.clone()
+    })
+}
+
+/// Whether the version a repository installed, `actual`, is older than the
+/// release `tag`. Unknown when either is not a version: then not behind.
+fn repo_behind(actual: &str, tag: &str) -> bool {
+    match (version::parse_tag(actual), version::parse_tag(tag)) {
+        (Some(actual), Some(tag)) => actual < tag,
+        _ => false,
+    }
 }
 
 /// Tracks `app` with an AppImage the user already has at `file` as its
@@ -1040,6 +1171,8 @@ mod tests {
             changes: Vec::new(),
             skip_after: None,
             asset_changed: None,
+            via_repo: None,
+            repo_file: None,
         }
     }
 
@@ -1495,6 +1628,30 @@ mod tests {
 
         let unverified = Plan { checksum: None, ..plan };
         assert!(check_checksum(&unverified, &file, &"b".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn flatpaks_update_from_their_repository() {
+        let app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        let mut plan = plan(Format::Flatpak, None);
+        assert!(plan.unverified());
+        plan.via_repo = Some("tool-origin".into());
+        assert!(!plan.unverified());
+        let lines = summary(&app, &plan);
+        assert_eq!(lines[0].label, "from");
+        assert!(lines[0].value.contains("tool-origin"));
+        assert!(!lines.iter().any(|l| l.label == "hash" || l.label == "asset"));
+
+        assert!(repo_behind("1.2.0", "v1.3.0"));
+        assert!(!repo_behind("1.3.0", "v1.3.0"));
+        assert!(!repo_behind("1.4.0", "v1.3.0"));
+        assert!(!repo_behind("nightly", "v1.3.0"));
     }
 
     #[test]

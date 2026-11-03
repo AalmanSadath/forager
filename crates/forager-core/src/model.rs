@@ -38,7 +38,7 @@ impl Format {
             Some(Format::Rpm)
         } else if lower.ends_with(".appimage") {
             Some(Format::AppImage)
-        } else if lower.ends_with(".flatpak") {
+        } else if lower.ends_with(".flatpak") || lower.ends_with(".flatpakref") {
             Some(Format::Flatpak)
         } else if PACMAN_SUFFIXES.iter().any(|suffix| lower.ends_with(suffix)) {
             // Checked before tarballs, which these also look like.
@@ -356,6 +356,8 @@ package = "tool"
             ("tool-1.0-1.src.rpm", None),
             ("Tool.AppImage", Some(Format::AppImage)),
             ("tool-x86_64.flatpak", Some(Format::Flatpak)),
+            ("tool.flatpakref", Some(Format::Flatpak)),
+            ("tool.flatpakrepo", None),
             ("tool-1.0-1-x86_64.pkg.tar.zst", Some(Format::Pacman)),
             ("tool-1.0-1-any.pkg.tar.xz", Some(Format::Pacman)),
             ("Tool-1.0-linux-x64.pacman", Some(Format::Pacman)),

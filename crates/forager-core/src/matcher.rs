@@ -44,7 +44,8 @@ pub struct Candidate<'a> {
 ///
 /// Preference order: format (the installed one first, then as ranked by the
 /// platform), then an asset naming this architecture over one built for any
-/// (`noarch`, `all`, `universal`), over one naming none.
+/// (`noarch`, `all`, `universal`), over one naming none. A `.flatpakref`
+/// comes before a Flatpak bundle.
 /// Assets naming another architecture or operating system, debug packages
 /// and source packages are never picked.
 /// A tarball must name Linux or this architecture, since one naming neither is
@@ -68,7 +69,7 @@ pub fn candidates<'a>(app: &App, release: &'a Release, platform: &Platform) -> R
         }
     };
 
-    let mut best: Option<(usize, (usize, ArchFit))> = None;
+    let mut best: Option<(usize, (usize, bool, ArchFit))> = None;
     let mut list: Vec<Candidate> = release
         .assets
         .iter()
@@ -101,7 +102,7 @@ fn judge(
     formats: &[Format],
     platform: &Platform,
     direct: bool,
-) -> std::result::Result<(usize, ArchFit), Reason> {
+) -> std::result::Result<(usize, bool, ArchFit), Reason> {
     let format = format.ok_or(Reason::NotPackage)?;
     if filter.is_some_and(|re| !re.is_match(&asset.name)) {
         return Err(Reason::Filter);
@@ -124,7 +125,10 @@ fn judge(
     {
         return Err(Reason::SourceArchive);
     }
-    Ok((rank, arch))
+    // A Flatpak reference installs from the project's repository, which
+    // then keeps it updated, and has no architecture of its own.
+    let bundle = !asset.name.to_ascii_lowercase().ends_with(".flatpakref");
+    Ok((rank, bundle, arch))
 }
 
 /// Picks the release asset that best fits the app's settings and the
@@ -412,6 +416,15 @@ mod tests {
         assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::AppImage);
         platform.flatpak = true;
         assert_eq!(select_asset(&app(), &release, &platform).unwrap().1, Format::Flatpak);
+    }
+
+    #[test]
+    fn prefers_a_flatpak_reference_to_a_bundle() {
+        let release = release(&["tool-x86_64.flatpak", "tool.flatpakref", "tool.flatpakrepo"]);
+        let mut platform = platform(Some(PackageManager::Dnf));
+        platform.flatpak = true;
+        let (asset, format) = select_asset(&app(), &release, &platform).unwrap();
+        assert_eq!((asset.name.as_str(), format), ("tool.flatpakref", Format::Flatpak));
     }
 
     #[test]

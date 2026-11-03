@@ -7,7 +7,7 @@
 //! executables linked into `~/.local/bin`, and Flatpak bundles go into the
 //! user's Flatpak installation.
 
-mod flatpak;
+pub mod flatpak;
 pub mod packagekit;
 mod tarball;
 
@@ -96,9 +96,15 @@ pub fn install(
             if !platform.flatpak {
                 return Err(Error::NoPackageManager("flatpak"));
             }
-            let id = flatpak::app_id(&file)?;
-            flatpak::install(&file)?;
-            installed.package = Some(id);
+            let reference = file.extension().is_some_and(|e| e.eq_ignore_ascii_case("flatpakref"));
+            installed.package = Some(match reference {
+                true => flatpak::install_ref(&file)?,
+                false => {
+                    let id = flatpak::app_id(&file)?;
+                    flatpak::install(&file)?;
+                    id
+                }
+            });
         }
         Format::Tarball => {
             let opt_dir = platform::opt_dir().ok_or(Error::NoHome)?;
@@ -229,7 +235,7 @@ fn upstream_version(text: &str, format: Format) -> Option<String> {
 /// (`tool-1.2.0-1.x86_64.rpm`, `tool_1.2.0_amd64.deb`,
 /// `Tool-v1.2.0-x86_64.flatpak`, `tool.flatpak`), then the app's id.
 pub fn package_guesses(asset: &str, format: Format, id: &str) -> Vec<String> {
-    let stem = [".rpm", ".deb", ".flatpak", ".pkg.tar.zst", ".pkg.tar.xz"]
+    let stem = [".rpm", ".deb", ".flatpakref", ".flatpak", ".pkg.tar.zst", ".pkg.tar.xz"]
         .iter()
         .find_map(|ext| asset.strip_suffix(ext))
         .unwrap_or(asset);
