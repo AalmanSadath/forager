@@ -120,13 +120,21 @@ pub fn update(id: &str) -> Result<()> {
 }
 
 /// Moves `id` to `commit` of the repository it came from, older or newer
-/// than the one installed.
+/// than the one installed. Flatpak's system helper only follows the
+/// newest commit, so in the system installation this runs as root through
+/// `pkexec`, which asks for the password.
 pub fn update_to(id: &str, commit: &str) -> Result<()> {
     let inst = installation(id);
-    run(host::command("flatpak")
-        .args(["update", inst, no_questions(inst)])
-        .arg(format!("--commit={commit}"))
-        .arg(id))
+    let commit = format!("--commit={commit}");
+    let mut command = match inst {
+        "--system" => super::pkexec(["flatpak", "update", inst, "--assumeyes"]),
+        _ => {
+            let mut command = host::command("flatpak");
+            command.args(["update", inst, no_questions(inst)]);
+            command
+        }
+    };
+    run(command.arg(commit).arg(id))
 }
 
 /// The commits of `id` that `remote` still has, newest first, as
