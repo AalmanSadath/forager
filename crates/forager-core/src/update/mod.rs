@@ -50,6 +50,7 @@ mod fixtures {
             skip_after: None,
             asset_changed: None,
             via_repo: None,
+            ahead_of_releases: false,
             repo_commit: None,
             repo_file: None,
         }

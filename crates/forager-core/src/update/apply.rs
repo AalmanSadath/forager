@@ -256,17 +256,28 @@ fn update_from_repo(app: &App, remote: &str, commit: Option<&str>, tag: &str) ->
         });
     }
     install::flatpak::update(flatpak_id)?;
-    if let Some(actual) = install::flatpak_version(flatpak_id)
-        && repo_behind(&actual, tag)
+    let actual = install::flatpak_version(flatpak_id);
+    if let Some(actual) = &actual
+        && repo_behind(actual, tag)
     {
         return Err(Error::CommandFailed(format!(
             "the {remote} repository has {actual}, not {tag} yet; try again later"
         )));
     }
     Ok(Installed {
-        tag: tag.to_string(),
+        tag: recorded_tag(actual.as_deref(), tag),
         ..current.clone()
     })
+}
+
+/// The tag to record after updating from a repository to the release
+/// `tag`: the version Flatpak reports when the repository was further
+/// ahead than the release, so the record matches what is installed.
+fn recorded_tag(actual: Option<&str>, tag: &str) -> String {
+    match actual {
+        Some(actual) if version::is_newer(tag, actual) && version::parse_tag(actual).is_some() => actual.to_string(),
+        _ => tag.to_string(),
+    }
 }
 
 /// Whether the version a repository installed, `actual`, is older than the
@@ -423,5 +434,13 @@ mod tests {
 
         let unverified = Plan { checksum: None, ..plan };
         assert!(check_checksum(&unverified, &file, &"b".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn records_the_version_the_repository_installed() {
+        assert_eq!(recorded_tag(Some("1.3.0"), "v1.2.0"), "1.3.0");
+        assert_eq!(recorded_tag(Some("1.2.0"), "v1.2.0"), "v1.2.0");
+        assert_eq!(recorded_tag(None, "v1.2.0"), "v1.2.0");
+        assert_eq!(recorded_tag(Some("nightly"), "v1.2.0"), "v1.2.0");
     }
 }

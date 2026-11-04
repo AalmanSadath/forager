@@ -10,6 +10,8 @@ use crate::platform::Platform;
 use crate::source::Source;
 use crate::{install, version};
 
+use super::plan::repo_of;
+
 /// How an app's install compares with its latest release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,6 +39,9 @@ pub struct InstallState {
     pub installed: Installed,
     /// `Missing`, `Outdated` or `UpToDate`.
     pub state: State,
+    /// The version the Flatpak repository this install updates from has
+    /// before any release does; the install is `Outdated` for it.
+    pub repo_ahead: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +61,23 @@ pub struct Status {
     /// The latest release is the one the user skipped, so installs older
     /// than it count as up to date.
     pub skipped: bool,
+}
+
+impl Status {
+    /// The version updating brings: the latest release, unless only
+    /// repository builds ahead of it are out of date.
+    pub fn target(&self) -> &str {
+        let mut outdated = self.installs.iter().filter(|i| i.state == State::Outdated).peekable();
+        let only_builds = self.state == State::Outdated
+            && outdated.peek().is_some()
+            && outdated.clone().all(|i| i.repo_ahead.is_some());
+        match only_builds {
+            true => outdated
+                .find_map(|i| i.repo_ahead.as_deref())
+                .unwrap_or(&self.latest.tag),
+            false => &self.latest.tag,
+        }
+    }
 }
 
 /// Releases of the GitHub apps among `apps`, by index into `apps`, fetched
@@ -96,7 +118,10 @@ pub fn status_in(app: &App, releases: Vec<Release>, platform: &Platform) -> Resu
     }
     let observed = observe(app, &latest, platform);
     let found = (observed != app.install_list()).then(|| observed.clone());
-    let skipped = app.skipped.as_deref() == Some(latest.tag.as_str());
+    let skipped = app
+        .skipped
+        .as_deref()
+        .is_some_and(|skipped| covers(skipped, &latest.tag));
     let installs: Vec<InstallState> = observed
         .into_iter()
         .map(|installed| {
@@ -104,7 +129,21 @@ pub fn status_in(app: &App, releases: Vec<Release>, platform: &Platform) -> Resu
                 true => compare(&installed.tag, &latest.tag, skipped),
                 false => State::Missing,
             };
-            InstallState { installed, state }
+            // The repository may be ahead of the releases, and `flatpak
+            // update` brings what it has.
+            let repo_ahead = match state {
+                State::UpToDate | State::Outdated => repo_build(app, &installed, &latest.tag),
+                State::Missing | State::NotInstalled | State::WrongFormat => None,
+            };
+            let state = match repo_ahead {
+                Some(_) => State::Outdated,
+                None => state,
+            };
+            InstallState {
+                installed,
+                state,
+                repo_ahead,
+            }
         })
         .collect();
     let state = overall(app.format, &installs);
@@ -133,6 +172,51 @@ fn track_only_status(app: &App, latest: Release) -> Status {
         found: None,
         skipped,
     }
+}
+
+/// The version of a build the repository of `installed` has that neither
+/// it nor the `latest` release has yet, when the app would take it; see
+/// `takes_repo_build`.
+fn repo_build(app: &App, installed: &Installed, latest: &str) -> Option<String> {
+    let (id, remote) = repo_of(app, installed)?;
+    let version = install::flatpak::repo_version(&remote, id)?;
+    let newest = match version::is_newer(&installed.tag, latest) && version::parse_tag(latest).is_some() {
+        true => latest,
+        false => &installed.tag,
+    };
+    takes_repo_build(app, newest, &version).then_some(version)
+}
+
+/// Whether the app takes a repository build at `version`, newer than
+/// `tag` (the install, or the latest release when that is newer), before it is released: not when it is the release the
+/// user skipped, outside the app's version limit, a prerelease the app does
+/// not follow, or when the app picks releases by tag, which a build has
+/// none of. Either side without a version never counts.
+fn takes_repo_build(app: &App, tag: &str, version: &str) -> bool {
+    let (Some(installed), Some(build)) = (version::parse_tag(tag), version::parse_tag(version)) else {
+        return false;
+    };
+    let limit = match app.versions.as_deref().map(version::requirement) {
+        Some(Ok(limit)) => Some(limit),
+        Some(Err(_)) => return false,
+        None => None,
+    };
+    build > installed
+        && app.tag_filter.is_none()
+        && (app.prerelease || build.pre.is_empty())
+        && app.skipped.as_deref().is_none_or(|skipped| !covers(skipped, version))
+        && limit.is_none_or(|limit| version::within(&limit, version))
+}
+
+/// Whether skipping `skipped` holds `tag` back: it is that version or an
+/// older one. Rolling back from a repository build skips the build, which
+/// is newer than any release, so the releases up to it stay skipped too.
+fn covers(skipped: &str, tag: &str) -> bool {
+    same_version(skipped, tag)
+        || matches!(
+            (version::parse_tag(skipped), version::parse_tag(tag)),
+            (Some(skipped), Some(tag)) if skipped > tag
+        )
 }
 
 /// A present install at `tag` against the latest release; older counts as
@@ -436,8 +520,49 @@ mod tests {
     }
 
     #[test]
+    fn takes_repository_builds_newer_than_the_install() {
+        let mut app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        assert!(takes_repo_build(&app, "v1.2.0", "1.3.0"));
+        assert!(!takes_repo_build(&app, "v1.2.0", "1.2.0"));
+        assert!(!takes_repo_build(&app, "v1.2.0", "1.1.0"));
+        assert!(!takes_repo_build(&app, "unknown", "1.3.0"));
+        assert!(!takes_repo_build(&app, "v1.2.0", "nightly"));
+        // A prerelease only when the app follows them.
+        assert!(!takes_repo_build(&app, "v1.2.0", "1.3.0-beta.1"));
+        app.prerelease = true;
+        assert!(takes_repo_build(&app, "v1.2.0", "1.3.0-beta.1"));
+        app.prerelease = false;
+        // Rolled back from it: the skipped release is not offered again.
+        app.skipped = Some("v1.3.0".into());
+        assert!(!takes_repo_build(&app, "v1.2.0", "1.3.0"));
+        assert!(takes_repo_build(&app, "v1.2.0", "1.4.0"));
+        // Skipping a repository build holds back the releases up to it.
+        assert!(covers("1.3.0", "v1.2.0"));
+        assert!(covers("v1.2.0", "1.2.0"));
+        assert!(!covers("v1.2.0", "v1.3.0"));
+        assert!(!covers("nightly", "v1.3.0"));
+        app.skipped = None;
+        app.versions = Some("<1.3".into());
+        assert!(!takes_repo_build(&app, "v1.2.0", "1.3.0"));
+        assert!(takes_repo_build(&app, "v1.2.0", "1.2.5"));
+        app.versions = None;
+        app.tag_filter = Some("^v".into());
+        assert!(!takes_repo_build(&app, "v1.2.0", "1.3.0"));
+    }
+
+    #[test]
     fn overall_state_is_the_worst_install() {
-        let state = |installed: Installed, state| InstallState { installed, state };
+        let state = |installed: Installed, state| InstallState {
+            installed,
+            state,
+            repo_ahead: None,
+        };
         let rpm = || install(Format::Rpm, "v1");
         let flatpak = || install(Format::Flatpak, "v1");
         assert_eq!(overall(None, &[]), State::NotInstalled);

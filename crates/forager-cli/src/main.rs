@@ -1102,6 +1102,9 @@ struct InstallEntry {
     package: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<PathBuf>,
+    /// The version the Flatpak repository has before any release does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo_ahead: Option<String>,
 }
 
 impl InstallEntry {
@@ -1112,6 +1115,7 @@ impl InstallEntry {
             state,
             package: installed.package.clone(),
             path: installed.path.clone(),
+            repo_ahead: None,
         }
     }
 }
@@ -1154,7 +1158,10 @@ impl CheckEntry {
             installs: status
                 .installs
                 .iter()
-                .map(|i| InstallEntry::new(&i.installed, Some(i.state)))
+                .map(|i| InstallEntry {
+                    repo_ahead: i.repo_ahead.clone(),
+                    ..InstallEntry::new(&i.installed, Some(i.state))
+                })
                 .collect(),
             error: None,
         }
@@ -1209,7 +1216,7 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
         }
         let app = &store.apps[index];
         if status.state.needs_update() {
-            pending.push((app.id.clone(), status.latest.tag.clone()));
+            pending.push((app.id.clone(), status.target().to_string()));
         }
         if json {
             let notices = notice::for_app(app, &status.latest, update::now());
@@ -1272,7 +1279,11 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
             .iter()
             .any(|i| version::is_newer(&i.installed.tag, latest));
         let text = match status.skipped && behind {
-            true => format!("{} ({latest} skipped)", text.replace(" (up to date)", "")),
+            true => format!(
+                "{} ({} skipped)",
+                text.replace(" (up to date)", ""),
+                app.skipped.as_deref().unwrap_or(latest)
+            ),
             false => text,
         };
         let text = match update::cooldown_until(app, &status.latest, update::now()) {
@@ -1349,8 +1360,17 @@ fn notification_text(updates: &[&str], released: &[&str]) -> (String, String) {
 /// with the format when the app has several, and the distro's version of a
 /// system package.
 fn describe_install(install: &InstallState, latest: &str, platform: &Platform, with_format: bool) -> String {
-    let InstallState { installed, state } = install;
+    let InstallState {
+        installed,
+        state,
+        repo_ahead,
+    } = install;
     let tag = &installed.tag;
+    // A build the Flatpak repository has before any release.
+    let latest = match repo_ahead {
+        Some(version) => &format!("{version} (repository)"),
+        None => latest,
+    };
     let format = installed.format;
     let text = match (state, with_format) {
         (State::Missing, false) => format!("missing (was {tag}), {latest} available"),

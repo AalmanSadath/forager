@@ -57,6 +57,8 @@ pub struct InstallStatusView {
     pub state: State,
     /// Version of the same package in the distro's repositories.
     pub repo_version: Option<String>,
+    /// The version the Flatpak repository has before any release does.
+    pub repo_ahead: Option<String>,
 }
 
 /// Payload of the `app-status` event: one app's result.
@@ -102,6 +104,7 @@ pub fn status_of(
                     format: i.installed.format,
                     tag: i.installed.tag.clone(),
                     state: i.state,
+                    repo_ahead: i.repo_ahead.clone(),
                     repo_version: i
                         .installed
                         .package

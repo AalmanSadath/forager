@@ -115,11 +115,18 @@ describe('apps installed in several formats', () => {
   const entry = (): CheckEntry => {
     const e = status('outdated');
     e.status!.installs = [
-      { format: 'rpm', tag: '2.0', state: 'up_to_date', repo_version: null },
-      { format: 'flatpak', tag: '1.0', state: 'outdated', repo_version: null },
+      { format: 'rpm', tag: '2.0', state: 'up_to_date', repo_version: null, repo_ahead: null },
+      { format: 'flatpak', tag: '1.0', state: 'outdated', repo_version: null, repo_ahead: null },
     ];
     return e;
   };
+
+  it("targets the repository's build when it is ahead of the releases", () => {
+    const flatpakOnly = app('tool', { installed: { ...flatpak, tag: '2.0' } });
+    const e = status('outdated');
+    e.status!.installs = [{ format: 'flatpak', tag: '2.0', state: 'outdated', repo_version: null, repo_ahead: '2.1.0' }];
+    expect(cardModel(flatpakOnly, e)).toMatchObject({ section: 'updates', versions: '2.0 → 2.1.0', action: 'update' });
+  });
 
   it('carries the kinds of notice about the project', () => {
     const entry = status('up_to_date');

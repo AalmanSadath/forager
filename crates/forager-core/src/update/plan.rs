@@ -59,6 +59,8 @@ pub struct Plan {
     /// names no repository of its own, so the app is then installed from
     /// that repository and updated from it.
     pub repo_file: Option<Asset>,
+    /// The repository has this version before any release does.
+    pub ahead_of_releases: bool,
 }
 
 /// An installed file and the control file to update it from; see `zsync`.
@@ -105,7 +107,13 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
         let mut lines = vec![
             line(
                 "from",
-                format!("the {} Flatpak repository ({how}), no download", remote.name),
+                match plan.ahead_of_releases {
+                    true => format!(
+                        "the {} Flatpak repository, which has {} before any release ({how}), no download",
+                        remote.name, plan.release.tag
+                    ),
+                    false => format!("the {} Flatpak repository ({how}), no download", remote.name),
+                },
                 Tone::Normal,
             ),
             line("source", app.source.to_string(), Tone::Normal),
@@ -225,8 +233,50 @@ pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
             .installs
             .iter()
             .filter(|i| i.state.needs_update())
-            .map(|i| make(Some(i.installed.format), Some(i), Vec::new()))
+            .map(|i| match &i.repo_ahead {
+                Some(version) => repo_plan(app, i, version),
+                None => make(Some(i.installed.format), Some(i), Vec::new()),
+            })
             .collect(),
+    })
+}
+
+/// Updating `current` to the build at `version` its Flatpak repository has
+/// before any release: the release planned is that version, with nothing
+/// to download and no notes.
+fn repo_plan(app: &App, current: &InstallState, version: &str) -> Result<Plan> {
+    let (_, remote) = repo_of(app, &current.installed)
+        .ok_or_else(|| Error::CommandFailed(format!("{} no longer updates from a Flatpak repository", app.id)))?;
+    Ok(Plan {
+        release: Release {
+            tag: version.to_string(),
+            name: None,
+            prerelease: false,
+            published_at: None,
+            notes: None,
+            assets: Vec::new(),
+        },
+        asset: Asset {
+            name: current.installed.asset.clone(),
+            url: String::new(),
+            size: 0,
+            digest: None,
+        },
+        format: Format::Flatpak,
+        checksum: None,
+        from: Some(current.installed.tag.clone()),
+        missing: false,
+        signature: None,
+        replaces: Vec::new(),
+        downgrade: false,
+        skip_after: None,
+        delta: None,
+        changes: Vec::new(),
+        asset_changed: None,
+        via_repo: Some(remote),
+        repo_commit: None,
+        repo_file: None,
+        ahead_of_releases: true,
     })
 }
 
@@ -248,7 +298,20 @@ pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Re
         app.set_installs(found);
     }
     let app = &*app;
-    let skip_after = version::is_newer(&target.tag, &status.latest.tag).then(|| status.latest.tag.clone());
+    // Going back skips what is gone back from: the latest release, or a
+    // repository build installed ahead of it.
+    let newest = status
+        .installs
+        .iter()
+        .map(|i| i.installed.tag.as_str())
+        .filter(|tag| version::parse_tag(tag).is_some())
+        .fold(status.latest.tag.as_str(), |newest, tag| {
+            match version::is_newer(newest, tag) {
+                true => tag,
+                false => newest,
+            }
+        });
+    let skip_after = version::is_newer(&target.tag, newest).then(|| newest.to_string());
     let make = |format: Option<Format>, current: Option<&InstallState>| {
         plan_one(app, &target, platform, format, current, Vec::new(), skip_after.clone())
             .map(|plan| with_changes(app, plan, &releases))
@@ -325,6 +388,7 @@ fn plan_one(
         via_repo,
         repo_commit,
         repo_file,
+        ahead_of_releases: false,
         delta,
         from: current
             .map(|i| i.installed.tag.clone())
@@ -345,7 +409,7 @@ fn plan_one(
 /// The Flatpak id and repository `installed` updates from: an installed
 /// Flatpak with a repository behind it, unless the app must be checked
 /// against a signature on the release file.
-fn repo_of<'a>(app: &App, installed: &'a Installed) -> Option<(&'a str, install::flatpak::Remote)> {
+pub(super) fn repo_of<'a>(app: &App, installed: &'a Installed) -> Option<(&'a str, install::flatpak::Remote)> {
     if installed.format != Format::Flatpak || app.signature.is_some() {
         return None;
     }
@@ -357,17 +421,26 @@ fn repo_of<'a>(app: &App, installed: &'a Installed) -> Option<(&'a str, install:
 /// `releases` (newest first, as `eligible` gives them) installs from there
 /// rather than from the release file; `None` for other apps.
 pub fn repo_releases(app: &App, releases: &[Release]) -> Option<Vec<bool>> {
-    let (id, remote) = repo_of(app, app.install_of(Format::Flatpak)?)?;
-    Some(in_history(&install::flatpak::history(&remote, id), releases))
+    let installed = app.install_of(Format::Flatpak)?;
+    let (id, remote) = repo_of(app, installed)?;
+    Some(in_history(
+        &install::flatpak::history(&remote, id),
+        releases,
+        &installed.tag,
+    ))
 }
 
-/// The newest release is whatever the repository has last; any other is
-/// there when one of its commits names that version.
-fn in_history(history: &[(String, String)], releases: &[Release]) -> Vec<bool> {
+/// The newest release comes with whatever the repository has last, unless
+/// the install at `installed` is already past it; going to any other takes
+/// a commit naming that version.
+fn in_history(history: &[(String, String)], releases: &[Release], installed: &str) -> Vec<bool> {
     releases
         .iter()
         .enumerate()
-        .map(|(i, release)| i == 0 || history.iter().any(|(_, subject)| names_version(subject, &release.tag)))
+        .map(|(i, release)| {
+            (i == 0 && !version::is_newer(&release.tag, installed))
+                || history.iter().any(|(_, subject)| names_version(subject, &release.tag))
+        })
         .collect()
 }
 
@@ -602,6 +675,7 @@ mod tests {
         let current = InstallState {
             installed: install(Format::Rpm, "v1.1.0"),
             state: State::UpToDate,
+            repo_ahead: None,
         };
         let plan = plan_one(
             &app,
@@ -781,8 +855,11 @@ mod tests {
             release("v1.1.0"),
             release("v1.0.0"),
         ];
-        assert_eq!(in_history(&history, &releases), [true, true, false, true]);
-        assert_eq!(in_history(&[], &releases[1..]), [true, false, false]);
+        assert_eq!(in_history(&history, &releases, "v1.2.0"), [true, true, false, true]);
+        assert_eq!(in_history(&[], &releases[1..], "v1.0.0"), [true, false, false]);
+        // Installed past the newest release: going to it takes a commit too.
+        assert_eq!(in_history(&[], &releases[1..], "1.4.0"), [false, false, false]);
+        assert_eq!(in_history(&history, &releases[1..], "1.4.0"), [true, false, true]);
     }
 
     #[test]

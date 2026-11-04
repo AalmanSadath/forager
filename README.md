@@ -273,7 +273,17 @@ offered.
 - Installing an older release, or one short of the latest, uses the
   repository's commit whose subject names that version
   (`flatpak update --commit`); if the repository no longer has it, the
-  release file is installed instead.
+  release file is installed instead. The app page's version list marks
+  which releases come from the repository and which from the release
+  file. In the system installation, moving to another commit asks for
+  your password.
+- A check also asks the repository for its version. When it has a build
+  newer than the latest release, that counts as an update. `forager
+  update` and background updates install it with `flatpak update` and
+  record the version Flatpak reports. This needs the app to declare its
+  version in its metadata. A build is not offered if it is the release
+  you skipped, falls outside `--versions`, or is a prerelease you don't
+  follow. Apps with a `--tag-filter` only follow releases.
 - Apps with a `--minisign-key`, `--gpg-key` or attestation check keep
   using the release file.
 

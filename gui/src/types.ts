@@ -123,6 +123,8 @@ export interface InstallStatusView {
   tag: string;
   state: UpdateState;
   repo_version: string | null;
+  /** The version the Flatpak repository has before any release does. */
+  repo_ahead: string | null;
 }
 
 /** Payload of the `app-status` event. */

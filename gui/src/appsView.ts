@@ -110,8 +110,11 @@ function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel,
         format,
         action: 'switch',
       };
-    case 'outdated':
-      return { section: 'updates', dot: dot('update'), versions: `${installed?.tag ?? '?'} → ${latest}`, label: 'Update available', format, action: 'update' };
+    case 'outdated': {
+      // A Flatpak repository can have a build before any release does.
+      const target = attention?.repo_ahead ?? latest;
+      return { section: 'updates', dot: dot('update'), versions: `${installed?.tag ?? '?'} → ${target}`, label: 'Update available', format, action: 'update' };
+    }
     case 'up_to_date':
       return { section: 'installed', dot: dot('on'), versions: installed?.tag ?? latest, label: 'Up to date', format, action: null };
   }

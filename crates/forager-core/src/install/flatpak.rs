@@ -149,6 +149,39 @@ pub fn history(remote: &Remote, id: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// The version of `id` that `remote` has now, as its appstream data
+/// declares it; `None` when the app declares none or the repository cannot
+/// be reached.
+pub fn repo_version(remote: &Remote, id: &str) -> Option<String> {
+    // `remote-info` reads the version from the appstream data cached for
+    // the remote, which only this refreshes. Unprivileged even system-wide;
+    // if it fails, the cached data still answers.
+    host::query("flatpak")
+        .args([
+            "update",
+            remote.installation(),
+            "--appstream",
+            "--noninteractive",
+            &remote.name,
+        ])
+        .output()
+        .ok();
+    host::query("flatpak")
+        .args(["remote-info", remote.installation(), &remote.name, id])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| info_version(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// The `Version:` of `flatpak remote-info` or `flatpak info` output.
+fn info_version(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.trim().strip_prefix("Version:"))
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
 /// Pairs each `Commit:` of `flatpak remote-info --log` with the
 /// `Subject:` after it.
 fn parse_log(text: &str) -> Vec<(String, String)> {
@@ -396,6 +429,14 @@ mod tests {
                 ("bbb".to_string(), "Tool 1.0.0".to_string())
             ]
         );
+    }
+
+    #[test]
+    fn reads_the_repositorys_version() {
+        let text = "\nForager Test - A test app\n\n          ID: org.example.Tool\n         Ref: app/org.example.Tool/x86_64/master\n     Version: 1.3.0\n     License: MIT\n";
+        assert_eq!(info_version(text).as_deref(), Some("1.3.0"));
+        assert_eq!(info_version("          ID: org.example.Tool\n     Version: \n"), None);
+        assert_eq!(info_version("          ID: org.example.Tool\n"), None);
     }
 
     #[test]
