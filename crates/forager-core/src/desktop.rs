@@ -106,6 +106,7 @@ pub fn remove(files: &[PathBuf]) {
         fs::remove_file(file).ok();
     }
     refresh(&apps);
+    touch(&icons);
 }
 
 fn applications_dir() -> Option<PathBuf> {
@@ -119,6 +120,15 @@ fn icons_dir() -> Option<PathBuf> {
 /// Lets launchers see the change at once rather than on their next scan.
 fn refresh(apps: &Path) {
     host::command("update-desktop-database").arg(apps).output().ok();
+}
+
+/// Marks the icon theme at `dir` as changed. GTK and GNOME Shell only look
+/// again at a theme whose own folder changed, which an icon added to a size
+/// folder that already exists does not do, so the icon went unseen.
+fn touch(dir: &Path) {
+    if let Ok(theme) = fs::File::open(dir) {
+        theme.set_modified(std::time::SystemTime::now()).ok();
+    }
 }
 
 /// An icon's bytes and the hicolor size directory it belongs in.
@@ -160,6 +170,7 @@ fn write(id: &str, entry: Option<&str>, exec: &str, icon: Option<Icon>) -> Resul
         let path = dir.join(format!("{icon_name}.{}", if icon.svg { "svg" } else { "png" }));
         fs::write(&path, &icon.data)?;
         written.push(path);
+        touch(&icons);
     }
     let icon_field = icon.is_some().then_some(icon_name.as_str());
     let text = match entry {
@@ -373,6 +384,17 @@ impl AppImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn marks_the_icon_theme_changed() {
+        let theme = tempfile::tempdir().unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        fs::File::open(theme.path()).unwrap().set_modified(old).unwrap();
+        touch(theme.path());
+        assert!(fs::metadata(theme.path()).unwrap().modified().unwrap() > old);
+        // A theme that does not exist yet is left alone.
+        touch(&theme.path().join("missing"));
+    }
 
     #[test]
     fn finds_a_tarballs_icon_at_its_top() {
