@@ -4,6 +4,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
 import { cardModel } from '../appsView';
+import { removalChoices, toggled } from '../removalView';
 import type { AppView, Cleanup, Format, InstalledView, Notice, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import VersionsSection from './appPage/VersionsSection';
@@ -59,15 +60,18 @@ function AppPageBody({ app }: { app: AppView }) {
   const [dialog, setDialog] = useState<'remove' | 'uninstall' | null>(null);
   // Formats to uninstall: every install unless unticked.
   const [keep, setKeep] = useState<Format[]>([]);
-  const uninstall = app.installs.map((i) => i.format).filter((f) => !keep.includes(f));
   // What may go with the app (its leftovers, and Flatpak repositories only
   // it uses), and which of it the user ticked.
   const [cleanup, setCleanup] = useState<Cleanup>({ leftovers: [], remotes: [] });
   const [purge, setPurge] = useState<string[]>([]);
   const [dropRepos, setDropRepos] = useState<string[]>([]);
-  // A repository can only go with the Flatpak installed from it.
-  const remotes = uninstall.includes('flatpak') ? cleanup.remotes : [];
-  const repos = dropRepos.filter((name) => remotes.some((r) => r.name === name));
+  const { uninstall, remotes, repos, purge: deleted, systemHint } = removalChoices(
+    app.installs,
+    keep,
+    cleanup,
+    dropRepos,
+    purge,
+  );
 
   const openDialog = (kind: 'remove' | 'uninstall') => {
     setKeep([]);
@@ -171,7 +175,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const remove = async () => {
     setDialog(null);
     try {
-      await ipc.removeApp(app.id, uninstall, purge, repos);
+      await ipc.removeApp(app.id, uninstall, deleted, repos);
       setPage({ kind: 'apps' });
       await loadApps();
       toast('success', uninstall.length > 0 ? `Removed and uninstalled ${app.id}.` : `Stopped tracking ${app.id}.`);
@@ -183,7 +187,7 @@ function AppPageBody({ app }: { app: AppView }) {
   const uninstallKeepTracking = async () => {
     setDialog(null);
     try {
-      await ipc.uninstallApp(app.id, uninstall, purge, repos);
+      await ipc.uninstallApp(app.id, uninstall, deleted, repos);
       toast('success', `Uninstalled ${app.id}; still tracked.`);
     } catch (e) {
       toast('error', String(e));
@@ -193,10 +197,6 @@ function AppPageBody({ app }: { app: AppView }) {
       checkApps([app.id]);
     }
   };
-
-  const systemHint = uninstall.some((f) => ['rpm', 'deb', 'pacman'].includes(f))
-    ? 'Uninstalling a system package asks for your password.'
-    : undefined;
 
   return (
     <div className="panel app-page">
@@ -403,9 +403,7 @@ function AppPageBody({ app }: { app: AppView }) {
                 <input
                   type="checkbox"
                   checked={!keep.includes(installed.format)}
-                  onChange={(e) =>
-                    setKeep((k) => (e.target.checked ? k.filter((f) => f !== installed.format) : [...k, installed.format]))
-                  }
+                  onChange={(e) => setKeep((k) => toggled(k, installed.format, !e.target.checked))}
                 />
                 <span>
                   The {FORMAT_NAMES[installed.format]} {installed.tag}
@@ -435,9 +433,7 @@ function AppPageBody({ app }: { app: AppView }) {
               <input
                 type="checkbox"
                 checked={!keep.includes(installed.format)}
-                onChange={(e) =>
-                  setKeep((k) => (e.target.checked ? k.filter((f) => f !== installed.format) : [...k, installed.format]))
-                }
+                onChange={(e) => setKeep((k) => toggled(k, installed.format, !e.target.checked))}
               />
               <span>
                 Also uninstall {app.installs.length > 1 ? `the ${FORMAT_NAMES[installed.format]} ` : ''}
@@ -467,7 +463,7 @@ function TickRow({ value, ticked, set, children }: { value: string; ticked: stri
       <input
         type="checkbox"
         checked={ticked.includes(value)}
-        onChange={(e) => set((t) => (e.target.checked ? [...t, value] : t.filter((x) => x !== value)))}
+        onChange={(e) => set((t) => toggled(t, value, e.target.checked))}
       />
       <span>{children}</span>
     </label>
