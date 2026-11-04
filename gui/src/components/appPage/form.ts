@@ -4,6 +4,8 @@ import type { AppView, Format, Preview, SettingsInput, SignatureForm, SourceSpec
 
 /** The settings form as typed, before it becomes a `SettingsInput`. */
 export interface SettingsDraft {
+  /** Name to show the app by; blank shows the id. */
+  name: string;
   format: Format | '';
   filter: string;
   /** Regex a release tag must match. */
@@ -22,6 +24,7 @@ export interface SettingsDraft {
 }
 
 export const EMPTY_DRAFT: SettingsDraft = {
+  name: '',
   format: '',
   filter: '',
   tagFilter: '',
@@ -35,6 +38,7 @@ export const EMPTY_DRAFT: SettingsDraft = {
 
 export function draftOf(app: AppView): SettingsDraft {
   return {
+    name: app.name ?? '',
     format: app.format ?? '',
     filter: app.asset_filter ?? '',
     tagFilter: app.tag_filter ?? '',
@@ -49,6 +53,7 @@ export function draftOf(app: AppView): SettingsDraft {
 
 export function toInput(d: SettingsDraft): SettingsInput {
   return {
+    name: d.name.trim() || null,
     format: d.format || null,
     asset_filter: d.filter.trim() || null,
     tag_filter: d.tagFilter.trim() || null,

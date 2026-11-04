@@ -1,4 +1,4 @@
-import type { CardModel } from '../appsView';
+import { displayName, type CardModel } from '../appsView';
 import type { AppView } from '../types';
 import AppIcon from './shared/AppIcon';
 import { FORMAT_NAMES } from './shared/icons';
@@ -43,7 +43,7 @@ export default function AppCard({
       }}
       title={model.label}
       // Name first, so a screen reader says which app before its state.
-      aria-label={`${app.id}, ${model.label}, ${model.versions}`}
+      aria-label={`${displayName(app)}, ${model.label}, ${model.versions}`}
     >
       <div className="app-card-icon">
         <AppIcon app={app} format={model.format} />
@@ -51,7 +51,7 @@ export default function AppCard({
       <div className="app-card-info">
         <div className="app-card-name-row">
           <span className={`dot dot-${model.dot}`} />
-          <span className="card-title">{app.id}</span>
+          <span className="card-title">{displayName(app)}</span>
           <span className="app-card-tags">
             {model.formats.map((f) => (
               <span key={f} className="tag">{FORMAT_NAMES[f]}</span>

@@ -52,6 +52,9 @@ enum Command {
         /// Id to refer to the app by. Defaults to the repository name.
         #[arg(long)]
         id: Option<String>,
+        /// Name to show the app by, e.g. "Bitwarden"; the id by default.
+        #[arg(long)]
+        name: Option<String>,
         /// Regex an asset name must match.
         #[arg(long)]
         filter: Option<String>,
@@ -85,6 +88,10 @@ enum Command {
     /// Change how a tracked app is installed. Takes effect on the next `update`.
     Edit {
         id: String,
+        /// Name to show the app by, e.g. "Bitwarden"; an empty one shows the
+        /// id again. The id itself does not change.
+        #[arg(long)]
+        name: Option<String>,
         /// Package format to pin, or `auto` to pick the best one for this system.
         #[arg(long, value_name = "FORMAT")]
         format: Option<FormatPin>,
@@ -459,6 +466,7 @@ fn main() -> Result<()> {
             forge,
             pattern,
             id,
+            name,
             filter,
             tag_filter,
             versions,
@@ -484,6 +492,7 @@ fn main() -> Result<()> {
             let link = link.unwrap_or_default();
             let id = id.or(link.id).unwrap_or_else(|| source.default_id());
             let mut app = App::new(source, id.clone());
+            app.set_name(name.as_deref());
             app.asset_filter = filter.or(link.asset_filter);
             app.tag_filter = tag_filter.or(link.tag_filter);
             app.versions = versions.or(link.versions);
@@ -512,6 +521,7 @@ fn main() -> Result<()> {
         }
         Command::Edit {
             id,
+            name,
             format,
             filter,
             clear_filter,
@@ -531,6 +541,7 @@ fn main() -> Result<()> {
             forge,
         } => {
             if signature.is_empty()
+                && name.is_none()
                 && !no_signature
                 && pattern.is_none()
                 && url.is_none()
@@ -572,6 +583,9 @@ fn main() -> Result<()> {
                 store.get_mut(&id)?.source = source;
             }
             let app = store.get_mut(&id)?;
+            if let Some(name) = &name {
+                app.set_name(Some(name));
+            }
             if let Some(FormatPin(format)) = format {
                 app.format = format;
             }
@@ -682,7 +696,11 @@ fn main() -> Result<()> {
                     true => "not installed".into(),
                     false => installs.join(", "),
                 };
-                println!("{:<20} {:<20} {}", app.id, state, app.source);
+                let label = match &app.name {
+                    Some(name) => format!("{} ({name})", app.id),
+                    None => app.id.clone(),
+                };
+                println!("{:<20} {:<20} {}", label, state, app.source);
             }
         }
         Command::Check { notify, quiet, json } => check(&mut store, notify, quiet, json, via)?,
@@ -1101,6 +1119,8 @@ fn write_man_pages(dir: &std::path::Path) -> Result<()> {
 #[derive(serde::Serialize)]
 struct ListEntry {
     id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<Format>,
@@ -1111,6 +1131,7 @@ impl ListEntry {
     fn new(app: &App) -> ListEntry {
         ListEntry {
             id: app.id.clone(),
+            name: app.name.clone(),
             source: app.source.to_string(),
             format: app.format,
             installs: app.installs().map(|i| InstallEntry::new(i, None)).collect(),
@@ -1806,8 +1827,9 @@ fn describe(app: &App) -> String {
         true => format!("{pattern}\n  track only: yes"),
         false => pattern,
     };
+    let name = app.display_name();
     format!(
-        "  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  versions:   {versions}\n  cooldown:   {cooldown}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
+        "  name:       {name}\n  format:     {format}\n  filter:     {filter}\n  tags:       {tags}\n  versions:   {versions}\n  cooldown:   {cooldown}\n  bins:       {bins}\n  prerelease: {prerelease}\n  signature:  {signature}{pattern}"
     )
 }
 

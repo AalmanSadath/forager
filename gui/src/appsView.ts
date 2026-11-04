@@ -120,12 +120,15 @@ function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel,
   }
 }
 
+/** What to call an app: the name the user gave it, else its id. */
+export const displayName = (app: Pick<AppView, 'id' | 'name'>): string => app.name || app.id;
+
 /** A chip: one of the sections, or a format. */
 export type Chip = 'all' | Section | Format;
 
 /** Lower-cased words an app is found by: id, source, formats, package names. */
 function haystack(app: AppView, model: CardModel): string {
-  return [app.id, app.source, ...model.formats, ...app.installs.map((i) => i.package ?? '')].join(' ').toLowerCase();
+  return [app.id, app.name ?? '', app.source, ...model.formats, ...app.installs.map((i) => i.package ?? '')].join(' ').toLowerCase();
 }
 
 /** Apps shown for a chip and a search, grouped into sections in order. */
@@ -147,7 +150,7 @@ export function groupApps(
       const hay = haystack(app, model);
       return words.every((w) => hay.includes(w));
     })
-    .sort((a, b) => a.app.id.localeCompare(b.app.id));
+    .sort((a, b) => displayName(a.app).localeCompare(displayName(b.app)));
   return SECTIONS.map(({ key, title }) => ({ key, title, items: items.filter((i) => i.model.section === key) })).filter(
     (s) => s.items.length > 0,
   );

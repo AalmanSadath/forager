@@ -63,6 +63,9 @@ pub fn parse_source(url: String, forge: Option<String>, pattern: Option<String>)
 /// The settings an app page edits.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SettingsInput {
+    /// Name to show the app by; blank shows the id.
+    #[serde(default)]
+    pub name: Option<String>,
     pub format: Option<Format>,
     pub asset_filter: Option<String>,
     /// Regex a release tag must match.
@@ -89,6 +92,7 @@ impl SettingsInput {
         if let (Source::Html { url, .. }, Some(pattern)) = (&app.source, &self.pattern) {
             app.source = Source::html(&url.clone(), pattern).map_err(|e| e.to_string())?;
         }
+        app.set_name(self.name.as_deref());
         app.format = self.format;
         app.asset_filter = self.asset_filter.clone().filter(|f| !f.is_empty());
         app.tag_filter = self.tag_filter.clone().filter(|f| !f.is_empty());

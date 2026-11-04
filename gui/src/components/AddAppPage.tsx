@@ -38,7 +38,10 @@ export default function AddAppPage({
   const [pattern, setPattern] = useState(link?.pattern ?? '');
   const [info, setInfo] = useState<SourceInfo | null>(null);
   const [id, setId] = useState('');
-  const [draft, setDraft] = useState<SettingsDraft>(() => (link ? draftOfLink(link) : EMPTY_DRAFT));
+  // An AppImage names itself; that is a better name to show than its id.
+  const [draft, setDraft] = useState<SettingsDraft>(() =>
+    link ? draftOfLink(link) : { ...EMPTY_DRAFT, name: adopt?.name ?? '' },
+  );
   const [signature, setSignature] = useState<SignatureDraft>({ kind: 'none', minisignKey: '', gpgFile: '' });
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -234,11 +237,23 @@ export default function AddAppPage({
               onChange={setDraft}
               preview={preview}
               idField={
-                <div className="form-group">
-                  <label htmlFor="new-id">Id</label>
-                  <input id="new-id" className="mono" value={id} onChange={(e) => setId(e.target.value)} spellCheck={false} />
-                  <p className="form-hint">Names the app here and its files on disk: letters, digits, dots, dashes and underscores.</p>
-                </div>
+                <>
+                  <div className="form-group">
+                    <label htmlFor="new-name">Name</label>
+                    <input
+                      id="new-name"
+                      value={draft.name}
+                      placeholder={id || 'The id'}
+                      onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    />
+                    <p className="form-hint">Shown instead of the id; optional.</p>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="new-id">Id</label>
+                    <input id="new-id" className="mono" value={id} onChange={(e) => setId(e.target.value)} spellCheck={false} />
+                    <p className="form-hint">Names the app in commands and its files on disk: letters, digits, dots, dashes and underscores.</p>
+                  </div>
+                </>
               }
             />
             <SignatureSection draft={signature} onChange={setSignature} app={null} forge={info.forge} />

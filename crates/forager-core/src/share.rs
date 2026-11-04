@@ -23,6 +23,8 @@ use crate::store::{self, Store};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportedApp {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub source: Source,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_filter: Option<String>,
@@ -88,6 +90,7 @@ fn exported(app: &App) -> Result<ExportedApp> {
     };
     Ok(ExportedApp {
         id: app.id.clone(),
+        name: app.name.clone(),
         source: app.source.clone(),
         asset_filter: app.asset_filter.clone(),
         tag_filter: app.tag_filter.clone(),
@@ -120,6 +123,7 @@ pub fn import(store: &mut Store, text: &str) -> Result<Vec<(String, Result<()>)>
 
 fn imported(store: &Store, exported: ExportedApp) -> Result<App> {
     let mut app = App::new(exported.source, exported.id);
+    app.set_name(exported.name.as_deref());
     app.asset_filter = exported.asset_filter;
     app.tag_filter = exported.tag_filter;
     app.versions = exported.versions;

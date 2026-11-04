@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as ipc from '../ipc';
+import { displayName } from '../appsView';
 import { useAppStore } from '../store/appStore';
 import type { Format, PlanView } from '../types';
 import Modal from './shared/Modal';
@@ -30,6 +31,12 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   const clearProgress = useAppStore((s) => s.clearProgress);
   const toast = useAppStore((s) => s.toast);
   const progress = useAppStore((s) => s.progress);
+  const apps = useAppStore((s) => s.apps);
+  // Ids go to the backend; people see the names they gave the apps.
+  const called = (id: string) => {
+    const app = apps.find((a) => a.id === id);
+    return app ? displayName(app) : id;
+  };
 
   const [phase, setPhase] = useState<Phase>({ kind: 'planning' });
   const [plans, setPlans] = useState<Unit[]>([]);
@@ -77,7 +84,7 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   );
   // Named by format too when an app has more than one update.
   const nameOf = (id: string, format: Format) =>
-    runnable.filter((p) => p.id === id).length > 1 ? `${id} (${FORMAT_NAMES[format]})` : id;
+    runnable.filter((p) => p.id === id).length > 1 ? `${called(id)} (${FORMAT_NAMES[format]})` : called(id);
   const unverified = runnable.some((p) => p.plan!.unverified);
   const needsRoot = runnable.some((p) => p.plan!.needs_root);
 
@@ -156,9 +163,9 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   // Installing something new is not an update, and the title should say so.
   const firstInstall = single && plans[0]?.plan && !plans[0].plan.from;
   const title = tag
-    ? `Install ${ids[0]} ${tag}`
+    ? `Install ${called(ids[0])} ${tag}`
     : single
-      ? `${firstInstall ? 'Install' : 'Update'} ${ids[0]}`
+      ? `${firstInstall ? 'Install' : 'Update'} ${called(ids[0])}`
       : `Update ${ids.length} apps`;
   const blocking = phase.kind === 'working';
 
@@ -170,7 +177,7 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
         <>
           {plans.map(({ id, plan, error }, index) => (
             <div key={`${id}/${plan?.format ?? index}`} className="plan">
-              {(!single || plans.length > 1) && <div className="plan-title">{plan ? nameOf(id, plan.format) : id}</div>}
+              {(!single || plans.length > 1) && <div className="plan-title">{plan ? nameOf(id, plan.format) : called(id)}</div>}
               {error ? (
                 <p className="form-hint form-hint-error">{error}</p>
               ) : !plan ? (

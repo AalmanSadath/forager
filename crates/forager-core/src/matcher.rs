@@ -265,6 +265,7 @@ mod tests {
     fn app() -> App {
         App {
             id: "tool".into(),
+            name: None,
             source: Source::GitHub {
                 owner: "o".into(),
                 repo: "tool".into(),

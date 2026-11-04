@@ -113,6 +113,10 @@ pub struct Asset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct App {
     pub id: String,
+    /// What to call the app where it is shown, e.g. "Bitwarden" for the id
+    /// `clients`. The id stays what commands and files go by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub source: Source,
     /// Regex an asset name must match.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -167,6 +171,7 @@ impl App {
     pub fn new(source: Source, id: String) -> App {
         App {
             id,
+            name: None,
             source,
             asset_filter: None,
             tag_filter: None,
@@ -182,6 +187,19 @@ impl App {
             installed: None,
             also_installed: Vec::new(),
         }
+    }
+
+    /// The name to show: the one the user gave, else the id.
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
+    }
+
+    /// Sets the name to show. Blank, or the id itself, means none.
+    pub fn set_name(&mut self, name: Option<&str>) {
+        self.name = name
+            .map(str::trim)
+            .filter(|n| !n.is_empty() && *n != self.id)
+            .map(|n| n.chars().filter(|c| !c.is_control()).collect());
     }
 
     /// Every install, the preferred one first.
@@ -308,6 +326,27 @@ mod tests {
         let text = toml::to_string(&unpacked).unwrap();
         assert!(text.contains("extract_and_run = true"));
         assert!(toml::from_str::<Installed>(&text).unwrap().extract_and_run);
+    }
+
+    #[test]
+    fn shows_the_name_given_or_the_id() {
+        let mut app = App::new(
+            Source::GitHub {
+                owner: "bitwarden".into(),
+                repo: "clients".into(),
+            },
+            "clients".into(),
+        );
+        assert_eq!(app.display_name(), "clients");
+        app.set_name(Some("  Bitwarden "));
+        assert_eq!(app.display_name(), "Bitwarden");
+        assert!(toml::to_string(&app).unwrap().contains("name = \"Bitwarden\""));
+        for none in [Some(""), Some("   "), Some("clients"), None] {
+            app.set_name(none);
+            assert_eq!(app.name, None);
+        }
+        app.set_name(Some("Bit\nwarden"));
+        assert_eq!(app.display_name(), "Bitwarden");
     }
 
     #[test]

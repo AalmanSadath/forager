@@ -88,6 +88,7 @@ forager update drawio-desktop --yes
 forager edit drawio-desktop --format appimage   # or auto; also --filter, --bin, --prerelease
 forager edit bifrossh --tag-filter '^v'         # only v… releases, not android-v…
 forager edit drawio-desktop --versions '<29'    # stay below 29
+forager edit clients --name Bitwarden           # show it as Bitwarden; the id stays clients
 forager notes drawio-desktop                    # notes of every release since the installed one (--latest, --tag)
 forager install drawio-desktop --tag v24.0.0    # roll back; skips the newer release
 forager skip drawio-desktop                     # don't offer this release; newer ones are

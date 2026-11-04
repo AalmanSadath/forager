@@ -24,6 +24,8 @@ export type SourceSpec = { kind: Forge } & Record<string, string>;
 
 export interface AppView {
   id: string;
+  /** The name the user gave the app; the id is shown when null. */
+  name: string | null;
   spec: SourceSpec;
   source: string;
   web_url: string;
@@ -202,6 +204,8 @@ export interface ParsedSource {
 }
 
 export interface SettingsInput {
+  /** Name to show the app by; null shows the id. */
+  name: string | null;
   format: Format | null;
   asset_filter: string | null;
   tag_filter: string | null;

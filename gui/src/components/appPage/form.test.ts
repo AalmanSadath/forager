@@ -4,6 +4,7 @@ import type { AppView } from '../../types';
 
 const app: AppView = {
   id: 'tool',
+  name: 'Tool',
   spec: { kind: 'github', owner: 'o', repo: 'tool' },
   source: 'github.com/o/tool',
   web_url: 'https://github.com/o/tool',
@@ -28,6 +29,7 @@ const app: AppView = {
 describe('settings form', () => {
   it('round-trips an app and trims what was typed', () => {
     expect(toInput(draftOf(app))).toEqual({
+      name: 'Tool',
       format: 'tarball',
       asset_filter: 'musl',
       tag_filter: null,
@@ -38,7 +40,8 @@ describe('settings form', () => {
       pattern: null,
       track_only: false,
     });
-    expect(toInput({ format: '', filter: '  ', tagFilter: ' ^v ', versions: ' ', cooldown: 'x', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ', trackOnly: true })).toEqual({
+    expect(toInput({ name: '   ', format: '', filter: '  ', tagFilter: ' ^v ', versions: ' ', cooldown: 'x', prerelease: true, bins: ' a ,, b ', pattern: ' x$ ', trackOnly: true })).toEqual({
+      name: null,
       format: null,
       asset_filter: null,
       tag_filter: '^v',
@@ -54,6 +57,8 @@ describe('settings form', () => {
   it('ignores edits that change nothing that is saved', () => {
     expect(sameDraft(draftOf(app), { ...draftOf(app), bins: 'bin/tool,bin/helper ' })).toBe(true);
     expect(sameDraft(draftOf(app), { ...draftOf(app), filter: 'gnu' })).toBe(false);
+    expect(sameDraft(draftOf(app), { ...draftOf(app), name: ' Tool ' })).toBe(true);
+    expect(sameDraft(draftOf(app), { ...draftOf(app), name: 'Other' })).toBe(false);
   });
 });
 

@@ -3,7 +3,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
-import { cardModel } from '../appsView';
+import { cardModel, displayName } from '../appsView';
 import { removalChoices, toggled } from '../removalView';
 import type { AppView, Cleanup, Format, InstalledView, Notice, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
@@ -115,7 +115,7 @@ function AppPageBody({ app }: { app: AppView }) {
       await ipc.saveApp(app.id, input, sigForm);
       await loadApps();
       checkApps([app.id]);
-      toast('success', `Saved ${app.id}.`);
+      toast('success', `Saved ${displayName(app)}.`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -156,7 +156,7 @@ function AppPageBody({ app }: { app: AppView }) {
       await ipc.followMove(app.id);
       await loadApps();
       checkApps([app.id]);
-      toast('success', `${app.id} now follows its new address.`);
+      toast('success', `${displayName(app)} now follows its new address.`);
     } catch (e) {
       toast('error', String(e));
     }
@@ -178,7 +178,7 @@ function AppPageBody({ app }: { app: AppView }) {
       await ipc.removeApp(app.id, uninstall, deleted, repos);
       setPage({ kind: 'apps' });
       await loadApps();
-      toast('success', uninstall.length > 0 ? `Removed and uninstalled ${app.id}.` : `Stopped tracking ${app.id}.`);
+      toast('success', uninstall.length > 0 ? `Removed and uninstalled ${displayName(app)}.` : `Stopped tracking ${displayName(app)}.`);
     } catch (e) {
       toast('error', String(e));
     }
@@ -188,7 +188,7 @@ function AppPageBody({ app }: { app: AppView }) {
     setDialog(null);
     try {
       await ipc.uninstallApp(app.id, uninstall, deleted, repos);
-      toast('success', `Uninstalled ${app.id}; still tracked.`);
+      toast('success', `Uninstalled ${displayName(app)}; still tracked.`);
     } catch (e) {
       toast('error', String(e));
     } finally {
@@ -208,7 +208,7 @@ function AppPageBody({ app }: { app: AppView }) {
           <AppIcon app={app} format={model.format} size={26} />
         </div>
         <div className="page-header-title">
-          <h1>{app.id}</h1>
+          <h1>{displayName(app)}</h1>
           <button className="link-btn" onClick={() => openUrl(app.web_url).catch(() => {})}>
             {app.source} <ExternalIcon />
           </button>
@@ -348,10 +348,23 @@ function AppPageBody({ app }: { app: AppView }) {
             onChange={setDraft}
             preview={preview}
             idField={
-              <div className="form-group">
-                <label htmlFor="app-id">Id</label>
-                <input id="app-id" className="mono" value={app.id} readOnly />
-              </div>
+              <>
+                <div className="form-group">
+                  <label htmlFor="app-name">Name</label>
+                  <input
+                    id="app-name"
+                    value={draft.name}
+                    placeholder={app.id}
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                  />
+                  <p className="form-hint">Shown instead of the id. Blank shows the id.</p>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="app-id">Id</label>
+                  <input id="app-id" className="mono" value={app.id} readOnly />
+                  <p className="form-hint">What commands and files on disk go by; it stays as it is.</p>
+                </div>
+              </>
             }
           />
           <SignatureSection draft={signature} onChange={setSignature} app={app} forge={app.forge} />
@@ -385,7 +398,7 @@ function AppPageBody({ app }: { app: AppView }) {
 
       {dialog === 'uninstall' && (
         <ConfirmModal
-          question={`Uninstall ${app.id}?`}
+          question={`Uninstall ${displayName(app)}?`}
           hint={
             <>
               Forager keeps tracking it; Install puts it back.
@@ -422,7 +435,7 @@ function AppPageBody({ app }: { app: AppView }) {
 
       {dialog === 'remove' && (
         <ConfirmModal
-          question={`Remove ${app.id}?`}
+          question={`Remove ${displayName(app)}?`}
           hint={systemHint}
           confirmLabel="Remove"
           onConfirm={remove}

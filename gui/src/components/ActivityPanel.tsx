@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as ipc from '../ipc';
+import { displayName } from '../appsView';
 import { useAppStore } from '../store/appStore';
 import { ACTIVITY_CHIPS, describe, groupByDay, matchesChip, type ActivityChip } from '../activityView';
 import type { HistoryEvent } from '../types';
@@ -15,6 +16,8 @@ const LIMIT = 500;
 export default function ActivityPanel() {
   const apps = useAppStore((s) => s.apps);
   const setPage = useAppStore((s) => s.setPage);
+  // History goes by id; tracked apps show the name the user gave them.
+  const names = new Map(apps.map((a) => [a.id, displayName(a)]));
   const [events, setEvents] = useState<HistoryEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chip, setChip] = useState<ActivityChip>('all');
@@ -74,7 +77,7 @@ export default function ActivityPanel() {
                   <span className={`activity-mark mark-${e.kind}`} aria-hidden />
                   {tracked.has(e.app) ? (
                     <button className="link-btn activity-app" onClick={() => setPage({ kind: 'app', id: e.app })}>
-                      {e.app}
+                      {names.get(e.app) ?? e.app}
                     </button>
                   ) : (
                     <span className="activity-app">{e.app}</span>

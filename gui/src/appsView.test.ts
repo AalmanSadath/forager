@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { cardModel, countUpdates, formatsInUse, groupApps, missingMenuEntries, restoreChecks, type CheckEntry } from './appsView';
+import { cardModel, countUpdates, displayName, formatsInUse, groupApps, missingMenuEntries, restoreChecks, type CheckEntry } from './appsView';
 import type { AppView, StatusView } from './types';
 
 function app(id: string, extra: Partial<AppView> = {}): AppView {
   return {
     id,
+    name: null,
     spec: { kind: 'github', owner: 'o', repo: id },
     source: `github.com/o/${id}`,
     web_url: `https://github.com/o/${id}`,
@@ -202,5 +203,20 @@ describe('missingMenuEntries', () => {
       app('d'),
     ];
     expect(missingMenuEntries(apps)).toEqual(['a']);
+  });
+});
+
+describe('app names', () => {
+  it('shows the name given, else the id, and finds the app by either', () => {
+    const named = app('clients', { name: 'Bitwarden' });
+    expect(displayName(named)).toBe('Bitwarden');
+    expect(displayName(app('clients'))).toBe('clients');
+    expect(groupApps([named], {}, 'all', 'bitwarden')[0].items).toHaveLength(1);
+    expect(groupApps([named], {}, 'all', 'clients')[0].items).toHaveLength(1);
+  });
+
+  it('sorts by the name shown', () => {
+    const shown = groupApps([app('zed', { name: 'Atom' }), app('beta')], {}, 'all', '');
+    expect(shown.flatMap((s) => s.items.map((i) => i.app.id))).toEqual(['zed', 'beta']);
   });
 });

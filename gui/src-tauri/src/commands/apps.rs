@@ -13,6 +13,8 @@ use crate::state::{CmdResult, blocking, load_store};
 #[derive(Debug, Clone, Serialize)]
 pub struct AppView {
     pub id: String,
+    /// The name the user gave the app, if any; shown instead of the id.
+    pub name: Option<String>,
     /// The source as the backend stores it, handed back for previews.
     pub spec: Source,
     /// `github.com/owner/repo` and the like.
@@ -73,6 +75,7 @@ impl From<&App> for AppView {
     fn from(app: &App) -> AppView {
         AppView {
             id: app.id.clone(),
+            name: app.name.clone(),
             spec: app.source.clone(),
             source: app.source.to_string(),
             web_url: app.source.web_url(),
