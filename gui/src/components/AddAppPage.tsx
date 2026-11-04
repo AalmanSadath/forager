@@ -7,6 +7,7 @@ import AssetsSection from './appPage/AssetsSection';
 import SettingsSection from './appPage/SettingsSection';
 import SignatureSection from './appPage/SignatureSection';
 import { EMPTY_DRAFT, signatureForm, toInput, usePreview, type SettingsDraft, type SignatureDraft } from './appPage/form';
+import Dropdown from './shared/Dropdown';
 import { BackIcon, FORGE_NAMES } from './shared/icons';
 
 /**
@@ -144,19 +145,20 @@ export default function AddAppPage({
           title="Right-click to paste"
           spellCheck={false}
         />
-        <select
+        <Dropdown<typeof kind>
           value={kind}
-          onChange={(e) => setKind(e.target.value as typeof kind)}
+          onChange={setKind}
           title="What the address is"
-          aria-label="Source type"
-        >
-          <option value="auto">Detect from address</option>
-          <option value="gitlab">GitLab</option>
-          <option value="forgejo">Forgejo / Gitea</option>
-          <option value="html">Web page with links</option>
-          <option value="jenkins">Jenkins job</option>
-          <option value="direct">Direct link to the file</option>
-        </select>
+          ariaLabel="Source type"
+          options={[
+            { value: 'auto', label: 'Detect from address' },
+            { value: 'gitlab', label: 'GitLab' },
+            { value: 'forgejo', label: 'Forgejo / Gitea' },
+            { value: 'html', label: 'Web page with links' },
+            { value: 'jenkins', label: 'Jenkins job' },
+            { value: 'direct', label: 'Direct link to the file' },
+          ]}
+        />
         <button className="btn-secondary" type="submit" disabled={!url.trim()}>Look up</button>
       </form>
       {adopt && (

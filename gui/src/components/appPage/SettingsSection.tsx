@@ -1,5 +1,6 @@
 import { filterCounts } from '../../assetsView';
 import type { Format, Preview } from '../../types';
+import Dropdown from '../shared/Dropdown';
 import { FORMAT_NAMES } from '../shared/icons';
 import type { SettingsDraft } from './form';
 
@@ -45,12 +46,15 @@ export default function SettingsSection({
       )}
       <div className="form-group">
         <label htmlFor="format">Format</label>
-        <select id="format" value={draft.format} onChange={(e) => set({ format: e.target.value as Format | '' })}>
-          <option value="">Automatic{chosen?.format ? ` (${FORMAT_NAMES[chosen.format]})` : ''}</option>
-          {FORMATS.map((f) => (
-            <option key={f} value={f}>{FORMAT_NAMES[f]}</option>
-          ))}
-        </select>
+        <Dropdown<Format | ''>
+          id="format"
+          value={draft.format}
+          onChange={(format) => set({ format })}
+          options={[
+            { value: '', label: `Automatic${chosen?.format ? ` (${FORMAT_NAMES[chosen.format]})` : ''}` },
+            ...FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f] })),
+          ]}
+        />
         <p className="form-hint">
           Automatic prefers this system's own package format, then Flatpak, AppImage and tarball.
         </p>
