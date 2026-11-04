@@ -90,7 +90,9 @@ export const appCleanup = (id: string) => invoke<Cleanup>('app_cleanup', { id })
 export const planUpdate = (id: string, tag: string | null = null) => invoke<PlanResult[]>('plan_update', { id, tag });
 /** Progress arrives as `update-progress` events. */
 export const startUpdate = (id: string, format: Format) => invoke<DownloadedView>('start_update', { id, format });
-export const finishUpdate = (id: string, format: Format) => invoke<FinishedView>('finish_update', { id, format });
+/** `extractAndRun`: for a new AppImage while FUSE is missing, install it to unpack and run on each launch. */
+export const finishUpdate = (id: string, format: Format, extractAndRun = false) =>
+  invoke<FinishedView>('finish_update', { id, format, extractAndRun });
 export const cancelUpdate = (id: string, format: Format) => invoke<void>('cancel_update', { id, format });
 
 /** Starts the newly installed Forager and closes this window. */

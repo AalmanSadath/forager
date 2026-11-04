@@ -54,6 +54,12 @@ pub struct PlanView {
     /// The installed file's name, when the new file differs from it by more
     /// than the version.
     pub asset_changed: Option<String>,
+    /// For an AppImage: what FUSE lacks for it to start, and what brings it.
+    pub fuse_missing: Vec<String>,
+    pub fuse_packages: Option<String>,
+    /// FUSE is missing and nothing is being updated, so the user chooses
+    /// first: install anyway, install to unpack and run, or not install.
+    pub asks_about_fuse: bool,
 }
 
 /// One planned update of an app, or why it cannot be made.
@@ -126,6 +132,13 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String, tag: Option<St
                         notes: update::combined_notes(&plan.changes),
                         notes_releases: plan.changes.len(),
                         asset_changed: plan.asset_changed.clone(),
+                        fuse_missing: plan
+                            .fuse
+                            .iter()
+                            .flat_map(|gap| gap.missing.iter().map(|m| m.to_string()))
+                            .collect(),
+                        fuse_packages: plan.fuse.as_ref().map(|gap| gap.packages.to_string()),
+                        asks_about_fuse: plan.fuse_choice,
                     };
                     (plan, view)
                 })
@@ -236,6 +249,7 @@ pub async fn finish_update(
     updates: State<'_, Updates>,
     id: String,
     format: Format,
+    extract_and_run: Option<bool>,
 ) -> CmdResult<FinishedView> {
     let session = updates
         .0
@@ -244,7 +258,11 @@ pub async fn finish_update(
         .remove(&key(&id, format))
         .ok_or("no update downloaded for this app")?;
     let download = session.download.ok_or("the download has not finished")?;
-    let plan = session.plan;
+    let mut plan = session.plan;
+    // Chosen in the dialog when FUSE is missing for a new AppImage.
+    if plan.fuse_choice {
+        plan.extract_and_run = extract_and_run.unwrap_or(false);
+    }
     let (handle, key) = (app.clone(), id.clone());
     let result = blocking(move || {
         let mut store = load_store()?;

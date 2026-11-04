@@ -94,6 +94,10 @@
 .plan-warn dd { color: var(--warning); }
 .plan-danger dd { color: var(--danger); font-weight: 600; }
 .unverified-row { margin: 4px 0 0; color: var(--danger); }
+/* What to do with a new AppImage while FUSE is missing. */
+.fuse-choices { border: none; margin: 8px 0 4px; padding: 0; }
+.fuse-choices legend { font-size: 12px; color: var(--warning); margin-bottom: 6px; padding: 0; }
+.fuse-choices .checkbox-row { margin-bottom: 6px; }
 
 .update-step { font-size: 13px; color: var(--text-muted); }
 .update-step strong { color: var(--text-primary); }

@@ -5,6 +5,7 @@ import type { Format, PlanView } from '../types';
 import Modal from './shared/Modal';
 import { FORMAT_NAMES } from './shared/icons';
 import Markdown from './shared/Markdown';
+import { awaitingFuseChoice, runnableUnits, unitKey, unpacks, type FuseChoice, type Unit } from '../updateView';
 
 type Phase =
   | { kind: 'planning' }
@@ -15,9 +16,6 @@ type Phase =
   | { kind: 'done' };
 
 type Result = { id: string; name: string; outcome: 'installed' | 'skipped' | 'failed'; detail?: string };
-
-/** One update to run: an app, and with several installs, one of its formats. */
-type Unit = { id: string; plan: PlanView | null; error?: string };
 
 /**
  * Updating one app, or several from "Update all": show what each will
@@ -39,6 +37,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   // Updates in "Update all" whose file changed by more than its version,
   // left out until ticked.
   const [held, setHeld] = useState<string[]>([]);
+  // For new AppImages while FUSE is missing, what the user chose to do.
+  const [fuse, setFuse] = useState<Record<string, FuseChoice>>({});
   const [results, setResults] = useState<Result[]>([]);
   // Answers the distro question for the app waiting on it.
   const distroAnswer = useRef<((install: boolean) => void) | null>(null);
@@ -70,7 +70,11 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   }, [ids, tag]);
 
   const planned = plans.filter((p) => p.plan);
-  const runnable = planned.filter((p) => !held.includes(unitKey(p.id, p.plan!.format)));
+  const runnable = runnableUnits(planned, held, fuse);
+  const awaiting = awaitingFuseChoice(
+    planned.filter((p) => !held.includes(unitKey(p.id, p.plan!.format))),
+    fuse,
+  );
   // Named by format too when an app has more than one update.
   const nameOf = (id: string, format: Format) =>
     runnable.filter((p) => p.id === id).length > 1 ? `${id} (${FORMAT_NAMES[format]})` : id;
@@ -81,11 +85,13 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
     const done: Result[] = [];
     for (const { id, plan } of planned.filter((p) => !runnable.includes(p))) {
       ipc.cancelUpdate(id, plan!.format);
-      done.push({ id, name: nameOf(id, plan!.format), outcome: 'skipped', detail: 'its file changed; not ticked' });
+      const detail = held.includes(unitKey(id, plan!.format)) ? 'its file changed; not ticked' : 'FUSE is missing; not installed';
+      done.push({ id, name: nameOf(id, plan!.format), outcome: 'skipped', detail });
     }
     // Set when Forager itself was updated.
     let restartTo: string | null = null;
-    for (const { id, plan } of runnable) {
+    for (const unit of runnable) {
+      const { id, plan } = unit;
       if (cancelled.current) break;
       const format = plan!.format;
       const name = nameOf(id, format);
@@ -108,7 +114,7 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
           }
         }
         setPhase({ kind: 'working', id, format, step: 'install' });
-        const finished = await ipc.finishUpdate(id, format);
+        const finished = await ipc.finishUpdate(id, format, unpacks(unit, fuse));
         if (finished.restart_needed) restartTo = plan!.to;
         done.push({ id, name, outcome: 'installed', detail: downloaded.delta ? `${plan!.to} (${downloaded.delta})` : plan!.to });
       } catch (e) {
@@ -188,6 +194,13 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
                         </div>
                       ))}
                   </dl>
+                  {plan.asks_about_fuse && (
+                    <FuseChoices
+                      plan={plan}
+                      choice={fuse[unitKey(id, plan.format)]}
+                      onChoose={(choice) => setFuse((f) => ({ ...f, [unitKey(id, plan.format)]: choice }))}
+                    />
+                  )}
                   {!single && plan.asset_changed && (
                     <label className="checkbox-row">
                       <input
@@ -226,7 +239,11 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
           )}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={cancel}>Cancel</button>
-            <button className="btn-primary" disabled={runnable.length === 0 || (unverified && !acceptUnverified)} onClick={run}>
+            <button
+              className="btn-primary"
+              disabled={runnable.length === 0 || awaiting.length > 0 || (unverified && !acceptUnverified)}
+              onClick={run}
+            >
               {runnable.length === 1 ? 'Install' : `Install ${runnable.length}`}
             </button>
           </div>
@@ -303,7 +320,34 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   );
 }
 
-const unitKey = (id: string, format: Format) => `${id}/${format}`;
+/** What to do with a new AppImage while FUSE is missing; nothing is chosen until the user picks. */
+function FuseChoices({
+  plan,
+  choice,
+  onChoose,
+}: {
+  plan: PlanView;
+  choice: FuseChoice | undefined;
+  onChoose: (choice: FuseChoice) => void;
+}) {
+  const name = `fuse-${plan.format}-${plan.to}`;
+  const options: [FuseChoice, string][] = [
+    ['anyway', `Install anyway; it starts once FUSE is installed (${plan.fuse_packages ?? 'FUSE'})`],
+    ['unpack', 'Install to unpack and run on each launch; works without FUSE, starts slower'],
+    ['skip', "Don't install"],
+  ];
+  return (
+    <fieldset className="fuse-choices">
+      <legend>FUSE is missing ({plan.fuse_missing.join(', ')}), so AppImages can't start. Choose one:</legend>
+      {options.map(([value, label]) => (
+        <label key={value} className="checkbox-row">
+          <input type="radio" name={name} checked={choice === value} onChange={() => onChoose(value)} />
+          <span>{label}</span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
 
 function ProgressBar({ fraction }: { fraction: number | null }) {
   return (

@@ -287,6 +287,11 @@ export interface PlanView {
   notes_releases: number;
   /** The installed file's name, when the new file differs by more than its version. */
   asset_changed: string | null;
+  /** For an AppImage: what FUSE lacks for it to start, and the packages that bring it. */
+  fuse_missing: string[];
+  fuse_packages: string | null;
+  /** FUSE is missing for a new AppImage: install anyway, to unpack and run, or not at all. */
+  asks_about_fuse: boolean;
 }
 
 export interface FinishedView {

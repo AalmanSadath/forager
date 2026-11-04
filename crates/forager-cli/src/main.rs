@@ -189,6 +189,11 @@ enum Command {
         /// Install nothing while running on battery.
         #[arg(long)]
         skip_on_battery: bool,
+        /// For a new AppImage while FUSE is missing: install it anyway (it
+        /// starts once FUSE is installed), install it to unpack and run on
+        /// each launch, or skip it. Asked on a terminal when not given.
+        #[arg(long, value_enum, value_name = "CHOICE")]
+        without_fuse: Option<WithoutFuse>,
     },
     /// Install a particular release, e.g. to roll back to an older one. Going
     /// back from the latest release skips it, so it is not offered again.
@@ -203,6 +208,11 @@ enum Command {
         /// Install assets that have no published checksum.
         #[arg(long)]
         allow_unverified: bool,
+        /// For a new AppImage while FUSE is missing: install it anyway (it
+        /// starts once FUSE is installed), install it to unpack and run on
+        /// each launch, or skip it. Asked on a terminal when not given.
+        #[arg(long, value_enum, value_name = "CHOICE")]
+        without_fuse: Option<WithoutFuse>,
     },
     /// Do not offer a release (the latest by default) as an update. A newer
     /// release is offered as usual.
@@ -390,7 +400,19 @@ struct UpdateOptions {
     yes: bool,
     allow_unverified: bool,
     unprivileged_only: bool,
+    without_fuse: Option<WithoutFuse>,
     via: Via,
+}
+
+/// What to do with a new AppImage while FUSE is missing.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum WithoutFuse {
+    /// Install it; it starts once FUSE is installed.
+    Anyway,
+    /// Install it to unpack and run on each launch, which needs no FUSE.
+    Unpack,
+    /// Do not install it.
+    Skip,
 }
 
 /// `--format` value for `edit`: a format, or `auto` to remove the pin.
@@ -680,6 +702,7 @@ fn main() -> Result<()> {
             unprivileged_only,
             skip_metered,
             skip_on_battery,
+            without_fuse,
         } => {
             let avoid = Avoid {
                 metered: skip_metered,
@@ -696,6 +719,7 @@ fn main() -> Result<()> {
                     yes,
                     allow_unverified,
                     unprivileged_only,
+                    without_fuse,
                     via,
                 },
             )?
@@ -705,11 +729,13 @@ fn main() -> Result<()> {
             tag,
             yes,
             allow_unverified,
+            without_fuse,
         } => {
             let options = UpdateOptions {
                 yes,
                 allow_unverified,
                 unprivileged_only: false,
+                without_fuse,
                 via,
             };
             let failed = run_plans(&mut store, &id, &Platform::detect(), &options, Some(&tag))?;
@@ -832,6 +858,7 @@ fn main() -> Result<()> {
                     yes,
                     allow_unverified: false,
                     unprivileged_only: false,
+                    without_fuse: None,
                     via,
                 };
                 update(&mut store, &added, &options)?;
@@ -1642,6 +1669,7 @@ fn apply(
         yes,
         allow_unverified,
         unprivileged_only,
+        without_fuse,
         via,
     } = *options;
     let app = store.get(id)?;
@@ -1664,7 +1692,37 @@ fn apply(
     if plan.unverified() && yes && !allow_unverified {
         bail!("refusing unverified asset without --allow-unverified");
     }
-    if !yes && !confirm("Install?")? {
+    let mut plan = plan.clone();
+    // A new AppImage while FUSE is missing: the user chooses what to do,
+    // which also answers whether to install.
+    let mut chosen = false;
+    if plan.fuse_choice {
+        let choice = match without_fuse {
+            Some(choice) => choice,
+            None if !yes && io::stdin().is_terminal() => {
+                chosen = true;
+                ask_without_fuse()?
+            }
+            None => {
+                let gap = plan.fuse.as_ref();
+                bail!(
+                    "not installed: FUSE is missing ({}), which AppImages need to start; install {}, or pass --without-fuse unpack|anyway",
+                    gap.map_or(String::new(), |g| g.missing.join(", ")),
+                    gap.map_or("FUSE", |g| g.packages)
+                );
+            }
+        };
+        match choice {
+            WithoutFuse::Skip => {
+                println!("{name}: skipped");
+                return Ok(());
+            }
+            WithoutFuse::Unpack => plan.extract_and_run = true,
+            WithoutFuse::Anyway => {}
+        }
+    }
+    let plan = &plan;
+    if !yes && !chosen && !confirm("Install?")? {
         println!("{name}: skipped");
         return Ok(());
     }
@@ -1794,6 +1852,29 @@ impl ProgressLine {
     fn finish(&mut self) {
         if self.shown.take().is_some() {
             println!();
+        }
+    }
+}
+
+/// Asks what to do with a new AppImage while FUSE is missing, until one of
+/// the choices is given.
+fn ask_without_fuse() -> Result<WithoutFuse> {
+    println!("  FUSE is missing, so this AppImage cannot start. Choose:");
+    println!("    1) install anyway; it starts once FUSE is installed");
+    println!("    2) install to unpack and run on each launch; works without FUSE, starts slower");
+    println!("    3) do not install");
+    loop {
+        print!("  Choice [1-3]: ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        if io::stdin().lock().read_line(&mut answer)? == 0 {
+            return Ok(WithoutFuse::Skip);
+        }
+        match answer.trim() {
+            "1" => return Ok(WithoutFuse::Anyway),
+            "2" => return Ok(WithoutFuse::Unpack),
+            "3" => return Ok(WithoutFuse::Skip),
+            _ => {}
         }
     }
 }
