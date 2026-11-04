@@ -7,8 +7,8 @@ mod status;
 
 pub use apply::{DeltaOutcome, Download, Progress, adopt, create_menu_entries, download, install};
 pub use plan::{
-    Delta, Plan, SignatureCheck, SummaryLine, Tone, asset_shape, changes, combined_notes, cooldown_until, now, plans,
-    plans_for, repo_releases, summary,
+    Delta, FuseGap, Plan, SignatureCheck, SummaryLine, Tone, asset_shape, changes, combined_notes, cooldown_until, now,
+    plans, plans_for, repo_releases, summary,
 };
 pub use status::{InstallState, State, Status, asset_in, eligible, latest, prefetch, sort_installs, status, status_in};
 
@@ -51,6 +51,9 @@ mod fixtures {
             asset_changed: None,
             via_repo: None,
             ahead_of_releases: false,
+            fuse: None,
+            fuse_choice: false,
+            extract_and_run: false,
             repo_commit: None,
             repo_file: None,
         }
@@ -65,6 +68,7 @@ mod fixtures {
             path: None,
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         }
     }
 }

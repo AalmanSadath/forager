@@ -36,12 +36,21 @@ pub fn entry_field(entry: &str, key: &str) -> Option<String> {
 }
 
 /// The menu entry and icon of an AppImage at `appimage`.
-pub fn for_appimage(id: &str, appimage: &Path) -> Result<Vec<PathBuf>> {
+pub fn for_appimage(id: &str, appimage: &Path, extract: bool) -> Result<Vec<PathBuf>> {
     let image = AppImage::open(appimage)?;
     let entry = image.desktop_entry();
     let icon_name = entry.as_deref().and_then(|e| field(e, "Icon"));
     let icon = image.icon(icon_name.as_deref());
-    write(id, entry.as_deref(), &quote(appimage), icon)
+    write(id, entry.as_deref(), &appimage_exec(appimage, extract), icon)
+}
+
+/// How a menu entry starts the AppImage at `path`: unpacked and run on
+/// each launch when `extract` is set, which needs no FUSE.
+fn appimage_exec(path: &Path, extract: bool) -> String {
+    match extract {
+        true => format!("env APPIMAGE_EXTRACT_AND_RUN=1 {}", quote(path)),
+        false => quote(path),
+    }
 }
 
 /// The menu entry and icon a tarball unpacked at `dir` ships, if it ships
@@ -384,6 +393,23 @@ mod tests {
         header[4] = 1; // 32-bit
         assert_eq!(squashfs_offset(&header), None);
         assert_eq!(squashfs_offset(b"#!/bin/sh"), None);
+    }
+
+    #[test]
+    fn unpacks_and_runs_an_appimage_without_fuse() {
+        let path = Path::new("/home/me/My Apps/tool.AppImage");
+        assert_eq!(appimage_exec(path, false), "\"/home/me/My Apps/tool.AppImage\"");
+        assert_eq!(
+            appimage_exec(path, true),
+            "env APPIMAGE_EXTRACT_AND_RUN=1 \"/home/me/My Apps/tool.AppImage\""
+        );
+        let entry = rewrite(
+            "[Desktop Entry]\nExec=tool %U\n",
+            "tool",
+            &appimage_exec(path, true),
+            None,
+        );
+        assert!(entry.contains("Exec=env APPIMAGE_EXTRACT_AND_RUN=1 \"/home/me/My Apps/tool.AppImage\" %U\n"));
     }
 
     #[test]

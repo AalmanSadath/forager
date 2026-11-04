@@ -59,8 +59,24 @@ pub struct Plan {
     /// names no repository of its own, so the app is then installed from
     /// that repository and updated from it.
     pub repo_file: Option<Asset>,
+    /// For an AppImage, what FUSE lacks for it to start.
+    pub fuse: Option<FuseGap>,
+    /// FUSE is missing and no AppImage install is being updated, so the
+    /// user chooses first: install anyway, install to unpack and run
+    /// (`extract_and_run`), or not install.
+    pub fuse_choice: bool,
+    /// Make the AppImage's menu entry unpack and run it on each launch. An
+    /// update keeps how the install was made while FUSE is still missing.
+    pub extract_and_run: bool,
     /// The repository has this version before any release does.
     pub ahead_of_releases: bool,
+}
+
+/// What FUSE lacks for an AppImage to start, and the packages that bring it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FuseGap {
+    pub missing: Vec<&'static str>,
+    pub packages: &'static str,
 }
 
 /// An installed file and the control file to update it from; see `zsync`.
@@ -186,6 +202,18 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
         let value = format!("changed from {previous}; check this is the build you want");
         lines.push(line("file", value, Tone::Warn));
     }
+    if let Some(gap) = &plan.fuse {
+        let value = format!(
+            "missing {}, which AppImages need to start (install {})",
+            gap.missing.join(", "),
+            gap.packages
+        );
+        lines.push(line("fuse", value, Tone::Warn));
+    }
+    if plan.extract_and_run {
+        let value = "unpacked and run on each launch, as FUSE is missing".to_string();
+        lines.push(line("run", value, Tone::Normal));
+    }
     if plan.delta.is_some() {
         let from = plan.from.as_deref().unwrap_or("the installed version");
         let value = format!("only the parts changed since {from} are downloaded (zsync)");
@@ -277,6 +305,9 @@ fn repo_plan(app: &App, current: &InstallState, version: &str) -> Result<Plan> {
         repo_commit: None,
         repo_file: None,
         ahead_of_releases: true,
+        fuse: None,
+        fuse_choice: false,
+        extract_and_run: false,
     })
 }
 
@@ -355,6 +386,18 @@ fn plan_one(
         .filter(|i| !i.asset.is_empty() && asset_shape(&i.asset, &i.tag) != asset_shape(&asset.name, &release.tag))
         .map(|i| i.asset.clone());
     let downgrade = current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag));
+    // An AppImage starts through FUSE. Updating one keeps how it was
+    // installed while FUSE is missing; installing one anew asks.
+    let fuse = (format == Format::AppImage)
+        .then(crate::platform::fuse_missing)
+        .filter(|missing| !missing.is_empty())
+        .map(|missing| FuseGap {
+            missing,
+            packages: crate::platform::fuse_packages(platform),
+        });
+    let updating = current.map(|i| &i.installed).filter(|i| i.format == Format::AppImage);
+    let fuse_choice = fuse.is_some() && updating.is_none();
+    let extract_and_run = fuse.is_some() && updating.is_some_and(|i| i.extract_and_run);
     let origin = current
         .filter(|_| format == Format::Flatpak)
         .and_then(|current| repo_of(app, &current.installed));
@@ -389,6 +432,9 @@ fn plan_one(
         repo_commit,
         repo_file,
         ahead_of_releases: false,
+        fuse,
+        fuse_choice,
+        extract_and_run,
         delta,
         from: current
             .map(|i| i.installed.tag.clone())
@@ -863,6 +909,33 @@ mod tests {
     }
 
     #[test]
+    fn summary_warns_when_fuse_is_missing() {
+        let app = App::new(
+            Source::GitHub {
+                owner: "o".into(),
+                repo: "tool".into(),
+            },
+            "tool".into(),
+        );
+        let mut plan = plan(Format::AppImage, None);
+        let flags = |plan: &Plan| {
+            summary(&app, plan)
+                .into_iter()
+                .filter(|l| l.label == "fuse" || l.label == "run")
+                .map(|l| (l.label, l.tone))
+                .collect::<Vec<_>>()
+        };
+        assert!(flags(&plan).is_empty());
+        plan.fuse = Some(FuseGap {
+            missing: vec!["libfuse.so.2"],
+            packages: "fuse fuse-libs",
+        });
+        assert_eq!(flags(&plan), [("fuse", Tone::Warn)]);
+        plan.extract_and_run = true;
+        assert_eq!(flags(&plan), [("fuse", Tone::Warn), ("run", Tone::Normal)]);
+    }
+
+    #[test]
     fn summary_flags_unverified_root_installs() {
         let app = App::new(
             Source::GitHub {
@@ -880,6 +953,7 @@ mod tests {
             path: None,
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         }];
         assert!(plan.unverified());
         let lines = summary(&app, &plan);

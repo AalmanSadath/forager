@@ -284,11 +284,31 @@ pub struct Installed {
     /// Menu entry and icon Forager wrote for an AppImage or tarball.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub desktop: Vec<PathBuf>,
+    /// The AppImage's menu entry unpacks and runs it on each launch, since
+    /// FUSE was missing when it was installed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub extract_and_run: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn records_an_appimage_that_unpacks_and_runs() {
+        let plain = "tag = \"v1\"\nformat = \"appimage\"\nasset = \"Tool.AppImage\"\n";
+        let installed: Installed = toml::from_str(plain).unwrap();
+        assert!(!installed.extract_and_run);
+        // Left out while false, so existing configs read and write as before.
+        assert_eq!(toml::to_string(&installed).unwrap(), plain);
+        let unpacked = Installed {
+            extract_and_run: true,
+            ..installed
+        };
+        let text = toml::to_string(&unpacked).unwrap();
+        assert!(text.contains("extract_and_run = true"));
+        assert!(toml::from_str::<Installed>(&text).unwrap().extract_and_run);
+    }
 
     #[test]
     fn keeps_configs_with_one_install_as_they_were() {
@@ -322,6 +342,7 @@ package = "tool"
             path: None,
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         };
         let mut app = App::new(
             crate::source::Source::GitHub {

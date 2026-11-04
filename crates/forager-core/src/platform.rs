@@ -120,9 +120,64 @@ pub fn data_dir() -> Option<PathBuf> {
     dirs::data_dir()
 }
 
+/// What AppImages need from FUSE to start that the system lacks: the
+/// `/dev/fuse` device, a `fusermount3` or `fusermount` program, and
+/// `libfuse.so.2`, which AppImages built with the older runtime link (newer
+/// ones need only the first two). Empty when nothing is missing, or when
+/// the system cannot be asked.
+pub fn fuse_missing() -> Vec<&'static str> {
+    // Lets a development build try the flow on a system that has FUSE.
+    if cfg!(debug_assertions) && std::env::var_os("FORAGER_ASSUME_NO_FUSE").is_some() {
+        return parse_fuse_gaps("dev\nfusermount\nlibfuse2\n");
+    }
+    const SCRIPT: &str = "test -e /dev/fuse || echo dev; \
+        command -v fusermount3 >/dev/null || command -v fusermount >/dev/null || echo fusermount; \
+        { ldconfig -p 2>/dev/null || /sbin/ldconfig -p 2>/dev/null; } | grep -q 'libfuse\\.so\\.2' || echo libfuse2";
+    crate::host::query("sh")
+        .args(["-c", SCRIPT])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| parse_fuse_gaps(&String::from_utf8_lossy(&out.stdout)))
+        .unwrap_or_default()
+}
+
+/// The pieces the check script reported missing, by name.
+fn parse_fuse_gaps(text: &str) -> Vec<&'static str> {
+    text.lines()
+        .filter_map(|line| match line.trim() {
+            "dev" => Some("/dev/fuse"),
+            "fusermount" => Some("fusermount"),
+            "libfuse2" => Some("libfuse.so.2"),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The packages that bring FUSE for AppImages on this system.
+pub fn fuse_packages(platform: &Platform) -> &'static str {
+    match platform.package_manager {
+        Some(PackageManager::Dnf) => "fuse fuse-libs",
+        Some(PackageManager::Zypper) => "fuse libfuse2",
+        Some(PackageManager::Apt) => "fuse3 libfuse2t64 (libfuse2 before Ubuntu 24.04 and Debian 13)",
+        Some(PackageManager::Pacman) => "fuse2 fuse3",
+        None => "FUSE and libfuse2",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_what_fuse_lacks() {
+        assert_eq!(parse_fuse_gaps(""), Vec::<&str>::new());
+        assert_eq!(parse_fuse_gaps("libfuse2\n"), ["libfuse.so.2"]);
+        assert_eq!(
+            parse_fuse_gaps("dev\nfusermount\nlibfuse2\nnoise\n"),
+            ["/dev/fuse", "fusermount", "libfuse.so.2"]
+        );
+    }
 
     #[test]
     fn ranks_native_then_flatpak() {

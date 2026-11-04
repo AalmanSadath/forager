@@ -1851,6 +1851,7 @@ mod tests {
             path: Some("/a/tool.AppImage".into()),
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         };
         let entry = serde_json::to_value(InstallEntry::new(&installed, Some(State::Outdated))).unwrap();
         assert_eq!(

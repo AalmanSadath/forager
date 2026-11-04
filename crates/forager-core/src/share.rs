@@ -341,6 +341,7 @@ mod tests {
             path: Some("/home/me/.local/opt/tool".into()),
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         });
         let mut watched = github("watched");
         watched.track_only = true;

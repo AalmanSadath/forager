@@ -181,7 +181,7 @@ pub fn install(
     platform: &Platform,
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Installed> {
-    let installed = match &plan.via_repo {
+    let mut installed = match &plan.via_repo {
         Some(remote) => update_from_repo(
             store.get(id)?,
             &remote.name,
@@ -210,6 +210,14 @@ pub fn install(
             installed
         }
     };
+    // FUSE is missing and the user chose to unpack and run it.
+    if plan.extract_and_run
+        && let Some(path) = installed.path.clone()
+    {
+        crate::desktop::remove(&installed.desktop);
+        installed.desktop = crate::desktop::for_appimage(id, &path, true).unwrap_or_default();
+        installed.extract_and_run = true;
+    }
     let app = store.get_mut(id)?;
     let mut installs: Vec<Installed> = app.installs().filter(|i| i.format != plan.format).cloned().collect();
     installs.push(installed.clone());
@@ -354,9 +362,10 @@ pub fn adopt(store: &mut Store, mut app: App, file: &Path, version: Option<&str>
                 .unwrap_or_default()
         }),
         package: None,
-        desktop: crate::desktop::for_appimage(&app.id, &target).unwrap_or_default(),
+        desktop: crate::desktop::for_appimage(&app.id, &target, false).unwrap_or_default(),
         path: Some(target),
         links: Vec::new(),
+        extract_and_run: false,
     };
     app.set_installs(vec![installed.clone()]);
     store.add(app)?;

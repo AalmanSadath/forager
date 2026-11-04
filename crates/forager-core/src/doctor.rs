@@ -105,12 +105,28 @@ pub fn run(config: &Path) -> Vec<Check> {
     if uses(&|a| matches!(a.signature, Some(Signature::Attestation))) {
         checks.push(gh());
     }
+    checks.push(fuse(&platform));
     checks.push(github_token());
     checks.extend(background());
     if has_format(Format::Tarball) {
         checks.extend(zsh_completions());
     }
     checks
+}
+
+/// AppImages start through FUSE; see `platform::fuse_missing`.
+fn fuse(platform: &Platform) -> Check {
+    match platform::fuse_missing().as_slice() {
+        [] => ok("FUSE", "present, so AppImages can start"),
+        missing => warn(
+            "FUSE",
+            format!("missing {}, which AppImages need to start", missing.join(", ")),
+            format!(
+                "install {}; until then Forager can install AppImages to unpack and run on each launch",
+                platform::fuse_packages(platform)
+            ),
+        ),
+    }
 }
 
 fn package_manager(platform: &Platform) -> Check {

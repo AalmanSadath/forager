@@ -47,6 +47,7 @@ pub fn install(
         path: None,
         links: Vec::new(),
         desktop: Vec::new(),
+        extract_and_run: false,
     };
 
     installed.package = package_name(&file, format)?;
@@ -89,7 +90,7 @@ pub fn install(
             // A menu entry is a convenience: an AppImage it cannot be made
             // for still installs.
             replace_menu_entry(app);
-            installed.desktop = desktop::for_appimage(&app.id, &target).unwrap_or_default();
+            installed.desktop = desktop::for_appimage(&app.id, &target, false).unwrap_or_default();
             installed.path = Some(target);
         }
         Format::Flatpak => {
@@ -417,7 +418,7 @@ pub fn create_menu_entry(id: &str, installed: &Installed) -> Result<Vec<std::pat
     desktop::remove(&installed.desktop);
     let path = installed.path.as_deref().ok_or(Error::NoHome)?;
     match installed.format {
-        Format::AppImage => desktop::for_appimage(id, path),
+        Format::AppImage => desktop::for_appimage(id, path, installed.extract_and_run),
         Format::Tarball => desktop::for_tarball(id, path, &installed.links),
         format => Err(Error::Archive(format!(
             "{format} packages bring their own menu entries"
@@ -648,6 +649,7 @@ mod tests {
             path: Some(path),
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         };
         let mut app = App::new(
             crate::source::Source::Direct {
@@ -693,6 +695,7 @@ mod tests {
             path: Some(dir.join(path)),
             links: Vec::new(),
             desktop,
+            extract_and_run: false,
         };
         let entry = vec![dir.join("forager-tool.desktop")];
         assert_eq!(
@@ -785,6 +788,7 @@ mod tests {
             path: Some(path.clone()),
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         };
         assert!(!is_present(&installed));
         fs::write(&path, "").unwrap();

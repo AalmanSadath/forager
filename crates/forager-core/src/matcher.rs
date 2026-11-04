@@ -406,6 +406,7 @@ mod tests {
             path: None,
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         });
         assert_eq!(pick(&app, Some(PackageManager::Dnf)), "Tool-1.0.0-x86_64.AppImage");
         // Unless the installed format no longer suits the system.

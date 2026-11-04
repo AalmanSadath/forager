@@ -180,6 +180,7 @@ mod tests {
             path: None,
             links: vec![PathBuf::from("/home/me/.local/bin/tl")],
             desktop: Vec::new(),
+            extract_and_run: false,
         });
         app
     }

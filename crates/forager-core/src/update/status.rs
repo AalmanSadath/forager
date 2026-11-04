@@ -425,6 +425,7 @@ fn existing_install(version: String, package: String, format: Format, asset: &As
         path: None,
         links: Vec::new(),
         desktop: Vec::new(),
+        extract_and_run: false,
     }
 }
 
@@ -591,6 +592,7 @@ mod tests {
             path: None,
             links: Vec::new(),
             desktop: Vec::new(),
+            extract_and_run: false,
         };
         assert!(refreshed(&recorded, "0.1.0".into(), &release, Some(&plan.asset)).is_none());
         let upgraded = refreshed(&recorded, "0.1.1".into(), &release, Some(&plan.asset)).unwrap();

@@ -275,6 +275,7 @@ mod tests {
                 PathBuf::from("/home/me/.local/share/icons/hicolor/256x256/apps/forager-tool.png"),
                 PathBuf::from("/home/me/.local/share/applications/forager-tool.desktop"),
             ],
+            extract_and_run: false,
         };
         assert_eq!(
             locate(&installed),
