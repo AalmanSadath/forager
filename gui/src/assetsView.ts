@@ -1,6 +1,8 @@
 /** How the app page explains each release asset. Pure, so it is tested. */
 import { FORMAT_NAMES } from './components/shared/icons';
-import type { CandidateView, Reason } from './types';
+import type { CandidateView, Format, Reason } from './types';
+
+const FORMATS: Format[] = ['rpm', 'deb', 'pacman', 'flatpak', 'appimage', 'tarball'];
 
 const REASONS: Record<Reason, string> = {
   not_package: 'Not a package',
@@ -44,6 +46,27 @@ export function filterCounts(list: CandidateView[]): { passing: number; packages
   const packages = list.filter((c) => !(c.verdict.kind === 'rejected' && c.verdict.reason === 'not_package'));
   const passing = packages.filter((c) => !(c.verdict.kind === 'rejected' && c.verdict.reason === 'filter'));
   return { passing: passing.length, packages: packages.length };
+}
+
+/**
+ * The format setting's choices: Automatic (naming the format it picks), then
+ * the formats the newest release offers. The app's own format stays even when
+ * the release no longer offers it, so the setting is not lost unseen. With
+ * nothing known yet, every format.
+ */
+export function formatOptions(
+  offered: Format[] | null,
+  current: Format | '',
+  chosen: Format | null | undefined,
+): { value: Format | ''; label: string }[] {
+  const shown = FORMATS.filter((f) => !offered || offered.includes(f) || f === current);
+  return [
+    { value: '', label: `Automatic${chosen ? ` (${FORMAT_NAMES[chosen]})` : ''}` },
+    ...shown.map((f) => ({
+      value: f,
+      label: offered && !offered.includes(f) ? `${FORMAT_NAMES[f]} (not in the latest release)` : FORMAT_NAMES[f],
+    })),
+  ];
 }
 
 export function formatSize(bytes: number): string {

@@ -121,6 +121,9 @@ pub struct Preview {
     pub tag_filter_error: Option<String>,
     /// The version limit does not parse; releases are shown without it.
     pub versions_error: Option<String>,
+    /// The formats the newest release offers this system, for the format
+    /// setting to choose from.
+    pub formats: Vec<Format>,
 }
 
 /// What the latest release looks like under `settings`. Fetches the release
@@ -164,6 +167,14 @@ pub async fn preview(
         app.versions = None;
     }
     let platform = Platform::detect();
+    // From the newest release, not the one shown: that one is the newest
+    // with something for these settings, which could hide a format only a
+    // newer release offers.
+    let formats = update::eligible(&app, releases.clone())
+        .map_err(|e| e.to_string())?
+        .first()
+        .map(|newest| matcher::available_formats(&app, newest, &platform))
+        .unwrap_or_default();
     let release = update::latest(&app, releases, &platform).map_err(|e| e.to_string())?;
     let installs = match id {
         Some(id) => blocking(move || Ok(load_store()?.get(&id).map(|a| a.install_list()).unwrap_or_default())).await?,
@@ -192,6 +203,7 @@ pub async fn preview(
         filter_error,
         tag_filter_error,
         versions_error,
+        formats,
     })
 }
 

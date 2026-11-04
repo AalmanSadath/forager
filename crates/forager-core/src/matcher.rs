@@ -143,6 +143,27 @@ pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) ->
         })
 }
 
+/// The formats `release` offers this system, in the system's order of
+/// preference: those with an asset Forager could install here, whatever
+/// format the app is pinned to and whichever files its filter picks, since
+/// the filter only chooses between files of the formats on offer.
+pub fn available_formats(app: &App, release: &Release, platform: &Platform) -> Vec<Format> {
+    let open = App {
+        format: None,
+        asset_filter: None,
+        ..app.clone()
+    };
+    let offered: Vec<Format> = candidates(&open, release, platform)
+        .map(|list| {
+            list.into_iter()
+                .filter(|c| !matches!(c.verdict, Verdict::Rejected(_)))
+                .filter_map(|c| c.format)
+                .collect()
+        })
+        .unwrap_or_default();
+    platform.formats().into_iter().filter(|f| offered.contains(f)).collect()
+}
+
 /// How an asset's name fits this architecture, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ArchFit {
@@ -286,6 +307,39 @@ mod tests {
     fn pick(app: &App, pm: Option<PackageManager>) -> String {
         let release = release(ASSETS);
         select_asset(app, &release, &platform(pm)).unwrap().0.name.clone()
+    }
+
+    #[test]
+    fn offers_the_formats_this_system_can_install() {
+        let release = release(&[
+            "tool-1.0.0-1.x86_64.rpm",
+            "tool_1.0.0_arm64.deb",
+            "tool_1.0.0_amd64.deb",
+            "tool-1.0.0-x86_64.flatpak",
+            "tool-1.0.0.tar.gz",
+            "tool-debuginfo-1.0.0-1.x86_64.rpm",
+        ]);
+        let fedora = Platform {
+            flatpak: true,
+            ..platform(Some(PackageManager::Dnf))
+        };
+        let mut pinned = app();
+        assert_eq!(
+            available_formats(&pinned, &release, &fedora),
+            [Format::Rpm, Format::Flatpak]
+        );
+        // Neither the pinned format nor the filter narrows what is on offer.
+        pinned.format = Some(Format::Flatpak);
+        pinned.asset_filter = Some("nothing-matches".into());
+        assert_eq!(
+            available_formats(&pinned, &release, &fedora),
+            [Format::Rpm, Format::Flatpak]
+        );
+        // Without Flatpak, the bundle is not on offer either.
+        assert_eq!(
+            available_formats(&app(), &release, &platform(Some(PackageManager::Dnf))),
+            [Format::Rpm]
+        );
     }
 
     #[test]

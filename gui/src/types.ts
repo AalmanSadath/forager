@@ -252,6 +252,8 @@ export interface Preview {
   filter_error: string | null;
   tag_filter_error: string | null;
   versions_error: string | null;
+  /** The formats the newest release offers this system. */
+  formats: Format[];
 }
 
 export type SignatureForm =

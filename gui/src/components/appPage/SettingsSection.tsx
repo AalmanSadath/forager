@@ -1,10 +1,7 @@
-import { filterCounts } from '../../assetsView';
+import { filterCounts, formatOptions } from '../../assetsView';
 import type { Format, Preview } from '../../types';
 import Dropdown from '../shared/Dropdown';
-import { FORMAT_NAMES } from '../shared/icons';
 import type { SettingsDraft } from './form';
-
-const FORMATS: Format[] = ['rpm', 'deb', 'pacman', 'flatpak', 'appimage', 'tarball'];
 
 /** How the app is installed: format, filter, executables, prereleases. */
 export default function SettingsSection({
@@ -50,10 +47,7 @@ export default function SettingsSection({
           id="format"
           value={draft.format}
           onChange={(format) => set({ format })}
-          options={[
-            { value: '', label: `Automatic${chosen?.format ? ` (${FORMAT_NAMES[chosen.format]})` : ''}` },
-            ...FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f] })),
-          ]}
+          options={formatOptions(preview?.formats ?? null, draft.format, chosen?.format)}
         />
         <p className="form-hint">
           Automatic prefers this system's own package format, then Flatpak, AppImage and tarball.

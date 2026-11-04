@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterCounts, formatSize, sortCandidates, verdictText } from './assetsView';
+import { filterCounts, formatOptions, formatSize, sortCandidates, verdictText } from './assetsView';
 import type { CandidateView, Verdict } from './types';
 
 const c = (name: string, verdict: Verdict): CandidateView => ({ name, size: 0, format: null, verdict, updates: null });
@@ -46,5 +46,26 @@ describe('assets', () => {
     expect(formatSize(0)).toBe('');
     expect(formatSize(300)).toBe('1 KiB');
     expect(formatSize(5 * 1048576)).toBe('5.0 MiB');
+  });
+});
+
+describe('format options', () => {
+  const values = (o: { value: string }[]) => o.map((x) => x.value);
+
+  it('offers Automatic and what the newest release has, in order', () => {
+    const options = formatOptions(['flatpak', 'rpm'], '', 'rpm');
+    expect(values(options)).toEqual(['', 'rpm', 'flatpak']);
+    expect(options[0].label).toBe('Automatic (rpm)');
+  });
+
+  it("keeps the app's own format when the release no longer has it", () => {
+    const options = formatOptions(['flatpak'], 'appimage', 'flatpak');
+    expect(values(options)).toEqual(['', 'flatpak', 'appimage']);
+    expect(options[2].label).toBe('AppImage (not in the latest release)');
+  });
+
+  it('offers every format while nothing is known', () => {
+    expect(values(formatOptions(null, '', null))).toEqual(['', 'rpm', 'deb', 'pacman', 'flatpak', 'appimage', 'tarball']);
+    expect(formatOptions(null, '', null)[0].label).toBe('Automatic');
   });
 });
