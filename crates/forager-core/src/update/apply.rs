@@ -182,7 +182,12 @@ pub fn install(
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<Installed> {
     let installed = match &plan.via_repo {
-        Some(remote) => update_from_repo(store.get(id)?, remote, plan.repo_commit.as_deref(), &plan.release.tag)?,
+        Some(remote) => update_from_repo(
+            store.get(id)?,
+            &remote.name,
+            plan.repo_commit.as_deref(),
+            &plan.release.tag,
+        )?,
         None => {
             let installed = install::install(
                 &download.path,

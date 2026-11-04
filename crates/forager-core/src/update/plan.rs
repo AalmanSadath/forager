@@ -51,7 +51,7 @@ pub struct Plan {
     pub asset_changed: Option<String>,
     /// The Flatpak repository the install came from: the update is a
     /// `flatpak update` from it, and nothing is downloaded.
-    pub via_repo: Option<String>,
+    pub via_repo: Option<install::flatpak::Remote>,
     /// The repository's commit of the release, when it is not the newest
     /// one there: going back, or to a release short of the latest.
     pub repo_commit: Option<String>,
@@ -102,10 +102,10 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
             Some(commit) => format!("flatpak update --commit={}", &commit[..commit.len().min(12)]),
             None => "flatpak update".into(),
         };
-        return vec![
+        let mut lines = vec![
             line(
                 "from",
-                format!("the {remote} Flatpak repository ({how}), no download"),
+                format!("the {} Flatpak repository ({how}), no download", remote.name),
                 Tone::Normal,
             ),
             line("source", app.source.to_string(), Tone::Normal),
@@ -115,6 +115,13 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
                 Tone::Normal,
             ),
         ];
+        // Flatpak's system helper only follows the newest commit, so another
+        // one goes through pkexec.
+        if remote.system && plan.repo_commit.is_some() {
+            let value = "flatpak asks for your password to move a system-wide install to another commit";
+            lines.push(line("note", value.into(), Tone::Warn));
+        }
+        return lines;
     }
     // GitLab does not report asset sizes.
     let size = match plan.asset.size {
@@ -306,11 +313,11 @@ fn plan_one(
                 .into_iter()
                 .find(|(_, subject)| names_version(subject, &release.tag))
             {
-                Some((commit, _)) => (Some(remote.name), Some(commit)),
+                Some((commit, _)) => (Some(remote), Some(commit)),
                 None => (None, None),
             }
         }
-        Some((_, remote)) => (Some(remote.name), None),
+        Some((_, remote)) => (Some(remote), None),
         None => (None, None),
     };
     let repo_file = match via_repo.is_none() && format == Format::Flatpak && asset.name.ends_with(".flatpak") {
@@ -703,12 +710,25 @@ mod tests {
         );
         let mut plan = plan(Format::Flatpak, None);
         assert!(plan.unverified());
-        plan.via_repo = Some("tool-origin".into());
+        plan.via_repo = Some(install::flatpak::Remote {
+            name: "tool-origin".into(),
+            url: "https://example.org/repo".into(),
+            system: false,
+        });
         assert!(!plan.unverified());
         let lines = summary(&app, &plan);
         assert_eq!(lines[0].label, "from");
         assert!(lines[0].value.contains("tool-origin"));
         assert!(!lines.iter().any(|l| l.label == "hash" || l.label == "asset"));
+
+        // Only another commit in the system installation needs a password.
+        let asks = |plan: &Plan| summary(&app, plan).iter().any(|l| l.value.contains("password"));
+        plan.repo_commit = Some("0123456789abcdef".into());
+        assert!(!asks(&plan));
+        plan.via_repo.as_mut().unwrap().system = true;
+        assert!(asks(&plan));
+        plan.repo_commit = None;
+        assert!(!asks(&plan));
 
         assert!(repo_behind("1.2.0", "v1.3.0"));
         assert!(!repo_behind("1.3.0", "v1.3.0"));
