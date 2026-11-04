@@ -41,6 +41,9 @@ pub struct ReleaseView {
     pub published_at: Option<String>,
     pub prerelease: bool,
     pub notes: Option<String>,
+    /// For an app whose Flatpak updates from its repository, whether this
+    /// release installs from there rather than from the release file.
+    pub in_repo: Option<bool>,
 }
 
 impl From<&Release> for ReleaseView {
@@ -51,6 +54,7 @@ impl From<&Release> for ReleaseView {
             published_at: release.published_at.clone(),
             prerelease: release.prerelease,
             notes: release.notes.clone(),
+            in_repo: None,
         }
     }
 }
@@ -126,11 +130,19 @@ pub(super) async fn releases_of(cache: &ReleaseCache, app: &App, refresh: bool) 
 pub async fn list_releases(cache: State<'_, ReleaseCache>, id: String, refresh: bool) -> CmdResult<Vec<ReleaseView>> {
     let app = blocking(move || load_store()?.get(&id).cloned().map_err(|e| e.to_string())).await?;
     let releases = releases_of(&cache, &app, refresh).await?;
-    Ok(update::eligible(&app, releases)
-        .map_err(|e| e.to_string())?
-        .iter()
-        .map(ReleaseView::from)
-        .collect())
+    let releases = update::eligible(&app, releases).map_err(|e| e.to_string())?;
+    blocking(move || {
+        let in_repo = update::repo_releases(&app, &releases);
+        Ok(releases
+            .iter()
+            .enumerate()
+            .map(|(i, release)| ReleaseView {
+                in_repo: in_repo.as_ref().map(|flags| flags[i]),
+                ..ReleaseView::from(release)
+            })
+            .collect())
+    })
+    .await
 }
 
 /// Stops offering `tag` (the latest release when `None`) as an update.

@@ -240,6 +240,8 @@ export interface ReleaseView {
   prerelease: boolean;
   /** Release notes, usually markdown. */
   notes: string | null;
+  /** For an app whose Flatpak updates from its repository: whether this release installs from there. */
+  in_repo: boolean | null;
 }
 
 export interface Preview {

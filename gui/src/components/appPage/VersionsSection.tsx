@@ -43,6 +43,8 @@ export default function VersionsSection({ app }: { app: AppView }) {
                 {r.published_at && new Date(r.published_at).toLocaleDateString()}
                 {r.prerelease && ' · prerelease'}
                 {app.skipped === r.tag && ' · skipped'}
+                {r.in_repo === true && ' · from repository'}
+                {r.in_repo === false && ' · from release file'}
               </span>
               {installed.has(r.tag) ? (
                 <span className="tag">installed</span>

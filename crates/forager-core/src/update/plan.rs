@@ -292,18 +292,9 @@ fn plan_one(
         .filter(|i| !i.asset.is_empty() && asset_shape(&i.asset, &i.tag) != asset_shape(&asset.name, &release.tag))
         .map(|i| i.asset.clone());
     let downgrade = current.is_some_and(|i| version::is_newer(&release.tag, &i.installed.tag));
-    // An installed Flatpak with a repository behind it updates from there,
-    // unless the app must be checked against a signature on the release
-    // file.
-    let origin = match current {
-        Some(current) if format == Format::Flatpak && current.installed.format == Format::Flatpak => current
-            .installed
-            .package
-            .as_deref()
-            .filter(|_| signature.is_none())
-            .and_then(|id| Some((id, install::flatpak::origin(id)?))),
-        _ => None,
-    };
+    let origin = current
+        .filter(|_| format == Format::Flatpak)
+        .and_then(|current| repo_of(app, &current.installed));
     // Any release but the latest (going back, or short of the latest) is
     // the repository's commit of that version, when it still has one;
     // otherwise the release file is installed instead.
@@ -349,6 +340,35 @@ fn plan_one(
         skip_after,
         changes: vec![release.clone()],
     })
+}
+
+/// The Flatpak id and repository `installed` updates from: an installed
+/// Flatpak with a repository behind it, unless the app must be checked
+/// against a signature on the release file.
+fn repo_of<'a>(app: &App, installed: &'a Installed) -> Option<(&'a str, install::flatpak::Remote)> {
+    if installed.format != Format::Flatpak || app.signature.is_some() {
+        return None;
+    }
+    let id = installed.package.as_deref()?;
+    Some((id, install::flatpak::origin(id)?))
+}
+
+/// For an app whose Flatpak updates from its repository, whether each of
+/// `releases` (newest first, as `eligible` gives them) installs from there
+/// rather than from the release file; `None` for other apps.
+pub fn repo_releases(app: &App, releases: &[Release]) -> Option<Vec<bool>> {
+    let (id, remote) = repo_of(app, app.install_of(Format::Flatpak)?)?;
+    Some(in_history(&install::flatpak::history(&remote, id), releases))
+}
+
+/// The newest release is whatever the repository has last; any other is
+/// there when one of its commits names that version.
+fn in_history(history: &[(String, String)], releases: &[Release]) -> Vec<bool> {
+    releases
+        .iter()
+        .enumerate()
+        .map(|(i, release)| i == 0 || history.iter().any(|(_, subject)| names_version(subject, &release.tag)))
+        .collect()
 }
 
 /// `name` with its versions blanked out, so release files of the same
@@ -739,6 +759,30 @@ mod tests {
         assert!(!names_version("BifroSSH 0.17.1", "v0.17.0"));
         assert!(!names_version("BifroSSH 0.17.0", "nightly"));
         assert!(names_version("Release v2.0.0-rc.1", "2.0.0-rc.1"));
+    }
+
+    #[test]
+    fn marks_releases_the_repository_still_has() {
+        let release = |tag: &str| Release {
+            tag: tag.into(),
+            name: None,
+            prerelease: false,
+            published_at: None,
+            notes: None,
+            assets: Vec::new(),
+        };
+        let history = [
+            ("c3".to_string(), "Tool 1.2.0".to_string()),
+            ("c1".to_string(), "Tool 1.0.0".to_string()),
+        ];
+        let releases = [
+            release("v1.3.0"),
+            release("v1.2.0"),
+            release("v1.1.0"),
+            release("v1.0.0"),
+        ];
+        assert_eq!(in_history(&history, &releases), [true, true, false, true]);
+        assert_eq!(in_history(&[], &releases[1..]), [true, false, false]);
     }
 
     #[test]

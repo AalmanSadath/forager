@@ -8,7 +8,7 @@ mod status;
 pub use apply::{DeltaOutcome, Download, Progress, adopt, create_menu_entries, download, install};
 pub use plan::{
     Delta, Plan, SignatureCheck, SummaryLine, Tone, asset_shape, changes, combined_notes, cooldown_until, now, plans,
-    plans_for, summary,
+    plans_for, repo_releases, summary,
 };
 pub use status::{InstallState, State, Status, asset_in, eligible, latest, prefetch, sort_installs, status, status_in};
 
