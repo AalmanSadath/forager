@@ -232,6 +232,20 @@ Tokens are only sent to their own host.
 - **Delta updates:** with `<asset>.zsync` in the release, only changed
   blocks download. The result is checked against the zsync SHA-1, falling
   back to a full download.
+- **FUSE:** AppImages need FUSE to start: `/dev/fuse`, `fusermount`, and
+  `libfuse.so.2` for those built with the older runtime. `forager doctor`
+  says what is missing and which packages bring it. Before a new AppImage
+  is installed without FUSE, you choose:
+  - install anyway; it starts once FUSE is installed;
+  - install it to unpack and run on each launch, which works without FUSE
+    but starts slower;
+  - don't install.
+
+  With `--yes` or without a terminal, pass `--without-fuse
+  anyway|unpack|skip`; otherwise it isn't installed. Updates of an
+  installed AppImage keep how it was installed. One that unpacks and runs
+  goes back to a normal menu entry at its first update once FUSE is
+  present.
 
 ### Removing
 
