@@ -58,6 +58,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.0" date="2026-11-05">
+      <description>
+        <ul>
+          <li>Apps can have a name of their own, shown instead of their id.</li>
+          <li>The format setting offers only the formats the app's newest release has for this system.</li>
+          <li>Before installing an AppImage on a system without FUSE, Forager asks whether to install it anyway, install it to unpack and run on each launch, or not install it; doctor reports what is missing.</li>
+          <li>A Flatpak repository that has a newer build than the latest release counts as an update, and the versions list shows which releases roll back from the repository.</li>
+          <li>Dropdowns follow the theme, and menu icons show up straight after an install.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.2" date="2026-11-03">
       <description>
         <ul>
