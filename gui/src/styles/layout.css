@@ -20,6 +20,15 @@
   position: relative;
 }
 
+/* The pages under the top bar. */
+.page-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* ── Top bar and window buttons ───────────────────────────── */
 
 /* The page's title, and the window's own buttons on a custom frame. Their

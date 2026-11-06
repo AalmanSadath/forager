@@ -6,7 +6,7 @@ import type { ProgressEvent, StartRequest, StatusEvent } from './types';
 import * as ipc from './ipc';
 import { useAppStore } from './store/appStore';
 import { useAppChrome } from './useAppChrome';
-import { useWindowFrame } from './useWindowFrame';
+import { useResizeBand, useWindowFrame } from './useWindowFrame';
 import Sidebar from './components/Sidebar';
 import AppsPanel from './components/AppsPanel';
 import AppPage from './components/AppPage';
@@ -20,6 +20,7 @@ import UpdateModal from './components/UpdateModal';
 export default function App() {
   const chrome = useAppChrome();
   useWindowFrame();
+  const resizeBand = useResizeBand();
   const page = useAppStore((s) => s.page);
   const loadApps = useAppStore((s) => s.loadApps);
   const applyStatus = useAppStore((s) => s.applyStatus);
@@ -93,17 +94,21 @@ export default function App() {
       <Sidebar updates={countUpdates(apps, checks)} />
       <main className="main">
         <TopBar />
-        {page.kind === 'activity' ? (
-          <ActivityPanel />
-        ) : page.kind === 'settings' ? (
-          <SettingsPanel />
-        ) : page.kind === 'app' ? (
-          <AppPage id={page.id} />
-        ) : page.kind === 'add' ? (
-          <AddAppPage key={JSON.stringify(page)} initialUrl={page.url} link={page.link} adopt={page.adopt} />
-        ) : (
-          <AppsPanel />
-        )}
+        {/* The top bar runs to the window's edge; the pages stay clear of
+            Tauri's resize band, so their scrollbars can be reached. */}
+        <div className="page-area" style={resizeBand ? { paddingRight: resizeBand } : undefined}>
+          {page.kind === 'activity' ? (
+            <ActivityPanel />
+          ) : page.kind === 'settings' ? (
+            <SettingsPanel />
+          ) : page.kind === 'app' ? (
+            <AppPage id={page.id} />
+          ) : page.kind === 'add' ? (
+            <AddAppPage key={JSON.stringify(page)} initialUrl={page.url} link={page.link} adopt={page.adopt} />
+          ) : (
+            <AppsPanel />
+          )}
+        </div>
         {updating && <UpdateModal key={`${updating.join(',')}@${updateTag ?? ''}`} ids={updating} tag={updateTag} />}
         <Toasts />
       </main>
