@@ -66,7 +66,11 @@ export interface GuiSettings {
   app_theme: AppTheme;
   /** `#rrggbb`, or null to follow the desktop. */
   accent_color: string | null;
+  window_frame: WindowFrame;
 }
+
+/** Whether the window draws its own buttons or keeps the desktop's title bar. */
+export type WindowFrame = 'custom' | 'native';
 
 export type UpdateState = 'not_installed' | 'missing' | 'wrong_format' | 'outdated' | 'up_to_date';
 

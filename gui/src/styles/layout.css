@@ -20,9 +20,10 @@
   position: relative;
 }
 
-/* ── Top bar ───────────────────────────────────────────────── */
+/* ── Top bar and window buttons ───────────────────────────── */
 
-/* The page's title. */
+/* The page's title, and the window's own buttons on a custom frame. Their
+   rules follow BifroSSH's. */
 .top-bar {
   height: var(--header-h);
   box-sizing: border-box;
@@ -43,6 +44,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.window-control {
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.window-control:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.window-control-close:hover {
+  background: #c42b1c;
+  color: #fff;
 }
 
 /* ── Sidebar ───────────────────────────────────────────────── */

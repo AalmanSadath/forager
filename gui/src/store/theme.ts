@@ -1,4 +1,4 @@
-import type { GuiSettings, ResolvedTheme, SystemAppearance } from '../types';
+import type { GuiSettings, ResolvedTheme, SystemAppearance, WindowFrame } from '../types';
 
 /**
  * Theme resolution, as BifroSSH's themeCache.ts does it.
@@ -24,3 +24,26 @@ export const THEME_ACCENTS: Record<ResolvedTheme, string> = {
   light: '#155397',
   amoled: '#a78bfa',
 };
+
+const WINDOW_FRAME_CACHE = 'forager_window_frame';
+
+/**
+ * The window frame setting, mirrored in localStorage as BifroSSH does it:
+ * the settings arrive from the backend after the first paint, and the window
+ * should keep one frame from launch rather than switch when they load.
+ */
+export function cachedWindowFrame(): WindowFrame {
+  try {
+    return localStorage.getItem(WINDOW_FRAME_CACHE) === 'native' ? 'native' : 'custom';
+  } catch {
+    return 'custom';
+  }
+}
+
+export function cacheWindowFrame(frame: WindowFrame) {
+  try {
+    localStorage.setItem(WINDOW_FRAME_CACHE, frame);
+  } catch {
+    // Only a cache: storage can be unavailable or full.
+  }
+}

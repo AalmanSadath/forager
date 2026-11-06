@@ -17,6 +17,15 @@ pub struct GuiSettings {
     pub app_theme: String,
     /// `#rrggbb`, or None to follow the desktop.
     pub accent_color: Option<String>,
+    /// `custom`, where the window draws its own buttons, or `native`, the
+    /// desktop's title bar. A file written before the setting existed reads
+    /// as `custom`.
+    #[serde(default = "custom_frame")]
+    pub window_frame: String,
+}
+
+fn custom_frame() -> String {
+    "custom".into()
 }
 
 impl Default for GuiSettings {
@@ -24,6 +33,7 @@ impl Default for GuiSettings {
         GuiSettings {
             app_theme: "system".into(),
             accent_color: None,
+            window_frame: custom_frame(),
         }
     }
 }

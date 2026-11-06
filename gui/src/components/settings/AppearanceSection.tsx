@@ -1,6 +1,6 @@
 import { useAppStore } from '../../store/appStore';
 import { resolveAccent, resolveAppTheme, THEME_ACCENTS } from '../../store/theme';
-import type { AppTheme } from '../../types';
+import type { AppTheme, WindowFrame } from '../../types';
 
 /** System first: it is the one that defers rather than decides. */
 const APP_THEMES: { value: AppTheme; label: string }[] = [
@@ -8,6 +8,11 @@ const APP_THEMES: { value: AppTheme; label: string }[] = [
   { value: 'dark', label: 'Dark' },
   { value: 'light', label: 'Light' },
   { value: 'amoled', label: 'AMOLED' },
+];
+
+const WINDOW_FRAMES: { value: WindowFrame; label: string }[] = [
+  { value: 'custom', label: 'Custom' },
+  { value: 'native', label: 'Native' },
 ];
 
 /** Theme and accent, as BifroSSH offers them. */
@@ -57,6 +62,24 @@ export default function AppearanceSection() {
             : system.accent
               ? 'Following the system accent, and changes with it.'
               : 'The system exposes no accent, so the theme’s own is used.'}
+        </p>
+      </div>
+      <div className="form-group">
+        <label>Window frame</label>
+        <div className="toggle-row" style={{ maxWidth: 200 }}>
+          {WINDOW_FRAMES.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              className={`toggle-btn${settings.window_frame === value ? ' active' : ''}`}
+              onClick={() => patch({ window_frame: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="form-hint">
+          Custom puts the window buttons in Forager&rsquo;s own top bar. Native keeps the title bar your desktop draws.
         </p>
       </div>
     </section>

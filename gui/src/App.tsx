@@ -6,6 +6,7 @@ import type { ProgressEvent, StartRequest, StatusEvent } from './types';
 import * as ipc from './ipc';
 import { useAppStore } from './store/appStore';
 import { useAppChrome } from './useAppChrome';
+import { useWindowFrame } from './useWindowFrame';
 import Sidebar from './components/Sidebar';
 import AppsPanel from './components/AppsPanel';
 import AppPage from './components/AppPage';
@@ -18,6 +19,7 @@ import UpdateModal from './components/UpdateModal';
 
 export default function App() {
   const chrome = useAppChrome();
+  useWindowFrame();
   const page = useAppStore((s) => s.page);
   const loadApps = useAppStore((s) => s.loadApps);
   const applyStatus = useAppStore((s) => s.applyStatus);

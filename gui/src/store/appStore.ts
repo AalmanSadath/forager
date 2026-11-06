@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as ipc from '../ipc';
 import { restoreChecks, type CheckEntry } from '../appsView';
 import type { AddRequest, AppImageFile, AppView, GuiSettings, ProgressEvent, StatusEvent, SystemAppearance } from '../types';
-import { NO_APPEARANCE } from './theme';
+import { cachedWindowFrame, cacheWindowFrame, NO_APPEARANCE } from './theme';
 
 /** Which page fills the window. An app's page is a full page, not a drawer. */
 export type Page =
@@ -192,10 +192,12 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       return { progress };
     }),
 
-  settings: { app_theme: 'system', accent_color: null },
+  settings: { app_theme: 'system', accent_color: null, window_frame: cachedWindowFrame() },
   loadSettings: async () => {
     try {
-      set({ settings: await ipc.getGuiSettings() });
+      const settings = await ipc.getGuiSettings();
+      cacheWindowFrame(settings.window_frame);
+      set({ settings });
     } catch {
       // Defaults stand in for a missing or unreadable file.
     }
@@ -203,6 +205,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   patchSettings: (patch) => {
     const settings = { ...get().settings, ...patch };
     set({ settings });
+    cacheWindowFrame(settings.window_frame);
     ipc.setGuiSettings(settings).catch((e) => get().toast('error', `Settings not saved: ${e}`));
   },
   systemAppearance: NO_APPEARANCE,

@@ -28,9 +28,9 @@ export default function Sidebar({ updates }: { updates: number }) {
 
   return (
     <aside className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`}>
-      <div className="sidebar-top">
+      <div className="sidebar-top" data-tauri-drag-region>
         {!collapsed && (
-          <div className="sidebar-brand">
+          <div className="sidebar-brand" data-tauri-drag-region>
             <BrandMark />
             <span className="sidebar-brand-text">Forager</span>
           </div>
