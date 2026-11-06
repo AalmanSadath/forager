@@ -192,7 +192,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       return { progress };
     }),
 
-  settings: { app_theme: 'system', accent_color: null, window_frame: cachedWindowFrame() },
+  settings: { app_theme: 'system', accent_color: null, window_frame: cachedWindowFrame(), close_to_background: false },
   loadSettings: async () => {
     try {
       const settings = await ipc.getGuiSettings();

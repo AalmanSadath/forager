@@ -158,6 +158,13 @@ release is that many days old, so a hijacked release has time to be pulled;
 releases with no date (most web pages) are not held back. The timer only
 updates apps that are installed; it never installs one that is not.
 
+The desktop app can also stay running without a window. Under Settings ›
+Background, it can start when you log in, hidden, and its Close button can
+keep it running instead of quitting. Open it again from the app grid, or
+from its tray icon where the desktop shows one (GNOME needs the
+AppIndicator extension). It does nothing on a schedule while hidden; the
+timer does the checking, with or without it.
+
 `check` also notes projects that were archived, moved (`forager edit <id>
 --url <new>` follows them; the app page has a button) or have not released
 anything for a year.

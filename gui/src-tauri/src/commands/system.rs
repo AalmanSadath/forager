@@ -83,6 +83,7 @@ mod tests {
             Some(StartRequest::Adopt { path }) if path == "/home/me/Downloads/Tool-1.0-x86_64.AppImage"
         ));
         assert!(parse_start_args(&[]).is_none());
+        assert!(parse_start_args(&args(&["--background"])).is_none());
     }
 }
 

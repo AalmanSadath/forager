@@ -2,6 +2,7 @@
 //! frontend in the style of BifroSSH.
 
 mod appearance;
+mod background;
 mod commands;
 mod state;
 
@@ -28,15 +29,25 @@ fn instance_id() -> String {
     }
 }
 
-/// Shows the open window and passes it what a second launch asked for.
-fn forward_start(app: &tauri::AppHandle, args: &[String]) {
-    use tauri::{Emitter, Manager};
+/// Brings the window up, whether minimized or hidden in the background.
+pub(crate) fn show_main(app: &tauri::AppHandle) {
+    use tauri::Manager;
     if let Some(window) = app.get_webview_window("main") {
         window.unminimize().ok();
         window.show().ok();
         window.set_focus().ok();
     }
+}
+
+/// Shows the open window and passes it what a second launch asked for. A
+/// second start at login, with Forager already running, leaves it as it is.
+fn forward_start(app: &tauri::AppHandle, args: &[String]) {
+    use tauri::Emitter;
     let args: Vec<String> = args.iter().skip(1).cloned().collect();
+    if background::starts_hidden(&args) {
+        return;
+    }
+    show_main(app);
     if let Some(request) = commands::system::parse_start_args(&args) {
         app.emit(commands::system::START_EVENT, request).ok();
     }
@@ -72,7 +83,22 @@ pub fn run() {
         .setup(|app| {
             appearance::watch(app.handle().clone());
             register_links(app);
+            // The window is configured hidden, so a start at login never
+            // flashes it.
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            if !background::starts_hidden(&args) {
+                show_main(app.handle());
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Close keeps Forager running, out of sight, when asked to.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && commands::settings::get_gui_settings().close_to_background
+            {
+                api.prevent_close();
+                window.hide().ok();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::activity::list_history,
@@ -111,6 +137,9 @@ pub fn run() {
             commands::settings::get_tokens,
             commands::settings::set_tokens,
             commands::settings::about_info,
+            commands::settings::get_background,
+            commands::settings::set_launch_at_login,
+            commands::settings::quit_app,
             commands::system::system_appearance,
             commands::system::start_request,
         ])

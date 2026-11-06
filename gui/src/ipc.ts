@@ -9,6 +9,7 @@ import type {
   Format,
   GuiSettings,
   TimerState,
+  BackgroundState,
   DownloadedView,
   FinishedView,
   MenuEntryResult,
@@ -101,6 +102,9 @@ export const restartSelf = () => invoke<void>('restart_self');
 // ── settings ────────────────────────────────────────────────────
 export const getGuiSettings = () => invoke<GuiSettings>('get_gui_settings');
 export const setGuiSettings = (settings: GuiSettings) => invoke<void>('set_gui_settings', { settings });
+export const getBackground = () => invoke<BackgroundState>('get_background');
+export const setLaunchAtLogin = (on: boolean) => invoke<BackgroundState>('set_launch_at_login', { on });
+export const quitApp = () => invoke<void>('quit_app');
 export const getTimer = () => invoke<TimerState>('get_timer');
 /** `forager doctor`'s checks. */
 export const runDoctor = () => invoke<DoctorCheck[]>('run_doctor');

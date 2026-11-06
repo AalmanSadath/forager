@@ -1,12 +1,108 @@
 import { useEffect, useState } from 'react';
 import * as ipc from '../../ipc';
-import type { TimerState } from '../../types';
+import { useAppStore } from '../../store/appStore';
+import type { BackgroundState, TimerState } from '../../types';
+
+const CLOSE_CHOICES: { value: boolean; label: string }[] = [
+  { value: false, label: 'Quit' },
+  { value: true, label: 'Keep running in the background' },
+];
+
+/**
+ * Forager itself in the background: started at login without a window, and
+ * kept running when the window closes, so it opens again at once. Nothing
+ * runs on a schedule there; that is the timer's job, below, which works with
+ * Forager closed.
+ */
+function KeepRunningSection() {
+  const [state, setState] = useState<BackgroundState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const settings = useAppStore((s) => s.settings);
+  const patch = useAppStore((s) => s.patchSettings);
+
+  useEffect(() => {
+    ipc.getBackground().then(setState).catch((e) => setError(String(e)));
+  }, []);
+
+  const setLogin = async (on: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setState(await ipc.setLaunchAtLogin(on));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reopen = state?.tray
+    ? 'Open it again from its tray icon or the app grid.'
+    : `Your desktop shows no tray icon for it; open Forager again from the app grid${
+        state?.gnome ? ' (on GNOME, the AppIndicator extension adds tray icons)' : ''
+      }.`;
+
+  return (
+    <section className="panel-section">
+      <h3>Forager in the background</h3>
+      <div className="setting-row">
+        <div className="setting-label">
+          Start Forager when you log in
+          <p className="form-hint">
+            Starts without a window, ready to open at once.
+            {state?.flatpak && ' The desktop may ask you to allow it.'}
+          </p>
+        </div>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            aria-label="Start Forager when you log in"
+            disabled={!state || busy}
+            checked={state?.launch_at_login ?? false}
+            onChange={(e) => setLogin(e.target.checked)}
+          />
+        </label>
+      </div>
+      <div className="form-group">
+        <label>Close button</label>
+        <div className="toggle-row" style={{ maxWidth: 420 }}>
+          {CLOSE_CHOICES.map(({ value, label }) => (
+            <button
+              key={label}
+              type="button"
+              className={`toggle-btn${settings.close_to_background === value ? ' active' : ''}`}
+              onClick={() => patch({ close_to_background: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {(settings.close_to_background || state?.launch_at_login) && <p className="form-hint">{reopen}</p>}
+      <button type="button" className="btn-secondary btn-sm" onClick={() => void ipc.quitApp()}>
+        Quit Forager now
+      </button>
+      {error && <p className="form-error">{error}</p>}
+    </section>
+  );
+}
+
+/** Forager kept running, then the timer. */
+export default function BackgroundSection() {
+  return (
+    <>
+      <KeepRunningSection />
+      <TimerSection />
+    </>
+  );
+}
 
 /**
  * The daily check, a systemd user timer that runs the forager CLI, so it
  * works with the window closed.
  */
-export default function BackgroundSection() {
+function TimerSection() {
   const [state, setState] = useState<TimerState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

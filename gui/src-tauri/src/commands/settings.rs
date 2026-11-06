@@ -22,6 +22,9 @@ pub struct GuiSettings {
     /// as `custom`.
     #[serde(default = "custom_frame")]
     pub window_frame: String,
+    /// The window's Close hides Forager rather than quitting it.
+    #[serde(default)]
+    pub close_to_background: bool,
 }
 
 fn custom_frame() -> String {
@@ -34,6 +37,7 @@ impl Default for GuiSettings {
             app_theme: "system".into(),
             accent_color: None,
             window_frame: custom_frame(),
+            close_to_background: false,
         }
     }
 }
@@ -61,6 +65,43 @@ pub fn set_gui_settings(settings: GuiSettings) -> CmdResult<()> {
     }
     let text = toml::to_string(&settings).map_err(|e| e.to_string())?;
     std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
+/// Forager in the background: started at login, kept when closed.
+#[derive(Debug, Clone, Serialize)]
+pub struct BackgroundState {
+    pub launch_at_login: bool,
+    /// Whether a tray icon can be shown to reopen it.
+    pub tray: bool,
+    /// A Flatpak asks the Background portal, which may ask the user.
+    pub flatpak: bool,
+    /// GNOME shows tray icons only with the AppIndicator extension.
+    pub gnome: bool,
+}
+
+#[tauri::command]
+pub fn get_background() -> BackgroundState {
+    BackgroundState {
+        launch_at_login: crate::background::launch_at_login(),
+        tray: false,
+        flatpak: forager_core::host::in_flatpak(),
+        gnome: std::env::var("XDG_CURRENT_DESKTOP")
+            .is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("gnome"))),
+    }
+}
+
+#[tauri::command]
+pub async fn set_launch_at_login(on: bool) -> CmdResult<BackgroundState> {
+    tauri::async_runtime::spawn_blocking(move || crate::background::set_launch_at_login(on))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(get_background())
+}
+
+/// Quits Forager, window or not.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -67,6 +67,8 @@ export interface GuiSettings {
   /** `#rrggbb`, or null to follow the desktop. */
   accent_color: string | null;
   window_frame: WindowFrame;
+  /** The window's Close hides Forager rather than quitting it. */
+  close_to_background: boolean;
 }
 
 /** Whether the window draws its own buttons or keeps the desktop's title bar. */
@@ -342,6 +344,14 @@ export interface HistoryEvent {
   to?: string;
   format?: Format;
   message?: string;
+}
+
+export interface BackgroundState {
+  launch_at_login: boolean;
+  /** Whether a tray icon can be shown to reopen Forager. */
+  tray: boolean;
+  flatpak: boolean;
+  gnome: boolean;
 }
 
 export interface TimerState {
