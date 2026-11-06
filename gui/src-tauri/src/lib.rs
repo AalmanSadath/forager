@@ -83,6 +83,9 @@ pub fn run() {
         .setup(|app| {
             appearance::watch(app.handle().clone());
             register_links(app);
+            if let Err(e) = background::build_tray(app.handle()) {
+                eprintln!("forager-gui: no tray icon: {e}");
+            }
             // The window is configured hidden, so a start at login never
             // flashes it.
             let args: Vec<String> = std::env::args().skip(1).collect();

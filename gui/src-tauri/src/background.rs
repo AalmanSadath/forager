@@ -81,6 +81,88 @@ fn quote(program: &str) -> String {
     quoted
 }
 
+/// The tray icon's id, to find it again.
+const TRAY: &str = "main";
+
+/// Event asking the window to check every app, from the tray's Check now.
+pub const TRAY_CHECK_EVENT: &str = "tray-check";
+
+/// Whether a tray icon can be made. Tauri's loads an appindicator library
+/// when the icon is built, and panics if there is none, as in a Flatpak or
+/// on a system without one; so the names it tries are tried here first.
+pub fn tray_available() -> bool {
+    static AVAILABLE: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+        [
+            "libayatana-appindicator3.so.1",
+            "libappindicator3.so.1",
+            "libayatana-appindicator3.so",
+            "libappindicator3.so",
+        ]
+        .iter()
+        // SAFETY: these libraries run no code of their own on loading;
+        // each is unloaded again when the handle drops.
+        .any(|name| unsafe { libloading::Library::new(name) }.is_ok())
+    });
+    *AVAILABLE
+}
+
+/// Whether a tray icon would be seen now: one can be made, and something
+/// on the desktop shows them. GNOME has nothing to show them without the
+/// AppIndicator extension; the icon then stays unseen until there is.
+pub fn tray_shown() -> bool {
+    let watched = || -> Option<bool> {
+        let conn = zbus::blocking::Connection::session().ok()?;
+        let dbus = zbus::blocking::fdo::DBusProxy::new(&conn).ok()?;
+        dbus.name_has_owner("org.kde.StatusNotifierWatcher".try_into().ok()?)
+            .ok()
+    };
+    tray_available() && watched().unwrap_or(false)
+}
+
+/// Builds the tray icon, hidden until `sync_tray` shows it: Open, Check
+/// now and Quit.
+pub fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::Emitter;
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    if !tray_available() {
+        return Ok(());
+    }
+    let open = MenuItem::with_id(app, "open", "Open Forager", true, None::<&str>)?;
+    let check = MenuItem::with_id(app, "check", "Check now", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &check, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let mut tray = TrayIconBuilder::with_id(TRAY)
+        .tooltip("Forager")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => crate::show_main(app),
+            "check" => {
+                crate::show_main(app);
+                app.emit(TRAY_CHECK_EVENT, ()).ok();
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?.set_visible(false)?;
+    sync_tray(app);
+    Ok(())
+}
+
+/// Shows the tray icon while Forager may be running with no window, that is
+/// while it starts at login or Close keeps it running, and hides it
+/// otherwise.
+pub fn sync_tray(app: &tauri::AppHandle) {
+    if let Some(tray) = app.tray_by_id(TRAY) {
+        let wanted = launch_at_login() || crate::commands::settings::get_gui_settings().close_to_background;
+        tray.set_visible(wanted).ok();
+    }
+}
+
 /// Whether the command line asks to start without a window.
 pub fn starts_hidden(args: &[String]) -> bool {
     args.iter().any(|a| a == BACKGROUND_ARG)

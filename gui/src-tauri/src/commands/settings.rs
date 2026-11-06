@@ -58,20 +58,23 @@ pub fn get_gui_settings() -> GuiSettings {
 }
 
 #[tauri::command]
-pub fn set_gui_settings(settings: GuiSettings) -> CmdResult<()> {
+pub fn set_gui_settings(app: tauri::AppHandle, settings: GuiSettings) -> CmdResult<()> {
     let path = gui_settings_path();
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let text = toml::to_string(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(path, text).map_err(|e| e.to_string())
+    std::fs::write(path, text).map_err(|e| e.to_string())?;
+    // Close keeping Forager running brings its tray icon.
+    crate::background::sync_tray(&app);
+    Ok(())
 }
 
 /// Forager in the background: started at login, kept when closed.
 #[derive(Debug, Clone, Serialize)]
 pub struct BackgroundState {
     pub launch_at_login: bool,
-    /// Whether a tray icon can be shown to reopen it.
+    /// Whether a tray icon to reopen it would be seen on this desktop.
     pub tray: bool,
     /// A Flatpak asks the Background portal, which may ask the user.
     pub flatpak: bool,
@@ -83,7 +86,7 @@ pub struct BackgroundState {
 pub fn get_background() -> BackgroundState {
     BackgroundState {
         launch_at_login: crate::background::launch_at_login(),
-        tray: false,
+        tray: crate::background::tray_shown(),
         flatpak: forager_core::host::in_flatpak(),
         gnome: std::env::var("XDG_CURRENT_DESKTOP")
             .is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("gnome"))),
@@ -91,10 +94,11 @@ pub fn get_background() -> BackgroundState {
 }
 
 #[tauri::command]
-pub async fn set_launch_at_login(on: bool) -> CmdResult<BackgroundState> {
+pub async fn set_launch_at_login(app: tauri::AppHandle, on: bool) -> CmdResult<BackgroundState> {
     tauri::async_runtime::spawn_blocking(move || crate::background::set_launch_at_login(on))
         .await
         .map_err(|e| e.to_string())??;
+    crate::background::sync_tray(&app);
     Ok(get_background())
 }
 

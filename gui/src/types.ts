@@ -348,7 +348,7 @@ export interface HistoryEvent {
 
 export interface BackgroundState {
   launch_at_login: boolean;
-  /** Whether a tray icon can be shown to reopen Forager. */
+  /** Whether a tray icon to reopen Forager would be seen on this desktop. */
   tray: boolean;
   flatpak: boolean;
   gnome: boolean;

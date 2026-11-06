@@ -15,11 +15,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 dirs = "7.0.0"
+libloading = "0.7"
 forager-core = { path = "../../crates/forager-core" }
 regex = "1.13.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-clipboard-manager = "2.5.0"
 tauri-plugin-deep-link = "2.6.2"
 tauri-plugin-dialog = "2"

@@ -82,6 +82,17 @@ export default function App() {
     };
   }, [openRequest]);
 
+  // The tray's Check now: every app, as Check all does.
+  useEffect(() => {
+    const unlisten = listen('tray-check', () => {
+      useAppStore.getState().setPage({ kind: 'apps' });
+      void useAppStore.getState().checkApps();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // Coming back to the window re-checks what has gone stale meanwhile.
   useEffect(() => {
     const onFocus = () => useAppStore.getState().checkStale();
