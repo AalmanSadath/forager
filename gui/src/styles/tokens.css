@@ -51,6 +51,8 @@ input, textarea, select, [contenteditable] {
   --text-muted:   #8b949e;
   --text-dim:     #7d8590;
   --sidebar-w:    170px;
+  /* The sidebar header and the top bar, border included, so they line up. */
+  --header-h:     49px;
   --tab-h:        36px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;

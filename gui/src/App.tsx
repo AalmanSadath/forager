@@ -13,6 +13,7 @@ import AddAppPage from './components/AddAppPage';
 import ActivityPanel from './components/ActivityPanel';
 import SettingsPanel from './components/SettingsPanel';
 import Toasts from './components/Toasts';
+import TopBar from './components/TopBar';
 import UpdateModal from './components/UpdateModal';
 
 export default function App() {
@@ -89,6 +90,7 @@ export default function App() {
     <div className={chrome.className} style={chrome.style}>
       <Sidebar updates={countUpdates(apps, checks)} />
       <main className="main">
+        <TopBar />
         {page.kind === 'activity' ? (
           <ActivityPanel />
         ) : page.kind === 'settings' ? (

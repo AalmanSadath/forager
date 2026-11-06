@@ -46,7 +46,6 @@ export default function ActivityPanel() {
   return (
     <div className="panel activity-panel">
       <div className="panel-title-row">
-        <h1 className="panel-title">Activity</h1>
         <button className="btn-secondary btn-sm" onClick={load} style={{ marginLeft: 'auto' }}>Refresh</button>
       </div>
       <div className="chips activity-chips">

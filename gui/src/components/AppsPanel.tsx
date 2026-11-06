@@ -38,9 +38,6 @@ export default function AppsPanel() {
 
   return (
     <div className="panel apps-panel">
-      <div className="panel-title-row">
-        <h1 className="panel-title">Apps</h1>
-      </div>
       <div className="panel-toolbar">
         <button className="btn-primary" onClick={() => setPage({ kind: 'add' })}>+ Add App</button>
         <button

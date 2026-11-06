@@ -123,7 +123,6 @@ export default function AddAppPage({
           <BackIcon />
         </button>
         <div className="page-header-title">
-          <h1>{adopt ? 'Add AppImage' : 'Add app'}</h1>
           {info && <span className="page-header-sub">{FORGE_NAMES[info.forge]} · {info.display}</span>}
         </div>
         <div className="page-header-actions">

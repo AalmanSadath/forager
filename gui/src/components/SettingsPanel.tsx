@@ -20,7 +20,6 @@ export default function SettingsPanel() {
   const [section, setSection] = useState<(typeof SECTIONS)[number]['key']>('appearance');
   return (
     <div className="panel settings-panel">
-      <h1 className="panel-title">Settings</h1>
       <div className="settings-layout">
         <nav className="settings-rail">
           {SECTIONS.map(({ key, label }) => (

@@ -1,7 +1,6 @@
 /* The apps grid, after BifroSSH's hosts.css. */
 
 .apps-panel { padding-top: 16px; }
-.apps-panel .panel-title-row { margin-bottom: 12px; }
 
 .apps-search {
   flex: 1;

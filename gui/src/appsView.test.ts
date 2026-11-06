@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardModel, countUpdates, displayName, formatsInUse, groupApps, missingMenuEntries, restoreChecks, type CheckEntry } from './appsView';
+import { cardModel, countUpdates, displayName, formatsInUse, groupApps, missingMenuEntries, pageTitle, restoreChecks, type CheckEntry } from './appsView';
 import type { AppView, StatusView } from './types';
 
 function app(id: string, extra: Partial<AppView> = {}): AppView {
@@ -218,5 +218,26 @@ describe('app names', () => {
   it('sorts by the name shown', () => {
     const shown = groupApps([app('zed', { name: 'Atom' }), app('beta')], {}, 'all', '');
     expect(shown.flatMap((s) => s.items.map((i) => i.app.id))).toEqual(['zed', 'beta']);
+  });
+});
+
+describe('pageTitle', () => {
+  const apps = [app('obsidian', { name: 'Obsidian' }), app('fd')];
+
+  it('names each section', () => {
+    expect(pageTitle({ kind: 'apps' }, apps)).toBe('Apps');
+    expect(pageTitle({ kind: 'activity' }, apps)).toBe('Activity');
+    expect(pageTitle({ kind: 'settings' }, apps)).toBe('Settings');
+  });
+
+  it('tells adding an app from adopting an AppImage', () => {
+    expect(pageTitle({ kind: 'add' }, apps)).toBe('Add app');
+    expect(pageTitle({ kind: 'add', adopt: { path: '/x.AppImage', name: 'x' } as never }, apps)).toBe('Add AppImage');
+  });
+
+  it("uses an app's own name, then its id", () => {
+    expect(pageTitle({ kind: 'app', id: 'obsidian' }, apps)).toBe('Obsidian');
+    expect(pageTitle({ kind: 'app', id: 'fd' }, apps)).toBe('fd');
+    expect(pageTitle({ kind: 'app', id: 'gone' }, apps)).toBe('gone');
   });
 });

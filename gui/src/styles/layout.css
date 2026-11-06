@@ -20,6 +20,31 @@
   position: relative;
 }
 
+/* ── Top bar ───────────────────────────────────────────────── */
+
+/* The page's title. */
+.top-bar {
+  height: var(--header-h);
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-dark);
+  user-select: none;
+}
+.top-bar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Sidebar ───────────────────────────────────────────────── */
 
 .sidebar {
@@ -39,6 +64,9 @@
 }
 
 .sidebar-top {
+  height: var(--header-h);
+  box-sizing: border-box;
+  flex-shrink: 0;
   padding: 10px 8px;
   border-bottom: 1px solid var(--border);
   display: flex;

@@ -208,7 +208,6 @@ function AppPageBody({ app }: { app: AppView }) {
           <AppIcon app={app} format={model.format} size={26} />
         </div>
         <div className="page-header-title">
-          <h1>{displayName(app)}</h1>
           <button className="link-btn" onClick={() => openUrl(app.web_url).catch(() => {})}>
             {app.source} <ExternalIcon />
           </button>

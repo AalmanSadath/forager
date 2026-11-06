@@ -2,6 +2,7 @@
  * How the apps grid sorts, labels and filters apps. Pure, so it is tested
  * without a window.
  */
+import type { Page } from './store/appStore';
 import type { AppView, Format, Notice, StatusView } from './types';
 
 /** What the frontend knows about one app's latest check. */
@@ -122,6 +123,24 @@ function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel,
 
 /** What to call an app: the name the user gave it, else its id. */
 export const displayName = (app: Pick<AppView, 'id' | 'name'>): string => app.name || app.id;
+
+/** What the top bar calls the page: an app's own name on its page. */
+export function pageTitle(page: Page, apps: Pick<AppView, 'id' | 'name'>[]): string {
+  switch (page.kind) {
+    case 'apps':
+      return 'Apps';
+    case 'activity':
+      return 'Activity';
+    case 'settings':
+      return 'Settings';
+    case 'add':
+      return page.adopt ? 'Add AppImage' : 'Add app';
+    case 'app': {
+      const app = apps.find((a) => a.id === page.id);
+      return app ? displayName(app) : page.id;
+    }
+  }
+}
 
 /** A chip: one of the sections, or a format. */
 export type Chip = 'all' | Section | Format;
