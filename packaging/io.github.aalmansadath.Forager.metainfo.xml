@@ -58,6 +58,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.1" date="2026-11-17">
+      <description>
+        <ul>
+          <li>The window draws its own title bar, with the page title and minimize, maximize and close buttons; Appearance can switch back to the desktop's frame.</li>
+          <li>Forager can start at login without a window, and the close button can keep it running in the background, with a tray icon where the desktop shows one.</li>
+          <li>An AppImage that names no project, such as a local build, can be tracked as a local build, and given a project address later.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-11-05">
       <description>
         <ul>
