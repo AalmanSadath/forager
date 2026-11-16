@@ -16,6 +16,7 @@ optdepends=(
   'flatpak: install Flatpak bundles'
   'gnupg: check GPG signatures'
   'github-cli: check GitHub artifact attestations'
+  'libayatana-appindicator: tray icon while Forager runs in the background'
 )
 options=('!debug' '!strip')
 source=("https://github.com/AalmanSadath/forager/releases/download/v$pkgver/forager-$pkgver-x86_64-linux.tar.gz")
