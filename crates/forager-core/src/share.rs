@@ -72,7 +72,13 @@ const HEADER: &str = "# Apps tracked by Forager, from `forager export`.\n\
 
 /// Every tracked app's settings, as TOML.
 pub fn export(store: &Store) -> Result<String> {
-    let apps = store.apps.iter().map(exported).collect::<Result<Vec<_>>>()?;
+    // A local build has nothing another machine could track.
+    let apps = store
+        .apps
+        .iter()
+        .filter(|app| !app.source.is_local())
+        .map(exported)
+        .collect::<Result<Vec<_>>>()?;
     let text = toml::to_string(&ExportFile { apps })?;
     Ok(format!("{HEADER}{text}"))
 }
@@ -134,7 +140,11 @@ fn imported(store: &Store, exported: ExportedApp) -> Result<App> {
     app.track_only = exported.track_only;
     app.seen = exported.seen;
     app.validate()?;
-    if store.apps.iter().any(|a| a.id == app.id || a.source == app.source) {
+    if store
+        .apps
+        .iter()
+        .any(|a| a.id == app.id || a.source.same_project(&app.source))
+    {
         return Err(Error::AlreadyTracked(app.id));
     }
     // Last, since a GPG key is stored on disk under the app's id.
@@ -326,6 +336,14 @@ mod tests {
             },
             repo.into(),
         )
+    }
+
+    #[test]
+    fn leaves_local_builds_out_of_exports() {
+        let local = App::new(Source::Local {}, "fritzing".into());
+        let text = export(&store_with(vec![github("tool"), local])).unwrap();
+        assert!(text.contains("id = \"tool\""));
+        assert!(!text.contains("fritzing"));
     }
 
     #[test]

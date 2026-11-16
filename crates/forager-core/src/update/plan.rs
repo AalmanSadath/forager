@@ -239,7 +239,8 @@ pub struct SignatureCheck {
 /// app's (see `Status::found`), so the caller should save `app` when its
 /// installs changed.
 pub fn plans(app: &mut App, platform: &Platform) -> Result<Vec<Result<Plan>>> {
-    if app.track_only {
+    // A local build has nothing to update from.
+    if app.track_only || app.source.is_local() {
         return Ok(Vec::new());
     }
     let releases = app.releases()?;
@@ -317,6 +318,9 @@ fn repo_plan(app: &App, current: &InstallState, version: &str) -> Result<Plan> {
 pub fn plans_for(app: &mut App, platform: &Platform, tag: &str) -> Result<Vec<Result<Plan>>> {
     if app.track_only {
         return Err(Error::TrackOnly(app.id.clone()));
+    }
+    if app.source.is_local() {
+        return Err(Error::LocalApp(app.id.clone()));
     }
     let releases = app.releases()?;
     let target = releases

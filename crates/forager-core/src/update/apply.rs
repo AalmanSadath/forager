@@ -305,7 +305,11 @@ pub(super) fn repo_behind(actual: &str, tag: &str) -> bool {
 /// install when the source has one. Saves `store`.
 pub fn adopt(store: &mut Store, mut app: App, file: &Path, version: Option<&str>, keep: bool) -> Result<Installed> {
     app.validate()?;
-    if store.apps.iter().any(|a| a.id == app.id || a.source == app.source) {
+    if store
+        .apps
+        .iter()
+        .any(|a| a.id == app.id || a.source.same_project(&app.source))
+    {
         return Err(Error::AlreadyTracked(app.id));
     }
     if crate::desktop::appimage_entry(file).is_err() {

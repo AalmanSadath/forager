@@ -112,6 +112,9 @@ pub fn status(app: &App, platform: &Platform) -> Result<Status> {
 
 /// `status` against releases already fetched, newest first.
 pub fn status_in(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<Status> {
+    if app.source.is_local() {
+        return Ok(local_status(app));
+    }
     let latest = latest(app, releases, platform)?;
     if app.track_only {
         return Ok(track_only_status(app, latest));
@@ -154,6 +157,41 @@ pub fn status_in(app: &App, releases: Vec<Release>, platform: &Platform) -> Resu
         found,
         skipped,
     })
+}
+
+/// A local build has no releases: it is up to date while its file is there.
+/// The release stood in for is its own version, with nothing to download.
+fn local_status(app: &App) -> Status {
+    let installs: Vec<InstallState> = app
+        .install_list()
+        .into_iter()
+        .map(|installed| InstallState {
+            state: match install::is_present(&installed) {
+                true => State::UpToDate,
+                false => State::Missing,
+            },
+            installed,
+            repo_ahead: None,
+        })
+        .collect();
+    let tag = app
+        .installed
+        .as_ref()
+        .map_or_else(|| "local".to_string(), |i| i.tag.clone());
+    Status {
+        state: overall(app.format, &installs),
+        latest: Release {
+            tag,
+            name: None,
+            prerelease: false,
+            published_at: None,
+            notes: None,
+            assets: Vec::new(),
+        },
+        installs,
+        found: None,
+        skipped: false,
+    }
 }
 
 /// A tracked-only app has no installs: its latest release is new until the
@@ -433,6 +471,39 @@ fn existing_install(version: String, package: String, format: Format, asset: &As
 mod tests {
     use super::*;
     use crate::update::fixtures::{install, plan};
+
+    #[test]
+    fn a_local_build_is_up_to_date_while_its_file_is_there() {
+        let dir = std::env::temp_dir().join(format!("forager-local-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("tool.AppImage");
+        std::fs::write(&file, b"").unwrap();
+        let mut app = App::new(Source::Local {}, "tool".into());
+        let mut installed = install(Format::AppImage, "1.0.6-local");
+        installed.package = None;
+        installed.path = Some(file.clone());
+        app.installed = Some(installed);
+
+        let status = status_in(&app, Vec::new(), &Platform::detect()).unwrap();
+        assert_eq!(status.state, State::UpToDate);
+        assert_eq!(status.latest.tag, "1.0.6-local");
+        assert!(status.latest.assets.is_empty());
+
+        std::fs::remove_file(&file).unwrap();
+        let status = status_in(&app, Vec::new(), &Platform::detect()).unwrap();
+        assert_eq!(status.state, State::Missing);
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    #[test]
+    fn a_local_build_has_nothing_to_update_from() {
+        let mut app = App::new(Source::Local {}, "tool".into());
+        assert!(super::super::plans(&mut app, &Platform::detect()).unwrap().is_empty());
+        assert!(matches!(
+            super::super::plans_for(&mut app, &Platform::detect(), "v1"),
+            Err(Error::LocalApp(id)) if id == "tool"
+        ));
+    }
     use crate::update::{plans, plans_for};
 
     #[test]

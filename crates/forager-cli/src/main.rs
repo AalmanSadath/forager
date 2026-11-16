@@ -811,18 +811,20 @@ fn main() -> Result<()> {
             let source = match url {
                 Some(url) => Source::from_url(&url, forge)?,
                 None if info.source.is_some() => request.source()?,
-                None => bail!(
-                    "{} does not say where it comes from{}; give its project with --url",
-                    file.display(),
-                    info.update_info.as_deref().map_or(String::new(), |u| format!(" ({u})"))
-                ),
+                // Nothing says where it comes from: a local build, tracked
+                // but never checked.
+                None => Source::Local {},
             };
             let named = info
                 .source
                 .as_ref()
                 .is_some_and(|r| r.source().ok().as_ref() == Some(&source));
             let request = if named { request } else { share::AddRequest::default() };
-            let mut app = App::new(source.clone(), id.unwrap_or_else(|| source.default_id()));
+            let default_id = match source.is_local() {
+                true => Source::local_id(info.name.as_deref()),
+                false => source.default_id(),
+            };
+            let mut app = App::new(source.clone(), id.unwrap_or(default_id));
             app.asset_filter = filter.or(request.asset_filter);
             app.tag_filter = request.tag_filter;
             app.versions = request.versions;
@@ -833,11 +835,14 @@ fn main() -> Result<()> {
             event.format = Some(Format::AppImage);
             event.message = Some(format!("adopted {}", file.display()));
             history::record(&event).ok();
-            println!(
-                "{}: tracking {} from {source}",
-                app.id,
-                info.name.as_deref().unwrap_or("the AppImage")
-            );
+            let name = info.name.as_deref().unwrap_or("the AppImage");
+            match source.is_local() {
+                true => println!(
+                    "{}: tracking {name} as a local build, which is not checked for updates",
+                    app.id
+                ),
+                false => println!("{}: tracking {name} from {source}", app.id),
+            }
             println!("  version: {}", installed.tag);
             if let Some(path) = &installed.path {
                 let verb = if keep { "copied:" } else { "moved: " };
@@ -846,13 +851,20 @@ fn main() -> Result<()> {
             if let Some(filter) = &app.asset_filter {
                 println!("  filter:  {filter}");
             }
+            if source.is_local() {
+                println!(
+                    "  Give it its project's address to update it: forager edit {} --url <address>",
+                    app.id
+                );
+            }
         }
         Command::Export { file } => {
             let text = share::export(&store)?;
             match file {
                 Some(file) => {
                     std::fs::write(&file, text).with_context(|| format!("cannot write {}", file.display()))?;
-                    eprintln!("Exported {} apps to {}.", store.apps.len(), file.display());
+                    let count = store.apps.iter().filter(|a| !a.source.is_local()).count();
+                    eprintln!("Exported {count} apps to {}.", file.display());
                 }
                 None => print!("{text}"),
             }
@@ -1263,7 +1275,8 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
             found = true;
         }
         let app = &store.apps[index];
-        if status.state.needs_update() {
+        // A local build's missing file is not an update to offer.
+        if status.state.needs_update() && !app.source.is_local() {
             pending.push((app.id.clone(), status.target().to_string()));
         }
         if json {
@@ -1301,6 +1314,14 @@ fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> 
                 app.source.release_url(latest)
             );
             print_moved(&app.id, moved.as_deref());
+            continue;
+        }
+        if app.source.is_local() {
+            let text = match status.state {
+                State::Missing => format!("{latest}, missing"),
+                _ => latest.to_string(),
+            };
+            println!("{:<20} {:<30} local build, not checked", app.id, text);
             continue;
         }
         let text = match (status.state, status.installs.as_slice()) {
@@ -1586,6 +1607,12 @@ fn run_plans(
         println!(
             "{id}: tracked only, not installed; releases at {}",
             app.source.web_url()
+        );
+        return Ok(0);
+    }
+    if app.source.is_local() && tag.is_none() {
+        println!(
+            "{id}: local build, not checked for updates; give it an address with forager edit {id} --url <address>"
         );
         return Ok(0);
     }

@@ -63,6 +63,9 @@ pub enum Source {
     Direct {
         url: String,
     },
+    /// No source: an AppImage built or found locally, tracked so it is
+    /// listed, has a menu entry and can be removed, but never checked.
+    Local {},
 }
 
 /// Kind of forge, for hosts Forager does not recognise.
@@ -228,6 +231,7 @@ impl Source {
         match self {
             Source::Html { url, .. } | Source::Jenkins { url } | Source::Direct { url } => url.clone(),
             Source::SourceHut { owner, repo } => format!("https://git.sr.ht/~{owner}/{repo}"),
+            Source::Local {} => String::new(),
             _ => format!("https://{self}"),
         }
     }
@@ -245,6 +249,7 @@ impl Source {
                 None => url.clone(),
             },
             Source::Html { url, .. } | Source::Direct { url } => url.clone(),
+            Source::Local {} => String::new(),
         }
     }
 
@@ -259,7 +264,27 @@ impl Source {
             Source::SourceHut { .. } => "sourcehut",
             Source::Jenkins { .. } => "jenkins",
             Source::Direct { .. } => "direct",
+            Source::Local {} => "local",
         }
+    }
+
+    /// Whether this is a local build's, with no releases to check.
+    pub fn is_local(&self) -> bool {
+        matches!(self, Source::Local {})
+    }
+
+    /// An id for a local build named `name`, the name an AppImage gives
+    /// itself; `local-app` when it has none.
+    pub fn local_id(name: Option<&str>) -> String {
+        name.map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map_or_else(|| "local-app".into(), sanitize_id)
+    }
+
+    /// Whether two apps track the same project. Local builds share one
+    /// source that names none, so they never do.
+    pub fn same_project(&self, other: &Source) -> bool {
+        self == other && !self.is_local()
     }
 
     /// Suggested app id derived from the source.
@@ -279,6 +304,7 @@ impl Source {
                 )
             }
             Source::Direct { url } => direct_default_id(url),
+            Source::Local {} => "app".into(),
         }
     }
 
@@ -306,6 +332,7 @@ impl Source {
             Source::SourceHut { owner, repo } => sourcehut::releases(owner, repo),
             Source::Jenkins { url } => jenkins::releases(url),
             Source::Direct { url } => direct::releases(url),
+            Source::Local {} => Ok(Vec::new()),
         }
         .map_err(|e| match e {
             Error::Http(ureq::Error::StatusCode(404)) => Error::ProjectNotFound(self.to_string()),
@@ -512,6 +539,7 @@ impl fmt::Display for Source {
                 let bare = url.trim_start_matches("https://").trim_start_matches("http://");
                 write!(f, "{}", bare.trim_end_matches('/'))
             }
+            Source::Local {} => write!(f, "local build"),
         }
     }
 }
@@ -519,6 +547,27 @@ impl fmt::Display for Source {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_builds_are_stored_by_kind_and_never_the_same_project() {
+        #[derive(Serialize, Deserialize)]
+        struct Wrap {
+            source: Source,
+        }
+        let text = toml::to_string(&Wrap {
+            source: Source::Local {},
+        })
+        .unwrap();
+        assert_eq!(text.trim(), "[source]\nkind = \"local\"");
+        assert_eq!(toml::from_str::<Wrap>(&text).unwrap().source, Source::Local {});
+        assert!(!Source::Local {}.same_project(&Source::Local {}));
+        let gh = Source::GitHub {
+            owner: "o".into(),
+            repo: "r".into(),
+        };
+        assert!(gh.same_project(&gh.clone()));
+        assert!(Source::Local {}.releases().unwrap().is_empty());
+    }
 
     #[test]
     fn parses_github_urls() {

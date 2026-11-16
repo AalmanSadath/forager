@@ -105,7 +105,11 @@ impl Store {
     }
 
     pub fn add(&mut self, app: App) -> Result<()> {
-        if self.apps.iter().any(|a| a.id == app.id || a.source == app.source) {
+        if self
+            .apps
+            .iter()
+            .any(|a| a.id == app.id || a.source.same_project(&app.source))
+        {
             return Err(Error::AlreadyTracked(app.id));
         }
         self.apps.push(app);
