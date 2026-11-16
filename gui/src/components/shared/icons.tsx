@@ -125,6 +125,7 @@ export const FORGE_NAMES: Record<Forge, string> = {
   sourcehut: 'SourceHut',
   jenkins: 'Jenkins',
   direct: 'Direct link',
+  local: 'Local build',
 };
 
 export const FORMAT_NAMES: Record<Format, string> = {

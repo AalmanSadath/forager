@@ -224,3 +224,12 @@
 .adopt-card {
   margin-bottom: 16px;
 }
+
+/* A local build's address, once looked up: what it is, and using it. */
+.local-source-found {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}

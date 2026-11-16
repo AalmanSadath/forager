@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import * as ipc from '../ipc';
 import { useAppStore } from '../store/appStore';
+import { localId } from '../appsView';
 import type { AddRequest, AppImageFile, SourceInfo } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import SettingsSection from './appPage/SettingsSection';
@@ -93,14 +94,21 @@ export default function AddAppPage({
     if (initialUrl) lookUpRef.current();
   }, [initialUrl]);
 
+  // An AppImage with no address looked up is tracked as a local build:
+  // listed and removable, never checked.
+  const local = !!adopt && !info;
+  const [localIdText, setLocalIdText] = useState(() => localId(adopt?.name));
+  const newId = local ? localIdText : id;
+
   const add = async () => {
-    if (!info) return;
+    const spec = info?.spec ?? (local ? { kind: 'local' as const } : null);
+    if (!spec) return;
     setAdding(true);
     setError(null);
     try {
       const app = await ipc.addApp(
-        info.spec,
-        id.trim(),
+        spec,
+        newId.trim(),
         input,
         signatureForm(signature, null),
         adopt ? { path: adopt.path, version: adopt.version, keep } : null,
@@ -126,7 +134,11 @@ export default function AddAppPage({
           {info && <span className="page-header-sub">{FORGE_NAMES[info.forge]} · {info.display}</span>}
         </div>
         <div className="page-header-actions">
-          <button className="btn-primary" onClick={add} disabled={!info || !!existing || adding || !id.trim() || !!preview?.filter_error}>
+          <button
+            className="btn-primary"
+            onClick={add}
+            disabled={(!info && !local) || !!existing || adding || !newId.trim() || !!preview?.filter_error}
+          >
             {adding ? 'Adding…' : adopt ? 'Track AppImage' : 'Track app'}
           </button>
         </div>
@@ -181,12 +193,40 @@ export default function AddAppPage({
           <p className="form-hint">
             {link
               ? 'Its project comes from the update information inside it. Updates come from there from now on.'
-              : "It does not say where it comes from: paste its project's address above and look it up."}
+              : info
+                ? 'Updates come from the project looked up above.'
+                : "It does not say where it comes from. It is tracked as a local build, which is not checked for updates; to have it updated, paste its project's address above and look it up."}
           </p>
           <label className="checkbox-row">
             <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
             <span>Keep the original file (copy it to ~/Applications instead of moving it)</span>
           </label>
+        </section>
+      )}
+      {local && (
+        <section className="page-card">
+          <h3>Local build</h3>
+          <div className="form-group">
+            <label htmlFor="local-name">Name</label>
+            <input
+              id="local-name"
+              value={draft.name}
+              placeholder={localIdText || 'The id'}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            />
+            <p className="form-hint">Shown instead of the id; optional.</p>
+          </div>
+          <div className="form-group">
+            <label htmlFor="local-id">Id</label>
+            <input
+              id="local-id"
+              className="mono"
+              value={localIdText}
+              onChange={(e) => setLocalIdText(e.target.value)}
+              spellCheck={false}
+            />
+            <p className="form-hint">Names the app in commands and its file in ~/Applications: letters, digits, dots, dashes and underscores.</p>
+          </div>
         </section>
       )}
       {link && !adopt && (

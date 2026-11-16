@@ -89,6 +89,12 @@ function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel,
       ? { section: 'installed', dot: dot('off'), versions: installed.tag, label: 'Not checked yet', format, action: null }
       : { section: 'not_installed', dot: dot('off'), versions: '—', label: 'Not installed', format, action: 'install' };
   }
+  // A local build is never checked: it is there, or it is gone.
+  if (app.forge === 'local') {
+    return status.state === 'missing'
+      ? { section: 'problems', dot: dot('error'), versions: `${installed?.tag ?? '?'} missing`, label: 'Removed outside Forager', format, action: null }
+      : { section: 'installed', dot: dot('on'), versions: installed?.tag ?? status.latest_tag, label: 'Local build', format, action: null };
+  }
   const latest = status.latest_tag;
   switch (status.state) {
     case 'not_installed':
@@ -119,6 +125,20 @@ function baseModel(app: AppView, entry: CheckEntry | undefined): Omit<CardModel,
     case 'up_to_date':
       return { section: 'installed', dot: dot('on'), versions: installed?.tag ?? latest, label: 'Up to date', format, action: null };
   }
+}
+
+/**
+ * An id for a local build, from the name its AppImage gives itself, as the
+ * backend's `Source::local_id` makes it: lower case, with anything but
+ * letters, digits, dots, dashes and underscores as dashes.
+ */
+export function localId(name: string | null | undefined): string {
+  const id = (name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/^\.+/, '');
+  return id || 'local-app';
 }
 
 /** What to call an app: the name the user gave it, else its id. */

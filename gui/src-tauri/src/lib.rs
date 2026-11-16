@@ -111,6 +111,7 @@ pub fn run() {
             commands::edit::preview,
             commands::edit::add_app,
             commands::edit::save_app,
+            commands::edit::set_source,
             commands::remove::remove_app,
             commands::remove::uninstall_app,
             commands::releases::list_releases,

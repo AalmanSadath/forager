@@ -236,7 +236,10 @@ Tokens are only sent to their own host.
 - Installed to `~/Applications` with a menu entry taken from the image.
 - **Adopt** (`forager adopt`, "Add AppImage…", or drop on the window): the
   project comes from the AppImage's update info, or `--url`. `--keep`
-  copies instead of moving.
+  copies instead of moving. One that names no project, such as a local
+  build, is tracked as a local build: it gets its menu entry and can be
+  removed, but is never checked for updates until you give it an address
+  (`forager edit <id> --url <address>`, or Project address on its page).
 - **Delta updates:** with `<asset>.zsync` in the release, only changed
   blocks download. The result is checked against the zsync SHA-1, falling
   back to a full download.

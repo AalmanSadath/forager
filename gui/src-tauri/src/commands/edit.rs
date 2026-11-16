@@ -301,6 +301,25 @@ pub async fn add_app(
     .await
 }
 
+/// Gives `id` a new source, as `forager edit --url` does: a local build an
+/// address to be checked from, or any app a project that moved. Its
+/// installs and settings stay.
+#[tauri::command]
+pub async fn set_source(id: String, spec: Source) -> CmdResult<AppView> {
+    blocking(move || {
+        let mut store = load_store()?;
+        if let Some(other) = store.apps.iter().find(|a| a.id != id && a.source.same_project(&spec)) {
+            return Err(format!("{} already tracks {spec}", other.id));
+        }
+        let app = store.get_mut(&id).map_err(|e| e.to_string())?;
+        app.source = spec;
+        let view = AppView::from(&*app);
+        store.save().map_err(|e| e.to_string())?;
+        Ok(view)
+    })
+    .await
+}
+
 /// One app's result from `create_menu_entries`.
 #[derive(Debug, Clone, Serialize)]
 pub struct MenuEntryResult {

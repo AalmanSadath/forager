@@ -93,9 +93,13 @@ pub fn status_of(
             if let Some(installs) = status.found {
                 app.set_installs(installs);
             }
-            let (asset, asset_format, asset_error) = match select_asset(&app, &status.latest, platform) {
-                Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
-                Err(e) => (None, None, Some(e.to_string())),
+            // A local build has no release to pick an asset from.
+            let (asset, asset_format, asset_error) = match app.source.is_local() {
+                true => (None, None, None),
+                false => match select_asset(&app, &status.latest, platform) {
+                    Ok((asset, format)) => (Some(asset.name.clone()), Some(format), None),
+                    Err(e) => (None, None, Some(e.to_string())),
+                },
             };
             let installs: Vec<InstallStatusView> = status
                 .installs

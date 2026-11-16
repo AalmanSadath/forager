@@ -8,6 +8,7 @@ import { removalChoices, toggled } from '../removalView';
 import type { AppView, Cleanup, Format, InstalledView, Notice, UpdateState } from '../types';
 import AssetsSection from './appPage/AssetsSection';
 import VersionsSection from './appPage/VersionsSection';
+import LocalSourceSection from './appPage/LocalSourceSection';
 import SettingsSection from './appPage/SettingsSection';
 import SignatureSection from './appPage/SignatureSection';
 import {
@@ -92,8 +93,10 @@ function AppPageBody({ app }: { app: AppView }) {
     };
   }, [dialog, app.id]);
 
+  // A local build has no releases: nothing to preview, check or pick.
+  const local = app.forge === 'local';
   const input = useMemo(() => toInput(draft), [draft]);
-  const { preview, error: previewError, loading, refresh } = usePreview(app.spec, input, app.id);
+  const { preview, error: previewError, loading, refresh } = usePreview(local ? null : app.spec, input, app.id);
   const sigForm = signatureForm(signature, app);
   const dirty = !sameDraft(draft, draftOf(app)) || sigForm.kind !== 'keep';
   const model = cardModel(app, entry);
@@ -198,6 +201,27 @@ function AppPageBody({ app }: { app: AppView }) {
     }
   };
 
+  // The name the user gives it, and the id it keeps.
+  const idField = (
+    <>
+      <div className="form-group">
+        <label htmlFor="app-name">Name</label>
+        <input
+          id="app-name"
+          value={draft.name}
+          placeholder={app.id}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        />
+        <p className="form-hint">Shown instead of the id. Blank shows the id.</p>
+      </div>
+      <div className="form-group">
+        <label htmlFor="app-id">Id</label>
+        <input id="app-id" className="mono" value={app.id} readOnly />
+        <p className="form-hint">What commands and files on disk go by; it stays as it is.</p>
+      </div>
+    </>
+  );
+
   return (
     <div className="panel app-page">
       <header className="page-header">
@@ -208,9 +232,13 @@ function AppPageBody({ app }: { app: AppView }) {
           <AppIcon app={app} format={model.format} size={26} />
         </div>
         <div className="page-header-title">
-          <button className="link-btn" onClick={() => openUrl(app.web_url).catch(() => {})}>
-            {app.source} <ExternalIcon />
-          </button>
+          {local ? (
+            <span className="page-header-sub">Local build</span>
+          ) : (
+            <button className="link-btn" onClick={() => openUrl(app.web_url).catch(() => {})}>
+              {app.source} <ExternalIcon />
+            </button>
+          )}
         </div>
         <div className="page-header-status" title={model.label}>
           <span className={`dot dot-${model.dot}`} />
@@ -218,9 +246,11 @@ function AppPageBody({ app }: { app: AppView }) {
           <span>{entry?.error ? 'Check failed' : model.label}</span>
         </div>
         <div className="page-header-actions">
-          <button className="btn-secondary" onClick={() => checkApps([app.id])} disabled={entry?.checking}>
-            {entry?.checking ? 'Checking…' : 'Check'}
-          </button>
+          {!local && (
+            <button className="btn-secondary" onClick={() => checkApps([app.id])} disabled={entry?.checking}>
+              {entry?.checking ? 'Checking…' : 'Check'}
+            </button>
+          )}
           {model.action === 'view' && !dirty && status && (
             <>
               <button className="btn-primary" onClick={() => openUrl(status.release_url).catch(() => {})}>
@@ -296,10 +326,10 @@ function AppPageBody({ app }: { app: AppView }) {
                   </dd>
                 </>
               )}
-              <dt>Latest</dt>
-              <dd>
+              {!local && <dt>Latest</dt>}
+              {!local && <dd>
                 {status ? <span className="mono">{status.latest_tag}</span> : entry?.error ? <span className="text-danger">{entry.error}</span> : 'Not checked yet'}
-              </dd>
+              </dd>}
               {status?.notices.map((notice) => (
                 <NoticeFact key={notice.kind} notice={notice} onFollow={followMove} />
               ))}
@@ -319,6 +349,9 @@ function AppPageBody({ app }: { app: AppView }) {
                 </>
               )}
               <dt>Source</dt>
+              {local ? (
+                <dd>Local build, not checked for updates</dd>
+              ) : (
               <dd>
                 {FORGE_NAMES[app.forge]} ·{' '}
                 <button className="link-btn" onClick={copyLink} title="A forager:// link that opens these settings on the Add page">
@@ -333,7 +366,8 @@ function AppPageBody({ app }: { app: AppView }) {
                   Copy badge
                 </button>
               </dd>
-              {status && (
+              )}
+              {status && !local && (
                 <>
                   <dt>Checked</dt>
                   <dd>{new Date(status.checked_at * 1000).toLocaleTimeString()}</dd>
@@ -341,48 +375,42 @@ function AppPageBody({ app }: { app: AppView }) {
               )}
             </dl>
           </section>
-          <SettingsSection
-            webPage={app.forge === 'html'}
-            draft={draft}
-            onChange={setDraft}
-            preview={preview}
-            idField={
-              <>
-                <div className="form-group">
-                  <label htmlFor="app-name">Name</label>
-                  <input
-                    id="app-name"
-                    value={draft.name}
-                    placeholder={app.id}
-                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                  />
-                  <p className="form-hint">Shown instead of the id. Blank shows the id.</p>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="app-id">Id</label>
-                  <input id="app-id" className="mono" value={app.id} readOnly />
-                  <p className="form-hint">What commands and files on disk go by; it stays as it is.</p>
-                </div>
-              </>
-            }
-          />
-          <SignatureSection draft={signature} onChange={setSignature} app={app} forge={app.forge} />
+          {local ? (
+            <section className="page-card">
+              <h3>Settings</h3>
+              {idField}
+            </section>
+          ) : (
+            <>
+            <SettingsSection
+              webPage={app.forge === 'html'}
+              draft={draft}
+              onChange={setDraft}
+              preview={preview}
+              idField={idField}
+            />
+            <SignatureSection draft={signature} onChange={setSignature} app={app} forge={app.forge} />
+            </>
+          )}
         </div>
         <div className="page-column">
-          <AssetsSection
+          {local && <LocalSourceSection app={app} />}
+          {!local && <AssetsSection
             preview={preview}
             pinned={!!draft.format}
             installed={app.installs.length > 0}
             loading={loading}
             error={previewError}
             onRefresh={refresh}
-          />
-          {!app.track_only && <VersionsSection app={app} />}
+          />}
+          {!app.track_only && !local && <VersionsSection app={app} />}
           <section className="page-card danger-zone">
             <div>
               <h3>Remove</h3>
               <p className="form-hint">
-                Uninstall it and keep watching for releases, or stop tracking it altogether.
+                {local
+                  ? 'Uninstall it and keep it listed, or stop tracking it altogether.'
+                  : 'Uninstall it and keep watching for releases, or stop tracking it altogether.'}
               </p>
             </div>
             <div className="danger-zone-actions">

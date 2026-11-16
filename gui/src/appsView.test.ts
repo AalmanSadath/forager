@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardModel, countUpdates, displayName, formatsInUse, groupApps, missingMenuEntries, pageTitle, restoreChecks, type CheckEntry } from './appsView';
+import { cardModel, countUpdates, displayName, formatsInUse, groupApps, missingMenuEntries, pageTitle, localId, restoreChecks, type CheckEntry } from './appsView';
 import type { AppView, StatusView } from './types';
 
 function app(id: string, extra: Partial<AppView> = {}): AppView {
@@ -239,5 +239,31 @@ describe('pageTitle', () => {
     expect(pageTitle({ kind: 'app', id: 'obsidian' }, apps)).toBe('Obsidian');
     expect(pageTitle({ kind: 'app', id: 'fd' }, apps)).toBe('fd');
     expect(pageTitle({ kind: 'app', id: 'gone' }, apps)).toBe('gone');
+  });
+});
+
+describe('local builds', () => {
+  const installed = { tag: '1.0.6-local', format: 'appimage' as const, asset: '', path: '/x', desktop: [], links: [], package: null };
+  const local = app('fritzing', { forge: 'local', installed: installed as never });
+  const status = (state: StatusView['state']) => ({ checking: false, error: null, status: { state, latest_tag: '1.0.6-local', installs: [], notices: [] } as unknown as StatusView }) as CheckEntry;
+
+  it('is listed as a local build, with nothing to act on', () => {
+    const model = cardModel(local, status('up_to_date'));
+    expect(model.label).toBe('Local build');
+    expect(model.versions).toBe('1.0.6-local');
+    expect(model.action).toBeNull();
+  });
+
+  it('is a problem once its file is gone, with nothing to reinstall from', () => {
+    const model = cardModel(local, status('missing'));
+    expect(model.section).toBe('problems');
+    expect(model.action).toBeNull();
+  });
+
+  it('takes its id from the name the AppImage gives itself', () => {
+    expect(localId('Fritzing')).toBe('fritzing');
+    expect(localId('My Tool 2')).toBe('my-tool-2');
+    expect(localId('  ')).toBe('local-app');
+    expect(localId(null)).toBe('local-app');
   });
 });
