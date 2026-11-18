@@ -58,6 +58,13 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.2" date="2026-11-18">
+      <description>
+        <ul>
+          <li>AppImages show their icon while running, not only in search: menu entries now say which windows belong to them, and entries written by earlier versions are updated at startup and by the daily check.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-11-17">
       <description>
         <ul>
