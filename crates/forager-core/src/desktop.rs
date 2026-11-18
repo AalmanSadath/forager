@@ -38,10 +38,13 @@ pub fn entry_field(entry: &str, key: &str) -> Option<String> {
 /// The menu entry and icon of an AppImage at `appimage`.
 pub fn for_appimage(id: &str, appimage: &Path, extract: bool) -> Result<Vec<PathBuf>> {
     let image = AppImage::open(appimage)?;
-    let entry = image.desktop_entry();
+    let (own_id, entry) = image.named_desktop_entry().unzip();
     let icon_name = entry.as_deref().and_then(|e| field(e, "Icon"));
     let icon = image.icon(icon_name.as_deref());
-    write(id, entry.as_deref(), &appimage_exec(appimage, extract), icon)
+    let own = entry
+        .as_deref()
+        .map(|text| (text, own_id.as_deref().unwrap_or_default()));
+    write(id, own, &appimage_exec(appimage, extract), icon)
 }
 
 /// How a menu entry starts the AppImage at `path`: unpacked and run on
@@ -84,7 +87,8 @@ pub fn for_tarball(id: &str, dir: &Path, links: &[PathBuf]) -> Result<Vec<PathBu
         })
         .ok_or_else(|| Error::Archive("the menu entry names no executable in the archive".into()))?;
     let icon = field(&entry, "Icon").and_then(|name| tarball_icon(dir, &name));
-    write(id, Some(&entry), &quote(&exec), icon)
+    let own_id = desktop.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+    write(id, Some((&entry, own_id)), &quote(&exec), icon)
 }
 
 /// Whether a tarball unpacked at `dir` ships a menu entry.
@@ -159,7 +163,9 @@ impl Icon {
     }
 }
 
-fn write(id: &str, entry: Option<&str>, exec: &str, icon: Option<Icon>) -> Result<Vec<PathBuf>> {
+/// Writes the menu entry and icon. `entry` is the app's own entry, with the
+/// name its file goes by (its desktop file id).
+fn write(id: &str, entry: Option<(&str, &str)>, exec: &str, icon: Option<Icon>) -> Result<Vec<PathBuf>> {
     let apps = applications_dir().ok_or(Error::NoHome)?;
     let icons = icons_dir().ok_or(Error::NoHome)?;
     let icon_name = format!("forager-{id}");
@@ -174,7 +180,7 @@ fn write(id: &str, entry: Option<&str>, exec: &str, icon: Option<Icon>) -> Resul
     }
     let icon_field = icon.is_some().then_some(icon_name.as_str());
     let text = match entry {
-        Some(entry) => rewrite(entry, id, exec, icon_field),
+        Some((entry, own_id)) => rewrite(entry, own_id, id, exec, icon_field),
         None => minimal(id, exec, icon_field),
     };
     fs::create_dir_all(&apps)?;
@@ -189,8 +195,8 @@ fn write(id: &str, entry: Option<&str>, exec: &str, icon: Option<Icon>) -> Resul
 /// field codes, showing `icon` when one was copied. Lines that are not
 /// plain single-line text are dropped, as are keys that would make the
 /// entry start something other than `exec`.
-fn rewrite(entry: &str, id: &str, exec: &str, icon: Option<&str>) -> String {
-    let wm_class = window_class(entry);
+fn rewrite(entry: &str, own_id: &str, id: &str, exec: &str, icon: Option<&str>) -> String {
+    let wm_class = window_class(entry, own_id);
     let mut out = String::new();
     for line in entry.lines() {
         if line.contains(['\0', '\r']) {
@@ -224,7 +230,7 @@ fn rewrite(entry: &str, id: &str, exec: &str, icon: Option<&str>) -> String {
 
 /// Marks an entry as written by this version of the rules, so entries
 /// written before them can be found and written again.
-pub const ENTRY_MARK: &str = "X-Forager-Entry=2";
+pub const ENTRY_MARK: &str = "X-Forager-Entry=3";
 
 /// Whether the entry at `path` was written by an older Forager.
 pub fn is_outdated(path: &Path) -> bool {
@@ -233,14 +239,22 @@ pub fn is_outdated(path: &Path) -> bool {
 
 /// What the desktop should match the app's windows by, for an entry that
 /// does not say. A window names its app by its class on X11 and its app id
-/// on Wayland, and toolkits that are not told otherwise (Qt, Electron, SDL)
-/// use the program's file name. The shell pairs a window with an entry whose
-/// file is named after it or whose `StartupWMClass` matches; Forager's
-/// entries are named `forager-<id>`, so without this the running app shows
-/// no icon. An AppImage's `AppRun` says nothing of the program it starts.
-fn window_class(entry: &str) -> Option<String> {
+/// on Wayland. The shell pairs a window with an entry whose file is named
+/// after it or whose `StartupWMClass` matches; Forager's entries are named
+/// `forager-<id>`, so without this the running app shows no icon.
+///
+/// An app whose entry has a reverse-DNS name (`org.fritzing.Fritzing`)
+/// names its windows after it, as the specification asks: Qt does so on
+/// its own for apps that set their organisation's domain, and GTK
+/// applications use their id. Other toolkits not told otherwise (Qt
+/// without a domain, Electron, SDL) use the program's file name. An
+/// AppImage's `AppRun` says nothing of the program it starts.
+fn window_class(entry: &str, own_id: &str) -> Option<String> {
     if field(entry, "StartupWMClass").is_some() {
         return None;
+    }
+    if own_id.split('.').filter(|part| !part.is_empty()).count() >= 3 {
+        return Some(own_id.to_string());
     }
     let program = first_word(&field(entry, "Exec")?)?;
     let name = Path::new(&program).file_name()?.to_str()?.to_string();
@@ -388,11 +402,17 @@ impl AppImage {
     }
 
     fn desktop_entry(&self) -> Option<String> {
-        let (_, data) = self
+        self.named_desktop_entry().map(|(_, text)| text)
+    }
+
+    /// The entry at the image's top, with the name its file goes by.
+    fn named_desktop_entry(&self) -> Option<(String, String)> {
+        let (path, data) = self
             .files
             .iter()
             .find(|(p, _)| p.parent() == Some(Path::new("/")) && p.extension().is_some_and(|x| x == "desktop"))?;
-        String::from_utf8(data.clone()).ok()
+        let own_id = path.file_stem()?.to_str()?.to_string();
+        Some((own_id, String::from_utf8(data.clone()).ok()?))
     }
 
     fn icon(&self, name: Option<&str>) -> Option<Icon> {
@@ -457,6 +477,7 @@ mod tests {
         let entry = rewrite(
             "[Desktop Entry]\nExec=tool %U\n",
             "tool",
+            "tool",
             &appimage_exec(path, true),
             None,
         );
@@ -470,42 +491,63 @@ mod tests {
         let out = rewrite(
             entry,
             "tool",
+            "tool",
             "\"/home/me/Applications/tool.AppImage\"",
             Some("forager-tool"),
         );
         assert!(
-            out.starts_with("[Desktop Entry]\nX-Forager-App=tool\nX-Forager-Entry=2\nStartupWMClass=tool\nName=Tool\n")
+            out.starts_with("[Desktop Entry]\nX-Forager-App=tool\nX-Forager-Entry=3\nStartupWMClass=tool\nName=Tool\n")
         );
         assert!(out.contains("Exec=\"/home/me/Applications/tool.AppImage\" --flag %U\n"));
         assert!(out.contains("Exec=\"/home/me/Applications/tool.AppImage\" --new\n"));
         assert!(out.contains("Icon=forager-tool\n"));
         assert!(!out.contains("TryExec") && !out.contains("DBusActivatable") && !out.contains("Bad="));
         // Without a copied icon the app's own icon name stays.
-        assert!(rewrite(entry, "tool", "x", None).contains("Icon=tool\n"));
+        assert!(rewrite(entry, "tool", "tool", "x", None).contains("Icon=tool\n"));
     }
 
     #[test]
     fn names_the_window_class_after_the_program_unless_the_entry_does() {
         assert_eq!(
-            window_class("[Desktop Entry]\nExec=Fritzing %F\n").as_deref(),
+            window_class("[Desktop Entry]\nExec=Fritzing %F\n", "fritzing").as_deref(),
             Some("Fritzing")
         );
         assert_eq!(
-            window_class("[Desktop Entry]\nExec=/usr/bin/tool\n").as_deref(),
+            window_class("[Desktop Entry]\nExec=/usr/bin/tool\n", "tool").as_deref(),
             Some("tool")
         );
-        assert_eq!(window_class("[Desktop Entry]\nExec=AppRun --no-sandbox %U\n"), None);
         assert_eq!(
-            window_class("[Desktop Entry]\nExec=obsidian %U\nStartupWMClass=obsidian\n"),
+            window_class("[Desktop Entry]\nExec=AppRun --no-sandbox %U\n", "tool"),
+            None
+        );
+        assert_eq!(
+            window_class(
+                "[Desktop Entry]\nExec=obsidian %U\nStartupWMClass=obsidian\n",
+                "md.obsidian.Obsidian"
+            ),
             None
         );
         let out = rewrite(
             "[Desktop Entry]\nExec=obsidian %U\nStartupWMClass=obsidian\n",
+            "obsidian",
             "o",
             "x",
             None,
         );
         assert_eq!(out.matches("StartupWMClass=").count(), 1);
+    }
+
+    #[test]
+    fn names_the_window_class_after_a_reverse_dns_entry() {
+        assert_eq!(
+            window_class("[Desktop Entry]\nExec=Fritzing %F\n", "org.fritzing.Fritzing").as_deref(),
+            Some("org.fritzing.Fritzing")
+        );
+        // Two parts are a file name with a dot, not an id.
+        assert_eq!(
+            window_class("[Desktop Entry]\nExec=tool\n", "tool.app").as_deref(),
+            Some("tool")
+        );
     }
 
     #[test]
