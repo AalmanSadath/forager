@@ -83,6 +83,12 @@ pub fn run() {
         .setup(|app| {
             appearance::watch(app.handle().clone());
             register_links(app);
+            // Menu entries an older Forager wrote get what it adds now.
+            std::thread::spawn(|| {
+                if let Ok(mut store) = state::load_store() {
+                    forager_core::update::refresh_menu_entries(&mut store).ok();
+                }
+            });
             if let Err(e) = background::build_tray(app.handle()) {
                 eprintln!("forager-gui: no tray icon: {e}");
             }

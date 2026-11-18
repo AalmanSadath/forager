@@ -381,22 +381,40 @@ pub fn adopt(store: &mut Store, mut app: App, file: &Path, version: Option<&str>
 /// the apps named (all when `ids` is empty), recording them in `store`.
 /// Gives, per app with a missing entry, how many were added or the error.
 pub fn create_menu_entries(store: &mut Store, ids: &[String]) -> Result<Vec<(String, Result<usize>)>> {
+    remake_menu_entries(store, ids, &[install::MenuEntry::Missing, install::MenuEntry::Outdated])
+}
+
+/// Writes again the menu entries an older Forager wrote, so they pick up
+/// what it now adds (such as the window class the running app is matched
+/// by). Saves the store only when an entry was rewritten.
+pub fn refresh_menu_entries(store: &mut Store) -> Result<Vec<(String, Result<usize>)>> {
+    let outdated = store
+        .apps
+        .iter()
+        .flat_map(|a| a.installs())
+        .any(|i| install::menu_entry_state(i) == install::MenuEntry::Outdated);
+    match outdated {
+        true => remake_menu_entries(store, &[], &[install::MenuEntry::Outdated]),
+        false => Ok(Vec::new()),
+    }
+}
+
+fn remake_menu_entries(
+    store: &mut Store,
+    ids: &[String],
+    states: &[install::MenuEntry],
+) -> Result<Vec<(String, Result<usize>)>> {
     let mut results = Vec::new();
     for app in store.apps.iter_mut().filter(|a| ids.is_empty() || ids.contains(&a.id)) {
-        let missing = app
-            .installs()
-            .any(|i| install::menu_entry_state(i) == install::MenuEntry::Missing);
-        if !missing {
+        let wanted = |i: &Installed| states.contains(&install::menu_entry_state(i));
+        if !app.installs().any(wanted) {
             continue;
         }
         let id = app.id.clone();
         let mut installs = app.install_list();
         let mut added = 0;
         let mut error = None;
-        for installed in installs
-            .iter_mut()
-            .filter(|i| install::menu_entry_state(i) == install::MenuEntry::Missing)
-        {
+        for installed in installs.iter_mut().filter(|i| wanted(i)) {
             match install::create_menu_entry(&id, installed) {
                 Ok(files) => {
                     installed.desktop = files;

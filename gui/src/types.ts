@@ -12,7 +12,8 @@ export interface InstalledView {
   path: string | null;
   links: string[];
   /** Whether an AppImage or tarball is in the menu; `unavailable` for other formats. */
-  menu_entry: 'present' | 'missing' | 'unavailable';
+  /** `outdated`: there, written by an older Forager, and rewritten at startup. */
+  menu_entry: 'present' | 'outdated' | 'missing' | 'unavailable';
 }
 
 export interface MenuEntryResult {

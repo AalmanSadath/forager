@@ -5,7 +5,9 @@ mod apply;
 mod plan;
 mod status;
 
-pub use apply::{DeltaOutcome, Download, Progress, adopt, create_menu_entries, download, install};
+pub use apply::{
+    DeltaOutcome, Download, Progress, adopt, create_menu_entries, download, install, refresh_menu_entries,
+};
 pub use plan::{
     Delta, FuseGap, Plan, SignatureCheck, SummaryLine, Tone, asset_shape, changes, combined_notes, cooldown_until, now,
     plans, plans_for, repo_releases, summary,

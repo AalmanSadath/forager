@@ -594,7 +594,7 @@ function InstallFacts({
         <>
           <dt>{several ? '' : 'Menu'}</dt>
           <dd>
-            {installed.menu_entry === 'present' ? (
+            {installed.menu_entry === 'present' || installed.menu_entry === 'outdated' ? (
               'In the app menu'
             ) : (
               <>

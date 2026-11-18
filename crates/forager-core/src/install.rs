@@ -386,6 +386,9 @@ pub enum MenuEntry {
     /// An AppImage, or a tarball shipping an entry, that has none in the
     /// menu: installed before Forager made entries, or the entry was deleted.
     Missing,
+    /// There, but written by an older Forager; `refresh_menu_entries`
+    /// writes it again.
+    Outdated,
     /// Not Forager's to make: a system package or Flatpak brings its own,
     /// a tarball ships none, or the install is gone.
     Unavailable,
@@ -405,8 +408,16 @@ pub fn menu_entry_state(installed: &Installed) -> MenuEntry {
         .iter()
         .any(|f| f.extension().is_some_and(|x| x == "desktop"))
         && installed.desktop.iter().all(|f| f.exists());
+    let outdated = || {
+        installed
+            .desktop
+            .iter()
+            .filter(|f| f.extension().is_some_and(|x| x == "desktop"))
+            .any(|f| desktop::is_outdated(f))
+    };
     match (possible, present) {
         (false, _) => MenuEntry::Unavailable,
+        (true, true) if outdated() => MenuEntry::Outdated,
         (true, true) => MenuEntry::Present,
         (true, false) => MenuEntry::Missing,
     }
@@ -686,7 +697,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("forager-menu-{}", std::process::id()));
         fs::create_dir_all(dir.join("tar/bin")).unwrap();
         fs::write(dir.join("tool.AppImage"), b"").unwrap();
-        fs::write(dir.join("forager-tool.desktop"), b"").unwrap();
+        fs::write(
+            dir.join("forager-tool.desktop"),
+            format!("[Desktop Entry]\n{}\n", desktop::ENTRY_MARK),
+        )
+        .unwrap();
+        fs::write(dir.join("forager-old.desktop"), "[Desktop Entry]\nExec=tool\n").unwrap();
         let install = |format, path: &str, desktop: Vec<std::path::PathBuf>| Installed {
             tag: "v1".into(),
             format,
@@ -705,6 +721,15 @@ mod tests {
         assert_eq!(
             menu_entry_state(&install(Format::AppImage, "tool.AppImage", entry.clone())),
             MenuEntry::Present
+        );
+        // One an older Forager wrote is written again.
+        assert_eq!(
+            menu_entry_state(&install(
+                Format::AppImage,
+                "tool.AppImage",
+                vec![dir.join("forager-old.desktop")]
+            )),
+            MenuEntry::Outdated
         );
         // An entry file deleted by hand counts as missing.
         let gone = vec![dir.join("forager-gone.desktop")];

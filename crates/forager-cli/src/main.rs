@@ -1244,6 +1244,13 @@ impl CheckEntry {
 }
 
 fn check(store: &mut Store, notify: bool, quiet: bool, json: bool, via: Via) -> Result<()> {
+    // Menu entries an older Forager wrote get what it adds now; the timer
+    // runs this daily, so they follow without a reinstall.
+    for (id, result) in update::refresh_menu_entries(store)? {
+        if let Err(e) = result {
+            eprintln!("{id}: cannot rewrite its menu entry: {e}");
+        }
+    }
     let platform = Platform::detect();
     let mut pending = Vec::new();
     let mut found = false;

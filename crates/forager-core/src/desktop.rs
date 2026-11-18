@@ -190,6 +190,7 @@ fn write(id: &str, entry: Option<&str>, exec: &str, icon: Option<Icon>) -> Resul
 /// plain single-line text are dropped, as are keys that would make the
 /// entry start something other than `exec`.
 fn rewrite(entry: &str, id: &str, exec: &str, icon: Option<&str>) -> String {
+    let wm_class = window_class(entry);
     let mut out = String::new();
     for line in entry.lines() {
         if line.contains(['\0', '\r']) {
@@ -212,16 +213,44 @@ fn rewrite(entry: &str, id: &str, exec: &str, icon: Option<&str>) -> String {
             }
         }
         if line.trim() == "[Desktop Entry]" {
-            out.push_str(&format!("X-Forager-App={id}\n"));
+            out.push_str(&format!("X-Forager-App={id}\n{ENTRY_MARK}\n"));
+            if let Some(class) = &wm_class {
+                out.push_str(&format!("StartupWMClass={class}\n"));
+            }
         }
     }
     out
 }
 
+/// Marks an entry as written by this version of the rules, so entries
+/// written before them can be found and written again.
+pub const ENTRY_MARK: &str = "X-Forager-Entry=2";
+
+/// Whether the entry at `path` was written by an older Forager.
+pub fn is_outdated(path: &Path) -> bool {
+    fs::read_to_string(path).is_ok_and(|text| !text.lines().any(|l| l.trim() == ENTRY_MARK))
+}
+
+/// What the desktop should match the app's windows by, for an entry that
+/// does not say. A window names its app by its class on X11 and its app id
+/// on Wayland, and toolkits that are not told otherwise (Qt, Electron, SDL)
+/// use the program's file name. The shell pairs a window with an entry whose
+/// file is named after it or whose `StartupWMClass` matches; Forager's
+/// entries are named `forager-<id>`, so without this the running app shows
+/// no icon. An AppImage's `AppRun` says nothing of the program it starts.
+fn window_class(entry: &str) -> Option<String> {
+    if field(entry, "StartupWMClass").is_some() {
+        return None;
+    }
+    let program = first_word(&field(entry, "Exec")?)?;
+    let name = Path::new(&program).file_name()?.to_str()?.to_string();
+    (!name.is_empty() && name != "AppRun" && !name.contains(['=', ' '])).then_some(name)
+}
+
 fn minimal(id: &str, exec: &str, icon: Option<&str>) -> String {
     let icon = icon.map_or(String::new(), |i| format!("Icon={i}\n"));
     format!(
-        "[Desktop Entry]\nX-Forager-App={id}\nType=Application\nName={id}\nExec={exec}\n{icon}Terminal=false\nCategories=Utility;\n"
+        "[Desktop Entry]\nX-Forager-App={id}\n{ENTRY_MARK}\nType=Application\nName={id}\nExec={exec}\n{icon}Terminal=false\nCategories=Utility;\n"
     )
 }
 
@@ -444,13 +473,51 @@ mod tests {
             "\"/home/me/Applications/tool.AppImage\"",
             Some("forager-tool"),
         );
-        assert!(out.starts_with("[Desktop Entry]\nX-Forager-App=tool\nName=Tool\n"));
+        assert!(
+            out.starts_with("[Desktop Entry]\nX-Forager-App=tool\nX-Forager-Entry=2\nStartupWMClass=tool\nName=Tool\n")
+        );
         assert!(out.contains("Exec=\"/home/me/Applications/tool.AppImage\" --flag %U\n"));
         assert!(out.contains("Exec=\"/home/me/Applications/tool.AppImage\" --new\n"));
         assert!(out.contains("Icon=forager-tool\n"));
         assert!(!out.contains("TryExec") && !out.contains("DBusActivatable") && !out.contains("Bad="));
         // Without a copied icon the app's own icon name stays.
         assert!(rewrite(entry, "tool", "x", None).contains("Icon=tool\n"));
+    }
+
+    #[test]
+    fn names_the_window_class_after_the_program_unless_the_entry_does() {
+        assert_eq!(
+            window_class("[Desktop Entry]\nExec=Fritzing %F\n").as_deref(),
+            Some("Fritzing")
+        );
+        assert_eq!(
+            window_class("[Desktop Entry]\nExec=/usr/bin/tool\n").as_deref(),
+            Some("tool")
+        );
+        assert_eq!(window_class("[Desktop Entry]\nExec=AppRun --no-sandbox %U\n"), None);
+        assert_eq!(
+            window_class("[Desktop Entry]\nExec=obsidian %U\nStartupWMClass=obsidian\n"),
+            None
+        );
+        let out = rewrite(
+            "[Desktop Entry]\nExec=obsidian %U\nStartupWMClass=obsidian\n",
+            "o",
+            "x",
+            None,
+        );
+        assert_eq!(out.matches("StartupWMClass=").count(), 1);
+    }
+
+    #[test]
+    fn finds_entries_written_before_the_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("old.desktop");
+        fs::write(&old, "[Desktop Entry]\nX-Forager-App=tool\nExec=tool\n").unwrap();
+        let new = dir.path().join("new.desktop");
+        fs::write(&new, minimal("tool", "tool", None)).unwrap();
+        assert!(is_outdated(&old));
+        assert!(!is_outdated(&new));
+        assert!(!is_outdated(&dir.path().join("gone.desktop")));
     }
 
     #[test]
