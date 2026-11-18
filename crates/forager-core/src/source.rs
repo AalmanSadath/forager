@@ -117,6 +117,30 @@ impl Source {
     /// Parses a project URL such as `https://github.com/owner/repo`. `forge`
     /// says which API a host speaks; it is needed only for hosts other than
     /// github.com, codeberg.org and a few well-known GitLab instances.
+    /// `from_url`, and for an address on a host no forge is known for, a
+    /// look at where it leads: one that redirects to a package, as vendors'
+    /// "latest" download links do, is a direct link. The address is kept
+    /// as given, so later checks follow it to newer files.
+    pub fn resolve(url: &str, forge: Option<Forge>) -> Result<Source> {
+        Source::resolve_named(url, forge).map(|(source, _)| source)
+    }
+
+    /// `resolve`, with an id taken from the file a download link led to:
+    /// `code` for one ending at `code-1.147.0-....rpm`, where the address
+    /// itself only says `stable`.
+    pub fn resolve_named(url: &str, forge: Option<Forge>) -> Result<(Source, Option<String>)> {
+        match Source::from_url(url, forge) {
+            Err(Error::UnknownForge(host)) => match direct::probe(&with_scheme(url)) {
+                Some(file) => Ok((
+                    Source::from_url(url, Some(Forge::Direct))?,
+                    Some(direct_default_id(&file)),
+                )),
+                None => Err(Error::UnknownForge(host)),
+            },
+            other => other.map(|source| (source, None)),
+        }
+    }
+
     pub fn from_url(url: &str, forge: Option<Forge>) -> Result<Source> {
         let unsupported = || Error::UnsupportedSource(url.to_string());
         // Jenkins and direct links keep the address as given, scheme and all.
@@ -341,6 +365,14 @@ impl Source {
     }
 }
 
+/// `url` with `https://` in front when it names no scheme.
+fn with_scheme(url: &str) -> String {
+    match url.trim().contains("://") {
+        true => url.trim().to_string(),
+        false => format!("https://{}", url.trim()),
+    }
+}
+
 /// The last meaningful part of a page address, as an app id: `node` for
 /// `https://nodejs.org/dist/latest/` would be `latest`, so the host's first
 /// label is used when the path says nothing better.
@@ -547,6 +579,12 @@ impl fmt::Display for Source {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_a_download_link_after_the_file_it_leads_to() {
+        let file = "https://vscode.download.prss.microsoft.com/dbazure/download/stable/8a14/code-1.147.0-1794903054.el8.x86_64.rpm";
+        assert_eq!(direct_default_id(file), "code");
+    }
 
     #[test]
     fn local_builds_are_stored_by_kind_and_never_the_same_project() {

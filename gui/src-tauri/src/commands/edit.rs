@@ -34,20 +34,25 @@ pub struct ParsedSource {
     pub unknown_host: Option<String>,
 }
 
+/// Off the main thread: an address on an unknown host is looked up, to see
+/// whether it is a download link.
 #[tauri::command]
-pub fn parse_source(url: String, forge: Option<String>, pattern: Option<String>) -> CmdResult<ParsedSource> {
+pub async fn parse_source(url: String, forge: Option<String>, pattern: Option<String>) -> CmdResult<ParsedSource> {
     let forge = forge.map(|f| f.parse::<Forge>()).transpose()?;
-    let parsed = match (forge, pattern.filter(|p| !p.trim().is_empty())) {
-        (Some(Forge::Html), Some(pattern)) => Source::html(&url, &pattern),
-        (forge, _) => Source::from_url(&url, forge),
-    };
+    let parsed = blocking(move || {
+        Ok(match (forge, pattern.filter(|p| !p.trim().is_empty())) {
+            (Some(Forge::Html), Some(pattern)) => Source::html(&url, &pattern).map(|s| (s, None)),
+            (forge, _) => Source::resolve_named(&url, forge),
+        })
+    })
+    .await?;
     match parsed {
-        Ok(spec) => Ok(ParsedSource {
+        Ok((spec, named)) => Ok(ParsedSource {
             info: Some(SourceInfo {
                 display: spec.to_string(),
                 web_url: spec.web_url(),
                 forge: spec.forge(),
-                default_id: spec.default_id(),
+                default_id: named.unwrap_or_else(|| spec.default_id()),
                 spec,
             }),
             unknown_host: None,

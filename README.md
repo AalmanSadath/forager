@@ -76,6 +76,7 @@ forager add https://nodejs.org/dist/latest/ --forge html \
 forager add https://sourceforge.net/projects/smplayer --format appimage
 forager add https://ci.example.org/job/tool/                         # a Jenkins job
 forager add https://zoom.us/client/latest/zoom_x86_64.rpm            # a direct link
+forager add https://update.code.visualstudio.com/latest/linux-rpm-x64/stable  # one that redirects to the file
 forager adopt ~/Downloads/nvim-linux-x86_64.appimage                 # an AppImage you downloaded
 
 # Check and update
@@ -116,9 +117,13 @@ forager completions bash|zsh|fish
 | SourceForge | a folder of files | MD5 only, so unverified unless signed |
 | SourceHut | a tag and its attached files | |
 | Jenkins | a successful build with archived files, `build-<n>` | public jobs only |
-| Direct link | the file it leads to now | version from the file name or folder, else its date; `--forge direct` if the address has no file name |
+| Direct link | the file it leads to now | version from the file name or folder, else its date; an address with no file name on an unknown host is followed, and taken as a direct link when it redirects to a package, else `--forge direct` |
 
 The latest release is the newest one with a file for this system.
+
+Projects that publish only their source code, such as `microsoft/vscode`, have nothing
+Forager can install in their releases; `check` says so. Add the address of their builds
+instead: a download link on their website (VS Code's above), or a fork that builds them.
 
 ### `add` options
 

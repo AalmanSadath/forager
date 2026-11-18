@@ -482,15 +482,21 @@ fn main() -> Result<()> {
             let link = (url.starts_with("forager:") || url.starts_with(share::WEB_ADD))
                 .then(|| share::parse_link(&url))
                 .transpose()?;
+            // A download link names the app after the file it leads to.
+            let mut named_id = None;
             let source = match (&link, forge, pattern) {
                 (Some(link), None, None) => link.source()?,
                 (Some(_), _, _) => bail!("--forge and --pattern do not go with a forager:// link"),
                 (None, Some(Forge::Html) | None, Some(pattern)) => Source::html(&url, &pattern)?,
                 (None, _, Some(_)) => bail!("--pattern is only for web pages (--forge html)"),
-                (None, forge, None) => Source::from_url(&url, forge)?,
+                (None, forge, None) => {
+                    let (source, named) = Source::resolve_named(&url, forge)?;
+                    named_id = named;
+                    source
+                }
             };
             let link = link.unwrap_or_default();
-            let id = id.or(link.id).unwrap_or_else(|| source.default_id());
+            let id = id.or(link.id).or(named_id).unwrap_or_else(|| source.default_id());
             let mut app = App::new(source, id.clone());
             app.set_name(name.as_deref());
             app.asset_filter = filter.or(link.asset_filter);
@@ -575,7 +581,7 @@ fn main() -> Result<()> {
                     (Source::Html { pattern: old, .. }, None | Some(Forge::Html)) => {
                         Source::html(&url, pattern.as_deref().unwrap_or(old))?
                     }
-                    _ => Source::from_url(&url, forge)?,
+                    _ => Source::resolve(&url, forge)?,
                 };
                 if let Some(other) = store.apps.iter().find(|a| a.id != id && a.source == source) {
                     bail!("{} already tracks {source}", other.id);
@@ -809,7 +815,7 @@ fn main() -> Result<()> {
             // The address given wins over the one the AppImage names.
             let request = info.source.clone().unwrap_or_default();
             let source = match url {
-                Some(url) => Source::from_url(&url, forge)?,
+                Some(url) => Source::resolve(&url, forge)?,
                 None if info.source.is_some() => request.source()?,
                 // Nothing says where it comes from: a local build, tracked
                 // but never checked.

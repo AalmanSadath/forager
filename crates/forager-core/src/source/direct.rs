@@ -11,12 +11,7 @@ use crate::http;
 use crate::model::{Asset, Release};
 
 pub fn releases(url: &str) -> Result<Vec<Release>> {
-    let mut response = http::head(url).call()?;
-    // Some servers refuse HEAD; a GET whose body is never read is as good.
-    if matches!(response.status().as_u16(), 403 | 405 | 501) {
-        response = http::get(url).call()?;
-    }
-    let response = http::check(response)?;
+    let response = ask(url)?;
     let header = |name: &str| {
         response
             .headers()
@@ -32,6 +27,31 @@ pub fn releases(url: &str) -> Result<Vec<Release>> {
         header("etag").as_deref(),
         header("content-length").and_then(|l| l.parse().ok()),
     )])
+}
+
+/// Where `url` leads, its redirects followed, without reading the body.
+fn ask(url: &str) -> Result<ureq::http::Response<ureq::Body>> {
+    let mut response = http::head(url).call()?;
+    // Some servers refuse HEAD; a GET whose body is never read is as good.
+    if matches!(response.status().as_u16(), 403 | 405 | 501) {
+        response = http::get(url).call()?;
+    }
+    http::check(response)
+}
+
+/// Where `url`, at an address no forge is known for, leads, when it is a file
+/// Forager can install, such as a vendor's `.../latest/linux-rpm-x64/stable`
+/// redirecting to `code-1.147.0-....rpm`.
+/// The address it ends up at when it does.
+pub fn probe(url: &str) -> Option<String> {
+    let response = ask(url).ok()?;
+    let final_url = response.get_uri().to_string();
+    downloadable(&final_url).then_some(final_url)
+}
+
+/// Whether the last part of `url`'s path names a package Forager installs.
+fn downloadable(url: &str) -> bool {
+    crate::model::Format::from_file_name(&file_name(url)).is_some()
 }
 
 /// The release a link at `url`, ending up at `final_url`, stands for.
@@ -95,6 +115,18 @@ pub(super) fn file_name(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tells_download_addresses_from_pages() {
+        assert!(downloadable(
+            "https://vscode.download.prss.microsoft.com/dbazure/download/stable/8a14/code-1.147.0-1794903054.el8.x86_64.rpm"
+        ));
+        assert!(downloadable("https://cdn.example.org/tool-1.0-x86_64.AppImage?sig=abc"));
+        assert!(!downloadable("https://example.org/index.html"));
+        assert!(!downloadable(
+            "https://update.code.visualstudio.com/latest/linux-rpm-x64/stable"
+        ));
+    }
 
     #[test]
     fn names_the_release_after_the_file_it_leads_to() {
