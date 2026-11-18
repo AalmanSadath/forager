@@ -53,7 +53,10 @@ export default function AssetsSection({
             </details>
           )}
           {preview.candidates.length === 0 ? (
-            <p className="list-empty">This release has no assets.</p>
+            <p className="list-empty">
+              This release has only its source code, nothing built to install. If the project publishes builds elsewhere,
+              such as a download link on its website, Flathub or a fork that builds it, add that address instead.
+            </p>
           ) : packages.length === 0 && !showOthers ? (
             <p className="list-empty">No packages in this release.</p>
           ) : (

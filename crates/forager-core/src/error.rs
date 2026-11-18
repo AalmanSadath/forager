@@ -49,6 +49,11 @@ pub enum Error {
     InvalidExport(String),
     #[error("no asset in release {tag} matches this system")]
     NoMatchingAsset { tag: String },
+    #[error(
+        "release {tag} has only its source code, nothing built to install; if the project publishes builds \
+         elsewhere (its website's download link, Flathub, or a fork that builds it), add that address instead"
+    )]
+    SourceOnly { tag: String },
     #[error("checksum mismatch for {asset}: expected {expected}, got {actual}")]
     ChecksumMismatch {
         asset: String,

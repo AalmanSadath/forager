@@ -134,13 +134,35 @@ fn judge(
 /// Picks the release asset that best fits the app's settings and the
 /// platform; see `candidates` for the rules.
 pub fn select_asset<'a>(app: &App, release: &'a Release, platform: &Platform) -> Result<(&'a Asset, Format)> {
-    candidates(app, release, platform)?
+    let candidates = candidates(app, release, platform)?;
+    let source_only = source_only(&candidates);
+    candidates
         .into_iter()
         .find(|c| c.verdict == Verdict::Chosen)
         .and_then(|c| Some((c.asset, c.format?)))
-        .ok_or_else(|| Error::NoMatchingAsset {
-            tag: release.tag.clone(),
+        .ok_or_else(|| match source_only {
+            true => Error::SourceOnly {
+                tag: release.tag.clone(),
+            },
+            false => Error::NoMatchingAsset {
+                tag: release.tag.clone(),
+            },
         })
+}
+
+/// Whether a release offers nothing built: no files beyond its source code
+/// (which forges do not list as assets), source archives, and their
+/// checksums and signatures. Builds for other systems are something built,
+/// so a release of Windows installers is not source only.
+fn source_only(candidates: &[Candidate]) -> bool {
+    candidates.iter().all(|c| {
+        let lower = c.asset.name.to_ascii_lowercase();
+        let beside = crate::verify::is_checksum_list(&lower)
+            || [".sha256", ".sha512", ".sha256sum", ".asc", ".sig", ".gpg", ".minisig"]
+                .iter()
+                .any(|ext| lower.ends_with(ext));
+        beside || c.verdict == Verdict::Rejected(Reason::SourceArchive)
+    })
 }
 
 /// The formats `release` offers this system, in the system's order of
@@ -242,6 +264,20 @@ mod tests {
     use super::*;
     use crate::platform::PackageManager;
     use crate::source::Source;
+
+    #[test]
+    fn tells_a_release_of_source_code_only() {
+        let source_only = |names: &[&str]| {
+            matches!(
+                select_asset(&app(), &release(names), &platform(Some(PackageManager::Dnf))),
+                Err(Error::SourceOnly { .. })
+            )
+        };
+        assert!(source_only(&[]));
+        assert!(source_only(&["tool-1.2.tar.gz", "tool-1.2.tar.gz.asc", "SHA256SUMS"]));
+        // Builds for another system are builds: there is simply none for this one.
+        assert!(!source_only(&["tool-1.2-setup.exe", "tool-1.2.dmg"]));
+    }
 
     fn release(names: &[&str]) -> Release {
         Release {
