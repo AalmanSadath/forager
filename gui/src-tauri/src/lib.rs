@@ -80,6 +80,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::releases::ReleaseCache::default())
         .manage(commands::update::Updates::default())
+        .manage(commands::update::Transfers::default())
         .setup(|app| {
             appearance::watch(app.handle().clone());
             register_links(app);
@@ -140,6 +141,7 @@ pub fn run() {
             commands::update::start_update,
             commands::update::finish_update,
             commands::update::cancel_update,
+            commands::update::transfer_data,
             commands::settings::get_gui_settings,
             commands::settings::set_gui_settings,
             commands::settings::get_timer,

@@ -15,7 +15,7 @@ use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, InstallState, Plan, State};
-use forager_core::{host, install, share, timer, version};
+use forager_core::{host, install, share, timer, transfer, version};
 
 #[derive(Parser)]
 #[command(
@@ -201,6 +201,10 @@ enum Command {
         /// each launch, or skip it. Asked on a terminal when not given.
         #[arg(long, value_enum, value_name = "CHOICE")]
         without_fuse: Option<WithoutFuse>,
+        /// When switching into or out of a Flatpak, do not copy the app's
+        /// settings and data to the new install.
+        #[arg(long)]
+        no_copy_data: bool,
     },
     /// Install a particular release, e.g. to roll back to an older one. Going
     /// back from the latest release skips it, so it is not offered again.
@@ -220,6 +224,10 @@ enum Command {
         /// each launch, or skip it. Asked on a terminal when not given.
         #[arg(long, value_enum, value_name = "CHOICE")]
         without_fuse: Option<WithoutFuse>,
+        /// When switching into or out of a Flatpak, do not copy the app's
+        /// settings and data to the new install.
+        #[arg(long)]
+        no_copy_data: bool,
     },
     /// Do not offer a release (the latest by default) as an update. A newer
     /// release is offered as usual.
@@ -409,6 +417,8 @@ struct UpdateOptions {
     unprivileged_only: bool,
     without_fuse: Option<WithoutFuse>,
     via: Via,
+    /// Copy settings and data across a switch into or out of a Flatpak.
+    copy_data: bool,
 }
 
 /// What to do with a new AppImage while FUSE is missing.
@@ -727,6 +737,7 @@ fn main() -> Result<()> {
             skip_metered,
             skip_on_battery,
             without_fuse,
+            no_copy_data,
         } => {
             let avoid = Avoid {
                 metered: skip_metered,
@@ -745,6 +756,7 @@ fn main() -> Result<()> {
                     unprivileged_only,
                     without_fuse,
                     via,
+                    copy_data: !no_copy_data,
                 },
             )?
         }
@@ -754,6 +766,7 @@ fn main() -> Result<()> {
             yes,
             allow_unverified,
             without_fuse,
+            no_copy_data,
         } => {
             let options = UpdateOptions {
                 yes,
@@ -761,6 +774,7 @@ fn main() -> Result<()> {
                 unprivileged_only: false,
                 without_fuse,
                 via,
+                copy_data: !no_copy_data,
             };
             let failed = run_plans(&mut store, &id, &Platform::detect(), &options, Some(&tag))?;
             if failed > 0 {
@@ -896,6 +910,7 @@ fn main() -> Result<()> {
                     unprivileged_only: false,
                     without_fuse: None,
                     via,
+                    copy_data: true,
                 };
                 update(&mut store, &added, &options)?;
             } else if !added.is_empty() {
@@ -1732,6 +1747,7 @@ fn apply(
         unprivileged_only,
         without_fuse,
         via,
+        copy_data,
     } = *options;
     let app = store.get(id)?;
     let replaces_root_install = plan.replaces.iter().any(|i| i.format.needs_root());
@@ -1805,9 +1821,9 @@ fn apply(
             return Ok(());
         }
     }
-    let installed = update::install(store, id, plan, &download, platform, &mut |p| line.show(p));
+    let outcome = update::install(store, id, plan, &download, platform, &mut |p| line.show(p));
     line.finish();
-    let installed = installed?;
+    let update::InstallOutcome { installed, transfer } = outcome?;
     let kind = if plan.from.is_some() {
         Kind::Updated
     } else {
@@ -1832,6 +1848,9 @@ fn apply(
     }
     for link in &links {
         println!("  linked: {}", link.display());
+    }
+    if !transfer.is_empty() {
+        copy_data_across(&transfer, copy_data, yes)?;
     }
     if !links.is_empty()
         && let Some(bin_dir) = platform::bin_dir()
@@ -1936,6 +1955,69 @@ fn ask_without_fuse() -> Result<WithoutFuse> {
             "1" => return Ok(WithoutFuse::Anyway),
             "2" => return Ok(WithoutFuse::Unpack),
             "3" => return Ok(WithoutFuse::Skip),
+            _ => {}
+        }
+    }
+}
+
+/// Copies settings and data to the new install after a switch into or out
+/// of a Flatpak. A folder already at the new place is asked about on a
+/// terminal, and otherwise left as it is.
+fn copy_data_across(moves: &[transfer::Move], copy: bool, yes: bool) -> Result<()> {
+    if !copy {
+        println!("  data:   not copied (--no-copy-data); the old install's folders are where they were:");
+        for m in moves {
+            println!("          {}", m.from.display());
+        }
+        return Ok(());
+    }
+    let ask = !yes && io::stdin().is_terminal();
+    let mut choices = Vec::with_capacity(moves.len());
+    for m in moves {
+        choices.push(match (m.conflict, ask) {
+            (false, _) => transfer::Choice::Copy,
+            (true, true) => ask_conflict(m)?,
+            (true, false) => transfer::Choice::KeepNew,
+        });
+    }
+    let mut copied = false;
+    for (m, result) in transfer::apply(moves, &choices) {
+        let (from, to) = (m.from.display(), m.to.display());
+        match result {
+            Ok(true) => {
+                copied = true;
+                println!("  copied: {from} -> {to} ({})", size(m.bytes))
+            }
+            Ok(false) if m.conflict && !ask => {
+                println!("  kept:   {to}, which already exists; {from} was not copied")
+            }
+            Ok(false) => println!("  kept:   {to}"),
+            Err(e) => eprintln!("  failed: {from} -> {to}: {e}"),
+        }
+    }
+    if copied {
+        println!("  note:   the old install's folders stay as a backup");
+    }
+    Ok(())
+}
+
+fn ask_conflict(m: &transfer::Move) -> Result<transfer::Choice> {
+    println!(
+        "  {} already exists. The old install's is {}.",
+        m.to.display(),
+        m.from.display()
+    );
+    loop {
+        print!("  [k]eep this one, [u]se the old one and back this one up, or [r]eplace this one with the old? ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        if io::stdin().lock().read_line(&mut answer)? == 0 {
+            return Ok(transfer::Choice::KeepNew);
+        }
+        match answer.trim() {
+            "k" | "K" => return Ok(transfer::Choice::KeepNew),
+            "u" | "U" => return Ok(transfer::Choice::UseOld),
+            "r" | "R" => return Ok(transfer::Choice::Replace),
             _ => {}
         }
     }

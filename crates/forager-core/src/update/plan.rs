@@ -198,6 +198,13 @@ pub fn summary(app: &App, plan: &Plan) -> Vec<SummaryLine> {
         let value = format!("replaces the {} install, which will be removed", previous.format);
         lines.push(line("note", value, Tone::Warn));
     }
+    if let Some(previous) = plan.replaces.iter().find(|p| p.format != plan.format) {
+        let value = match crate::transfer::crosses_flatpak(previous.format, plan.format) {
+            true => "a Flatpak keeps settings and data apart, in ~/.var/app; they can be copied across afterwards, and the originals stay".to_string(),
+            false => format!("the {} uses the same settings and data folders", plan.format),
+        };
+        lines.push(line("data", value, Tone::Normal));
+    }
     if let Some(previous) = &plan.asset_changed {
         let value = format!("changed from {previous}; check this is the build you want");
         lines.push(line("file", value, Tone::Warn));
@@ -977,6 +984,15 @@ mod tests {
         );
         assert_eq!(tone("note", "as root"), Some(Tone::Warn));
         assert_eq!(tone("note", "replaces the appimage"), Some(Tone::Warn));
+        assert_eq!(tone("data", "the rpm uses the same"), Some(Tone::Normal));
+        let mut into_flatpak = plan.clone();
+        into_flatpak.format = Format::Flatpak;
+        let lines = summary(&app, &into_flatpak);
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.label == "data" && l.value.contains("copied across afterwards"))
+        );
         assert_eq!(tone("source", "github.com/o/tool"), Some(Tone::Normal));
     }
 }

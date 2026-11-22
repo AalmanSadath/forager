@@ -23,6 +23,7 @@ pub mod signature;
 pub mod source;
 pub mod store;
 pub mod timer;
+pub mod transfer;
 pub mod update;
 pub mod verify;
 pub mod version;

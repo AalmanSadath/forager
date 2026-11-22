@@ -11,6 +11,7 @@ use forager_core::history::{self, Event, Kind, Via};
 use forager_core::install;
 use forager_core::model::Format;
 use forager_core::platform::Platform;
+use forager_core::transfer::{self, Choice, Move};
 use forager_core::update::{self, Download, Plan, Progress, SummaryLine};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -26,6 +27,12 @@ pub struct Updates(Mutex<HashMap<String, Session>>);
 fn key(id: &str, format: Format) -> String {
     format!("{id}/{format}")
 }
+
+/// Settings and data waiting to be copied after a switch, by app id: worked
+/// out by `finish_update`, so `transfer_data` copies only these, never
+/// paths a page sends.
+#[derive(Default)]
+pub struct Transfers(Mutex<HashMap<String, Vec<Move>>>);
 
 struct Session {
     plan: Plan,
@@ -60,6 +67,9 @@ pub struct PlanView {
     /// FUSE is missing and nothing is being updated, so the user chooses
     /// first: install anyway, install to unpack and run, or not install.
     pub asks_about_fuse: bool,
+    /// Switching into or out of a Flatpak, whose settings and data live
+    /// apart: they can be copied to the new install afterwards.
+    pub copies_data: bool,
 }
 
 /// One planned update of an app, or why it cannot be made.
@@ -139,6 +149,10 @@ pub async fn plan_update(updates: State<'_, Updates>, id: String, tag: Option<St
                             .collect(),
                         fuse_packages: plan.fuse.as_ref().map(|gap| gap.packages.to_string()),
                         asks_about_fuse: plan.fuse_choice,
+                        copies_data: plan
+                            .replaces
+                            .iter()
+                            .any(|p| transfer::crosses_flatpak(p.format, plan.format)),
                     };
                     (plan, view)
                 })
@@ -240,6 +254,9 @@ pub struct FinishedView {
     /// This was Forager updating itself: the window runs the old version
     /// until restarted.
     pub restart_needed: bool,
+    /// Settings and data to copy to the new install, after a switch into
+    /// or out of a Flatpak; `transfer_data` copies them.
+    pub transfer: Vec<Move>,
 }
 
 /// Installs the downloaded asset and records it.
@@ -247,6 +264,7 @@ pub struct FinishedView {
 pub async fn finish_update(
     app: AppHandle,
     updates: State<'_, Updates>,
+    transfers: State<'_, Transfers>,
     id: String,
     format: Format,
     extract_and_run: Option<bool>,
@@ -266,11 +284,12 @@ pub async fn finish_update(
     let (handle, key) = (app.clone(), id.clone());
     let result = blocking(move || {
         let mut store = load_store()?;
-        let installed = update::install(&mut store, &key, &plan, &download, &Platform::detect(), &mut |p| {
-            emit_progress(&handle, &key, p);
-            ControlFlow::Continue(())
-        })
-        .map_err(|e| e.to_string())?;
+        let update::InstallOutcome { installed, transfer } =
+            update::install(&mut store, &key, &plan, &download, &Platform::detect(), &mut |p| {
+                emit_progress(&handle, &key, p);
+                ControlFlow::Continue(())
+            })
+            .map_err(|e| e.to_string())?;
         let mut event = Event::new(
             &key,
             if plan.from.is_some() {
@@ -288,13 +307,70 @@ pub async fn finish_update(
         Ok(FinishedView {
             app: AppView::from(app),
             restart_needed: install::is_running_self(&installed),
+            transfer,
         })
     })
     .await;
-    if let Err(e) = &result {
-        record_failure(&id, format, e);
+    match &result {
+        Ok(view) if !view.transfer.is_empty() => {
+            transfers.0.lock().unwrap().insert(id, view.transfer.clone());
+        }
+        Ok(_) => {}
+        Err(e) => record_failure(&id, format, e),
     }
     result
+}
+
+/// What became of one folder `transfer_data` was given.
+#[derive(Debug, Clone, Serialize)]
+pub struct TransferResult {
+    #[serde(flatten)]
+    pub movement: Move,
+    /// Copied; false when it was left as it was.
+    pub copied: bool,
+    pub error: Option<String>,
+}
+
+/// Copies the settings and data `finish_update` found for `id`, with one
+/// choice per folder in the same order. Leaving `choices` empty copies
+/// nothing and forgets them.
+#[tauri::command]
+pub async fn transfer_data(
+    transfers: State<'_, Transfers>,
+    id: String,
+    choices: Vec<Choice>,
+) -> CmdResult<Vec<TransferResult>> {
+    let moves = transfers
+        .0
+        .lock()
+        .unwrap()
+        .remove(&id)
+        .ok_or("nothing is waiting to be copied for this app")?;
+    if choices.is_empty() {
+        return Ok(Vec::new());
+    }
+    if choices.len() != moves.len() {
+        return Err("a choice is needed for every folder".into());
+    }
+    // A conflict is never copied over without being chosen.
+    if moves
+        .iter()
+        .zip(&choices)
+        .any(|(m, c)| m.conflict && *c == Choice::Copy)
+    {
+        return Err("a folder already there needs keeping or replacing".into());
+    }
+    blocking(move || {
+        Ok(transfer::apply(&moves, &choices)
+            .into_iter()
+            .map(|(movement, result)| TransferResult {
+                movement,
+                copied: matches!(result, Ok(true)),
+                error: result.err().map(|e| e.to_string()),
+            })
+            .collect())
+    })
+    .await
 }
 
 /// Stops a download in progress, or drops one waiting to be installed.

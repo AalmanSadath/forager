@@ -12,6 +12,7 @@ use crate::model::{App, Format, Installed};
 use crate::platform::Platform;
 use crate::signature;
 use crate::store::{self, Store};
+use crate::transfer::{self, Move};
 use crate::verify::Algorithm;
 use crate::{install, verify, version, zsync};
 
@@ -170,6 +171,16 @@ fn check_checksum(plan: &Plan, path: &Path, sha256: &str) -> Result<()> {
     }
 }
 
+/// What `install` did.
+#[derive(Debug, Clone)]
+pub struct InstallOutcome {
+    pub installed: Installed,
+    /// Settings and data to copy from the installs the plan replaced, when
+    /// the switch crossed into or out of a Flatpak. Nothing is copied yet:
+    /// `transfer::apply` does that, once the user has chosen.
+    pub transfer: Vec<Move>,
+}
+
 /// Installs a download for app `id` and records it in `store`, in place of
 /// any install in the same format. Installs the plan replaces are removed
 /// afterwards, so a failed install never leaves the app missing.
@@ -180,7 +191,9 @@ pub fn install(
     download: &Download,
     platform: &Platform,
     progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
-) -> Result<Installed> {
+) -> Result<InstallOutcome> {
+    // Before anything changes: the old install's menu entries name it.
+    let names = transfer::names(store.get(id)?);
     let mut installed = match &plan.via_repo {
         Some(remote) => update_from_repo(
             store.get(id)?,
@@ -244,7 +257,14 @@ pub fn install(
         app.set_installs(installs);
         store.save()?;
     }
-    Ok(installed)
+    let replaced: Vec<Installed> = plan
+        .replaces
+        .iter()
+        .filter(|p| p.format != installed.format)
+        .cloned()
+        .collect();
+    let transfer = transfer::moves(&names, &replaced, &installed);
+    Ok(InstallOutcome { installed, transfer })
 }
 
 /// Updates `app`'s Flatpak from the repository `remote` it came from, and

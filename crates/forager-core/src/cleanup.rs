@@ -16,7 +16,7 @@ use crate::model::{App, Format};
 
 /// Names shared by many programs or owned by the desktop, never offered
 /// even when an app happens to be called that.
-const SHARED: [&str; 20] = [
+pub(crate) const SHARED: [&str; 20] = [
     "applications",
     "autostart",
     "dconf",
@@ -91,7 +91,7 @@ pub fn remove(allowed: &[Leftover], paths: &[PathBuf]) -> Result<(usize, u64)> {
 }
 
 /// The names `app` may keep its files under, lowercase.
-fn names(app: &App) -> BTreeSet<String> {
+pub(crate) fn names(app: &App) -> BTreeSet<String> {
     let mut names = BTreeSet::from([app.id.clone()]);
     for installed in app.installs() {
         names.extend(
@@ -149,7 +149,7 @@ fn find(roots: &[PathBuf], names: &BTreeSet<String>, extra: &[PathBuf]) -> Vec<L
 }
 
 /// Bytes under `path`, without following links.
-fn size(path: &Path) -> u64 {
+pub(crate) fn size(path: &Path) -> u64 {
     let Ok(meta) = fs::symlink_metadata(path) else { return 0 };
     if !meta.is_dir() {
         return meta.len();
