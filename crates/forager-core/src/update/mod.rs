@@ -13,7 +13,10 @@ pub use plan::{
     Delta, FuseGap, Plan, SignatureCheck, SummaryLine, Tone, asset_shape, changes, combined_notes, cooldown_until, now,
     plans, plans_for, repo_releases, summary,
 };
-pub use status::{InstallState, State, Status, asset_in, eligible, latest, prefetch, sort_installs, status, status_in};
+pub use status::{
+    InstallState, State, Status, asset_in, eligible, latest, offered_formats, prefetch, sort_installs, status,
+    status_in,
+};
 
 #[cfg(test)]
 mod fixtures {

@@ -176,14 +176,8 @@ pub async fn preview(
         app.versions = None;
     }
     let platform = Platform::detect();
-    // From the newest release, not the one shown: that one is the newest
-    // with something for these settings, which could hide a format only a
-    // newer release offers.
-    let formats = update::eligible(&app, releases.clone())
-        .map_err(|e| e.to_string())?
-        .first()
-        .map(|newest| matcher::available_formats(&app, newest, &platform))
-        .unwrap_or_default();
+    // Not only the formats of the release shown, which suits these settings.
+    let formats = update::offered_formats(&app, releases.clone(), &platform).map_err(|e| e.to_string())?;
     let release = update::latest(&app, releases, &platform).map_err(|e| e.to_string())?;
     let installs = match id {
         Some(id) => blocking(move || Ok(load_store()?.get(&id).map(|a| a.install_list()).unwrap_or_default())).await?,

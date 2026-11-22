@@ -294,6 +294,20 @@ pub fn eligible(app: &App, releases: Vec<Release>) -> Result<Vec<Release>> {
         .collect())
 }
 
+/// The formats the app could switch to: those of the newest release it
+/// takes that offers anything here. Not only the release `latest` picks,
+/// which suits the app's current filter and format and could hide a format
+/// only a newer release has; and not simply the newest, which in a
+/// repository publishing several programs (Bitwarden's `web-…` and `cli-…`
+/// beside `desktop-…`) may have nothing to install at all.
+pub fn offered_formats(app: &App, releases: Vec<Release>, platform: &Platform) -> Result<Vec<Format>> {
+    Ok(eligible(app, releases)?
+        .iter()
+        .map(|release| matcher::available_formats(app, release, platform))
+        .find(|formats| !formats.is_empty())
+        .unwrap_or_default())
+}
+
 /// The newest release the app takes (its tag matching the app's tag filter,
 /// no prereleases unless it follows them) with an asset for this system. Projects that also publish other builds
 /// from the same repository, e.g. `android-v1.0` next to `v2.3`, would
@@ -711,6 +725,11 @@ mod tests {
         };
         let mut app = App::new(source, "tool".into());
         assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.0.0");
+        // The Android release is newer but offers nothing to switch to.
+        assert_eq!(
+            offered_formats(&app, releases.clone(), &platform).unwrap(),
+            [Format::Rpm]
+        );
         app.prerelease = true;
         assert_eq!(latest(&app, releases.clone(), &platform).unwrap().tag, "v2.1.0-rc.1");
         // Following only `android-…` tags finds nothing to install, but still names that release.
