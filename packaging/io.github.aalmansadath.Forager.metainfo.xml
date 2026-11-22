@@ -58,6 +58,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.3" date="2026-11-22">
+      <description>
+        <ul>
+          <li>Switching an app to another format asks first, and when the switch goes into or out of a Flatpak, copies the app's settings and data across. The old folders stay as a backup, and a folder already at the new place is asked about: keep it, back it up, or replace it.</li>
+          <li>The format list offers every format again for projects that publish several programs from one repository, such as Bitwarden.</li>
+          <li>Clicking an app's icon on its page starts the app.</li>
+          <li>Links that redirect to a download are recognised as direct links, and a release with only its source code says so.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-11-18">
       <description>
         <ul>
