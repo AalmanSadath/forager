@@ -12,6 +12,8 @@ import type {
   BackgroundState,
   DownloadedView,
   FinishedView,
+  DataChoice,
+  TransferResult,
   MenuEntryResult,
   HistoryEvent,
   PlanResult,
@@ -97,6 +99,9 @@ export const startUpdate = (id: string, format: Format) => invoke<DownloadedView
 export const finishUpdate = (id: string, format: Format, extractAndRun = false) =>
   invoke<FinishedView>('finish_update', { id, format, extractAndRun });
 export const cancelUpdate = (id: string, format: Format) => invoke<void>('cancel_update', { id, format });
+/** Copies the settings and data the last switch of `id` found, one choice per folder; none forgets them. */
+export const transferData = (id: string, choices: DataChoice[]) =>
+  invoke<TransferResult[]>('transfer_data', { id, choices });
 
 /** Starts the newly installed Forager and closes this window. */
 export const restartSelf = () => invoke<void>('restart_self');

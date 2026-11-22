@@ -2,17 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import * as ipc from '../ipc';
 import { displayName } from '../appsView';
 import { useAppStore } from '../store/appStore';
-import type { Format, PlanView } from '../types';
+import type { DataChoice, DataMove, Format, PlanView } from '../types';
 import Modal from './shared/Modal';
 import { FORMAT_NAMES } from './shared/icons';
 import Markdown from './shared/Markdown';
 import { awaitingFuseChoice, runnableUnits, unitKey, unpacks, type FuseChoice, type Unit } from '../updateView';
+import { choicesComplete, choicesFor, describeTransfer, needsChoice, type Picked } from '../transferView';
 
 type Phase =
   | { kind: 'planning' }
   | { kind: 'confirm' }
-  | { kind: 'working'; id: string; format: Format; step: 'download' | 'install' }
+  | { kind: 'working'; id: string; format: Format; step: 'download' | 'install' | 'copy' }
   | { kind: 'distro'; id: string; version: string; pkg: string }
+  | { kind: 'transfer'; id: string; name: string; moves: DataMove[] }
   | { kind: 'restart'; version: string }
   | { kind: 'done' };
 
@@ -32,6 +34,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   const toast = useAppStore((s) => s.toast);
   const progress = useAppStore((s) => s.progress);
   const apps = useAppStore((s) => s.apps);
+  const copyData = useAppStore((s) => s.copyData);
+  const setCopyData = useAppStore((s) => s.setCopyData);
   // Ids go to the backend; people see the names they gave the apps.
   const called = (id: string) => {
     const app = apps.find((a) => a.id === id);
@@ -49,6 +53,10 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   const [results, setResults] = useState<Result[]>([]);
   // Answers the distro question for the app waiting on it.
   const distroAnswer = useRef<((install: boolean) => void) | null>(null);
+  // Answers which folders to copy when some are already at the new place;
+  // null copies none.
+  const transferAnswer = useRef<((choices: DataChoice[] | null) => void) | null>(null);
+  const [picked, setPicked] = useState<Picked>({});
   const cancelled = useRef(false);
   const single = ids.length === 1;
 
@@ -88,6 +96,34 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
   const unverified = runnable.some((p) => p.plan!.unverified);
   const needsRoot = runnable.some((p) => p.plan!.needs_root);
 
+  // After a switch into or out of a Flatpak: copies the settings and data
+  // across, as ticked, asking about folders already there. Gives what to
+  // tell the user.
+  const copyAcross = async (id: string, format: Format, name: string, moves: DataMove[]) => {
+    const skip = async () => {
+      await ipc.transferData(id, []).catch(() => {});
+      return 'settings and data not copied';
+    };
+    if (useAppStore.getState().copyData[id] === false) return skip();
+    let choices = choicesFor(moves, {});
+    if (needsChoice(moves).length > 0) {
+      const chosen = await new Promise<DataChoice[] | null>((resolve) => {
+        transferAnswer.current = resolve;
+        setPicked({});
+        setPhase({ kind: 'transfer', id, name, moves });
+      });
+      transferAnswer.current = null;
+      if (!chosen) return skip();
+      choices = chosen;
+    }
+    setPhase({ kind: 'working', id, format, step: 'copy' });
+    try {
+      return describeTransfer(await ipc.transferData(id, choices));
+    } catch (e) {
+      return `settings and data not copied: ${String(e)}`;
+    }
+  };
+
   const run = async () => {
     const done: Result[] = [];
     for (const { id, plan } of planned.filter((p) => !runnable.includes(p))) {
@@ -123,7 +159,9 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
         setPhase({ kind: 'working', id, format, step: 'install' });
         const finished = await ipc.finishUpdate(id, format, unpacks(unit, fuse));
         if (finished.restart_needed) restartTo = plan!.to;
-        done.push({ id, name, outcome: 'installed', detail: downloaded.delta ? `${plan!.to} (${downloaded.delta})` : plan!.to });
+        let detail = downloaded.delta ? `${plan!.to} (${downloaded.delta})` : plan!.to;
+        if (finished.transfer.length > 0) detail += `; ${await copyAcross(id, format, name, finished.transfer)}`;
+        done.push({ id, name, outcome: 'installed', detail });
       } catch (e) {
         done.push({ id, name, outcome: cancelled.current ? 'skipped' : 'failed', detail: cancelled.current ? 'cancelled' : String(e) });
       } finally {
@@ -154,6 +192,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
       ipc.cancelUpdate(phase.id, phase.format);
     } else if (phase.kind === 'distro') {
       distroAnswer.current?.(false);
+    } else if (phase.kind === 'transfer') {
+      transferAnswer.current?.(null);
     } else if (phase.kind !== 'working') {
       for (const { id, plan } of planned) ipc.cancelUpdate(id, plan!.format);
       close();
@@ -201,6 +241,16 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
                         </div>
                       ))}
                   </dl>
+                  {plan.copies_data && (
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={copyData[id] ?? true}
+                        onChange={(e) => setCopyData(id, e.target.checked)}
+                      />
+                      <span>Copy settings and data to the new install; the old ones stay as a backup</span>
+                    </label>
+                  )}
                   {plan.asks_about_fuse && (
                     <FuseChoices
                       plan={plan}
@@ -260,7 +310,12 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
       {phase.kind === 'working' && (
         <>
           <p className="update-step">
-            {phase.step === 'download' ? 'Downloading and verifying' : 'Installing'} <strong>{nameOf(phase.id, phase.format)}</strong>
+            {phase.step === 'download'
+              ? 'Downloading and verifying'
+              : phase.step === 'install'
+                ? 'Installing'
+                : 'Copying settings and data for'}{' '}
+            <strong>{nameOf(phase.id, phase.format)}</strong>
             {runnable.length > 1 &&
               ` (${runnable.findIndex((p) => p.id === phase.id && p.plan!.format === phase.format) + 1} of ${runnable.length})`}
           </p>
@@ -269,8 +324,8 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
             <p className="form-hint">If a password prompt appears, it is for this install.</p>
           )}
           <div className="modal-actions">
-            <button className="btn-secondary" onClick={cancel} disabled={phase.step === 'install'}>
-              {phase.step === 'install' ? 'Cannot stop an install' : 'Cancel'}
+            <button className="btn-secondary" onClick={cancel} disabled={phase.step !== 'download'}>
+              {phase.step === 'install' ? 'Cannot stop an install' : phase.step === 'copy' ? 'Copying…' : 'Cancel'}
             </button>
           </div>
         </>
@@ -285,6 +340,69 @@ export default function UpdateModal({ ids, tag = null }: { ids: string[]; tag?: 
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => distroAnswer.current?.(false)}>Don't install</button>
             <button className="btn-primary" onClick={() => distroAnswer.current?.(true)}>Install anyway</button>
+          </div>
+        </>
+      )}
+
+      {phase.kind === 'transfer' && (
+        <>
+          <p>
+            {phase.name} is installed. Some of its settings and data are already where the new install keeps them. Choose
+            for each:
+          </p>
+          <ul className="transfer-list">
+            {phase.moves.map((m, i) =>
+              m.conflict ? (
+                <li key={m.to}>
+                  <fieldset className="fuse-choices">
+                    <legend className="mono">{m.to}</legend>
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        name={`transfer-${i}`}
+                        checked={picked[i] === 'keep_new'}
+                        onChange={() => setPicked((p) => ({ ...p, [i]: 'keep_new' }))}
+                      />
+                      <span>Keep the new install's</span>
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        name={`transfer-${i}`}
+                        checked={picked[i] === 'use_old'}
+                        onChange={() => setPicked((p) => ({ ...p, [i]: 'use_old' }))}
+                      />
+                      <span>
+                        Use the old install's (<span className="mono">{m.from}</span>); the current one is kept as a backup
+                      </span>
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        name={`transfer-${i}`}
+                        checked={picked[i] === 'replace'}
+                        onChange={() => setPicked((p) => ({ ...p, [i]: 'replace' }))}
+                      />
+                      <span>Use the old install's, and delete the current one</span>
+                    </label>
+                  </fieldset>
+                </li>
+              ) : (
+                <li key={m.to} className="form-hint">
+                  <span className="mono">{m.from}</span> is copied to <span className="mono">{m.to}</span>
+                </li>
+              ),
+            )}
+          </ul>
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => transferAnswer.current?.(null)}>Don't copy</button>
+            <button
+              className="btn-primary"
+              disabled={!choicesComplete(phase.moves, picked)}
+              onClick={() => transferAnswer.current?.(choicesFor(phase.moves, picked))}
+            >
+              Copy
+            </button>
           </div>
         </>
       )}

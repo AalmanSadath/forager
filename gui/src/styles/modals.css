@@ -98,6 +98,8 @@
 .fuse-choices { border: none; margin: 8px 0 4px; padding: 0; }
 .fuse-choices legend { font-size: 12px; color: var(--warning); margin-bottom: 6px; padding: 0; }
 .fuse-choices .checkbox-row { margin-bottom: 6px; }
+.transfer-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.transfer-list .form-hint { margin: 0; }
 
 .update-step { font-size: 13px; color: var(--text-muted); }
 .update-step strong { color: var(--text-primary); }

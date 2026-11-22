@@ -18,6 +18,7 @@ const plan = (format: Format, asksAboutFuse = false): PlanView => ({
   fuse_missing: asksAboutFuse ? ['libfuse.so.2'] : [],
   fuse_packages: asksAboutFuse ? 'fuse fuse-libs' : null,
   asks_about_fuse: asksAboutFuse,
+  copies_data: false,
 });
 
 const appimage: Unit = { id: 'tool', plan: plan('appimage', true) };

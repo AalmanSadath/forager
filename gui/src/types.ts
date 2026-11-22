@@ -304,12 +304,38 @@ export interface PlanView {
   fuse_packages: string | null;
   /** FUSE is missing for a new AppImage: install anyway, to unpack and run, or not at all. */
   asks_about_fuse: boolean;
+  /** Switching into or out of a Flatpak: its settings and data can be copied across afterwards. */
+  copies_data: boolean;
 }
 
 export interface FinishedView {
   app: AppView;
   /** Forager updated itself; this window still runs the old version. */
   restart_needed: boolean;
+  /** Settings and data to copy to the new install after a switch into or out of a Flatpak. */
+  transfer: DataMove[];
+}
+
+/** One folder of settings or data to copy from the old install's place to the new one's. */
+export interface DataMove {
+  kind: 'config' | 'data' | 'state';
+  name: string;
+  from: string;
+  to: string;
+  /** Something is already at `to`; the user picks which to keep. */
+  conflict: boolean;
+  bytes: number;
+}
+
+/**
+ * Copy a folder with nothing in the way; keep what is there; put the old one in its place, keeping a backup of
+ * what was there; or put it in its place, deleting what was there.
+ */
+export type DataChoice = 'copy' | 'keep_new' | 'use_old' | 'replace';
+
+export interface TransferResult extends DataMove {
+  copied: boolean;
+  error: string | null;
 }
 
 /** One planned update of an app, or why it cannot be made. */

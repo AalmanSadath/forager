@@ -52,13 +52,17 @@ function AppPageBody({ app }: { app: AppView }) {
   const toast = useAppStore((s) => s.toast);
   const entry = useAppStore((s) => s.checks[app.id]);
   const openUpdate = useAppStore((s) => s.openUpdate);
+  const setCopyData = useAppStore((s) => s.setCopyData);
 
   const [draft, setDraft] = useState<SettingsDraft>(() => draftOf(app));
   const [signature, setSignature] = useState<SignatureDraft>(() => signatureDraftOf(app));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The open confirmation: removing the app, or uninstalling it and keeping it tracked.
-  const [dialog, setDialog] = useState<'remove' | 'uninstall' | null>(null);
+  // Or switching it to another format.
+  const [dialog, setDialog] = useState<'remove' | 'uninstall' | 'switch' | null>(null);
+  // In the switch warning: copy settings and data to the new install.
+  const [copyAcross, setCopyAcross] = useState(true);
   // Formats to uninstall: every install unless unticked.
   const [keep, setKeep] = useState<Format[]>([]);
   // What may go with the app (its leftovers, and Flatpak repositories only
@@ -82,7 +86,7 @@ function AppPageBody({ app }: { app: AppView }) {
   };
 
   useEffect(() => {
-    if (!dialog) return;
+    if (dialog !== 'remove' && dialog !== 'uninstall') return;
     let live = true;
     ipc
       .appCleanup(app.id)
@@ -119,11 +123,34 @@ function AppPageBody({ app }: { app: AppView }) {
       await loadApps();
       checkApps([app.id]);
       toast('success', `Saved ${displayName(app)}.`);
+      return true;
     } catch (e) {
       setError(String(e));
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  // Saving a format the app is not installed in switches it: say what
+  // happens first, and offer to bring its settings and data along.
+  const switchFrom =
+    draft.format && draft.format !== app.format && !app.track_only && !app.installs.some((i) => i.format === draft.format)
+      ? app.installs[0]
+      : undefined;
+  const crossesFlatpak = !!switchFrom && (switchFrom.format === 'flatpak') !== (draft.format === 'flatpak');
+  const requestSave = () => {
+    if (!switchFrom) {
+      save();
+      return;
+    }
+    setCopyAcross(true);
+    setDialog('switch');
+  };
+  const confirmSwitch = async () => {
+    setDialog(null);
+    setCopyData(app.id, crossesFlatpak && copyAcross);
+    if (await save()) openUpdate([app.id]);
   };
 
   const setSkipped = async (tag: string | null) => {
@@ -301,7 +328,7 @@ function AppPageBody({ app }: { app: AppView }) {
             </button>
           )}
           {dirty && (
-            <button className="btn-primary" onClick={save} disabled={saving || !!preview?.filter_error}>
+            <button className="btn-primary" onClick={requestSave} disabled={saving || !!preview?.filter_error}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           )}
@@ -480,6 +507,30 @@ function AppPageBody({ app }: { app: AppView }) {
             dropRepos={dropRepos}
             setDropRepos={setDropRepos}
           />
+        </ConfirmModal>
+      )}
+
+      {dialog === 'switch' && switchFrom && draft.format && (
+        <ConfirmModal
+          question={`Switch ${displayName(app)} from ${FORMAT_NAMES[switchFrom.format]} to ${FORMAT_NAMES[draft.format]}?`}
+          hint={
+            <>
+              Forager installs the {FORMAT_NAMES[draft.format]}, then uninstalls the {FORMAT_NAMES[switchFrom.format]}.{' '}
+              {crossesFlatpak
+                ? 'A Flatpak keeps its settings and data apart, under ~/.var/app, so they do not follow by themselves.'
+                : 'Both keep settings and data in the same folders, so they carry on as they are.'}
+            </>
+          }
+          confirmLabel="Switch"
+          onConfirm={confirmSwitch}
+          onCancel={() => setDialog(null)}
+        >
+          {crossesFlatpak && (
+            <label className="checkbox-row">
+              <input type="checkbox" checked={copyAcross} onChange={(e) => setCopyAcross(e.target.checked)} />
+              <span>Copy settings and data to the new install; the old ones stay as a backup</span>
+            </label>
+          )}
         </ConfirmModal>
       )}
 

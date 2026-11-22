@@ -44,6 +44,9 @@ interface AppStore {
   /** A release to install instead of the latest (a rollback); null for updates. */
   updateTag: string | null;
   openUpdate: (ids: string[], tag?: string) => void;
+  /** Per app, whether a format switch copies its settings and data across; ticked unless set. */
+  copyData: Record<string, boolean>;
+  setCopyData: (id: string, copy: boolean) => void;
   closeUpdate: () => void;
   /** 0..1 per app while it downloads or installs; null when unknown. */
   progress: Record<string, number | null>;
@@ -172,7 +175,9 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   updating: null,
   updateTag: null,
   openUpdate: (ids, tag) => set({ updating: ids, updateTag: tag ?? null }),
-  closeUpdate: () => set({ updating: null, updateTag: null }),
+  closeUpdate: () => set({ updating: null, updateTag: null, copyData: {} }),
+  copyData: {},
+  setCopyData: (id, copy) => set((s) => ({ copyData: { ...s.copyData, [id]: copy } })),
   progress: {},
   applyProgress: (e) => {
     const fraction =

@@ -236,6 +236,30 @@ Tokens are only sent to their own host.
 - If the distribution also ships the package, Forager warns before the
   first install.
 
+### Switching formats
+
+Pick another format on the app page and Save, or run `forager edit <id>
+--format <fmt>` and `forager update <id>`. Forager installs the new format
+first and uninstalls the old one after, so a failed install never leaves
+the app missing.
+
+System packages, AppImages and tarballs keep settings and data in the same
+folders (`~/.config`, `~/.local/share`, `~/.local/state`), so switching
+between them changes nothing there. A Flatpak keeps its own under
+`~/.var/app/<id>`, so switching into or out of one copies the app's
+folders across:
+
+- Copying is on by default: the box in the switch warning and the update
+  dialog, or `--no-copy-data` on the command line.
+- Config, data and state folders are copied; caches are not, and neither
+  are the runtime's own (`gtk-3.0`, `dconf`, `pulse`…) out of a Flatpak.
+- The old folders stay where they were, as a backup. Remove deletes them
+  later if you ask it to.
+- A folder already at the new place is asked about, one by one: keep it,
+  use the old install's and keep this one as `<name>.forager-backup-<date>`,
+  or use the old install's and delete this one. With `--yes`, or without a
+  terminal, it is kept and listed.
+
 ### AppImages
 
 - Installed to `~/Applications` with a menu entry taken from the image.
