@@ -48,6 +48,7 @@ export const parseSource = (url: string, forge: string | null, pattern: string |
 export const preview = (spec: SourceSpec, settings: SettingsInput, refresh: boolean, id: string | null = null) =>
   invoke<Preview>('preview', { spec, settings, refresh, id });
 /** Tracks an app; with `adopt`, an AppImage the user has becomes its install. */
+export const launchApp = (id: string) => invoke<void>('launch_app', { id });
 export const setSource = (id: string, spec: SourceSpec) => invoke<AppView>('set_source', { id, spec });
 export const addApp = (
   spec: SourceSpec,

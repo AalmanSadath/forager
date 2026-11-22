@@ -233,3 +233,17 @@
   gap: 12px;
   margin-top: 10px;
 }
+
+/* The header icon, when it starts the app: the same tile, answering the pointer. */
+.page-header-launch {
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+.page-header-launch:hover,
+.page-header-launch:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+.page-header-launch:active { transform: scale(0.95); }

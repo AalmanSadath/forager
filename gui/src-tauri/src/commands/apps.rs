@@ -109,3 +109,13 @@ impl From<&App> for AppView {
 pub async fn list_apps() -> CmdResult<Vec<AppView>> {
     blocking(|| Ok(load_store()?.apps.iter().map(AppView::from).collect())).await
 }
+
+/// Starts the app as its menu entry would, so it opens where the user is.
+#[tauri::command]
+pub async fn launch_app(id: String) -> CmdResult<()> {
+    blocking(move || {
+        let app = load_store()?.get(&id).cloned().map_err(|e| e.to_string())?;
+        forager_core::launch::launch(&app).map_err(|e| e.to_string())
+    })
+    .await
+}

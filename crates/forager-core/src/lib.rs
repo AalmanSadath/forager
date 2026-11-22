@@ -13,6 +13,7 @@ pub mod host;
 pub mod http;
 pub mod icons;
 pub mod install;
+pub mod launch;
 pub mod matcher;
 pub mod model;
 pub mod notice;

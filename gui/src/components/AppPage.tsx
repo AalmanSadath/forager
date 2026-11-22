@@ -201,6 +201,18 @@ function AppPageBody({ app }: { app: AppView }) {
     }
   };
 
+  // The icon starts the app, as its menu entry would, while there is one
+  // installed to start.
+  const missing = status?.installs?.some((i) => i.state === 'missing') ?? false;
+  const launchable = app.installs.length > 0 && !app.track_only && !missing;
+  const launch = async () => {
+    try {
+      await ipc.launchApp(app.id);
+    } catch (e) {
+      toast('error', String(e));
+    }
+  };
+
   // The name the user gives it, and the id it keeps.
   const idField = (
     <>
@@ -228,9 +240,20 @@ function AppPageBody({ app }: { app: AppView }) {
         <button className="icon-btn" onClick={() => setPage({ kind: 'apps' })} title="Back to apps (Esc)">
           <BackIcon />
         </button>
-        <div className="page-header-icon">
-          <AppIcon app={app} format={model.format} size={26} />
-        </div>
+        {launchable ? (
+          <button
+            className="page-header-icon page-header-launch"
+            onClick={launch}
+            title={`Open ${displayName(app)}`}
+            aria-label={`Open ${displayName(app)}`}
+          >
+            <AppIcon app={app} format={model.format} size={26} />
+          </button>
+        ) : (
+          <div className="page-header-icon">
+            <AppIcon app={app} format={model.format} size={26} />
+          </div>
+        )}
         <div className="page-header-title">
           {local ? (
             <span className="page-header-sub">Local build</span>

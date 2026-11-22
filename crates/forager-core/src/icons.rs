@@ -107,18 +107,9 @@ fn locate(installed: &Installed) -> Option<PathBuf> {
 /// The icon a system package installed: its menu entry names it, and its
 /// file list or the system's icon theme has it.
 fn package_icon(package: &str, format: Format) -> Option<PathBuf> {
-    let list = match format {
-        Format::Rpm => host::query("rpm").args(["-ql", package]).output(),
-        Format::Deb => host::query("dpkg").args(["-L", package]).output(),
-        _ => host::query("pacman").args(["-Qlq", package]).output(),
-    }
-    .ok()
-    .filter(|out| out.status.success())?;
-    let list = String::from_utf8_lossy(&list.stdout).into_owned();
+    let list = package_files(package, format)?;
     let files: Vec<&str> = list.lines().map(str::trim).collect();
-    let entry = files
-        .iter()
-        .find(|f| f.contains("/share/applications/") && f.ends_with(".desktop"))?;
+    let entry = entry_in_list(&files)?;
     let name = desktop::entry_field(&String::from_utf8_lossy(&read(Path::new(entry))?), "Icon")?;
     if name.starts_with('/') {
         return Some(PathBuf::from(name));
@@ -129,6 +120,26 @@ fn package_icon(package: &str, format: Format) -> Option<PathBuf> {
 }
 
 /// The best icon called `name` among a package's files.
+/// The files a system package installed, one per line.
+pub(crate) fn package_files(package: &str, format: Format) -> Option<String> {
+    let list = match format {
+        Format::Rpm => host::query("rpm").args(["-ql", package]).output(),
+        Format::Deb => host::query("dpkg").args(["-L", package]).output(),
+        _ => host::query("pacman").args(["-Qlq", package]).output(),
+    }
+    .ok()
+    .filter(|out| out.status.success())?;
+    Some(String::from_utf8_lossy(&list.stdout).into_owned())
+}
+
+/// The menu entry among a package's files.
+pub(crate) fn entry_in_list<'a>(files: &[&'a str]) -> Option<&'a str> {
+    files
+        .iter()
+        .find(|f| f.contains("/share/applications/") && f.ends_with(".desktop"))
+        .copied()
+}
+
 fn best_in_list<'a>(files: &[&'a str], name: &str) -> Option<&'a str> {
     let rank = |file: &str| {
         let path = Path::new(file);

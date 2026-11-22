@@ -45,6 +45,8 @@ pub enum Error {
         "{0} is a local build with no releases; give it a project address to update it (forager edit {0} --url <address>)"
     )]
     LocalApp(String),
+    #[error("{0} has no menu entry to start it from")]
+    NotLaunchable(String),
     #[error("not a Forager export file: {0}")]
     InvalidExport(String),
     #[error("no asset in release {tag} matches this system")]
