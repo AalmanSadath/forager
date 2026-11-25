@@ -228,6 +228,9 @@ describe('pageTitle', () => {
     expect(pageTitle({ kind: 'apps' }, apps)).toBe('Apps');
     expect(pageTitle({ kind: 'activity' }, apps)).toBe('Activity');
     expect(pageTitle({ kind: 'settings' }, apps)).toBe('Settings');
+    expect(pageTitle({ kind: 'entries' }, apps)).toBe('Desktop entries');
+    expect(pageTitle({ kind: 'entry' }, apps)).toBe('New desktop entry');
+    expect(pageTitle({ kind: 'entry', id: 'matlab' }, apps)).toBe('matlab.desktop');
   });
 
   it('tells adding an app from adopting an AppImage', () => {

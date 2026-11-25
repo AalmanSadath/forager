@@ -10,6 +10,9 @@ export type Page =
   | { kind: 'app'; id: string }
   | { kind: 'add'; url?: string; link?: AddRequest; adopt?: AppImageFile }
   | { kind: 'activity' }
+  | { kind: 'entries' }
+  /** A menu entry's editor; a new entry without an id. */
+  | { kind: 'entry'; id?: string }
   | { kind: 'settings' };
 
 export interface Toast {

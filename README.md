@@ -101,6 +101,13 @@ forager remove drawio-desktop
 forager add https://github.com/ImranR98/Obtainium --track-only
 forager seen obtainium                          # stop reporting the latest as new
 
+# Menu entries for apps installed some other way (MATLAB, vendor installers)
+forager desktop-entry new /usr/local/MATLAB/R2024b --args '-desktop %F'   # finds the program and icon
+forager desktop-entry list
+forager desktop-entry edit matlab --name 'MATLAB R2024b' --icon ~/matlab.png
+forager desktop-entry edit matlab --editor        # the whole file in $EDITOR
+forager desktop-entry remove matlab
+
 # Other
 forager doctor                                  # check what Forager needs from the system, with fixes
 forager menu-entries                            # add missing menu entries
@@ -286,6 +293,28 @@ folders across:
   installed AppImage keep how it was installed. One that unpacks and runs
   goes back to a normal menu entry at its first update once FUSE is
   present.
+
+### Desktop entries
+
+Apps installed by their own installer, like MATLAB, unpacked by hand or
+built locally often have no menu entry. The Desktop entries page (and
+`forager desktop-entry`) makes one:
+
+- Choose the program, or the folder the app is installed in. Forager picks
+  the program named after the folder (installers last), the name, and
+  icons to choose from: the icon theme's of the same name, an AppImage's
+  own, and images near the program named after it or like an icon or logo.
+- Edit the common fields (name, program and arguments, description,
+  category, terminal, hidden, window class), or the whole file as text.
+  The two stay in step, and the entry is checked with
+  `desktop-file-validate` when it is installed.
+- A chosen icon is copied into your icon theme as `forager-entry-<id>`, so
+  the entry keeps it when the app moves. Deleting the entry deletes that
+  copy and nothing else.
+
+Every entry in `~/.local/share/applications` is listed, including ones
+made by hand. The `forager-<id>` entries Forager writes for the apps it
+tracks are shown read-only: their app rewrites them on each update.
 
 ### Removing
 

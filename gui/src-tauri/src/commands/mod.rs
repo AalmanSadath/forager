@@ -4,6 +4,7 @@ pub mod activity;
 pub mod apps;
 pub mod check;
 pub mod edit;
+pub mod entries;
 pub mod releases;
 pub mod remove;
 pub mod settings;

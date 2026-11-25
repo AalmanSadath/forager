@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { ActivityIcon, AppsIcon, BrandMark, SettingsIcon } from './shared/icons';
+import { ActivityIcon, AppsIcon, BrandMark, EntriesIcon, SettingsIcon } from './shared/icons';
 
 /**
  * The left rail, as in BifroSSH: brand, the pages you work in, and settings
@@ -11,10 +11,11 @@ export default function Sidebar({ updates }: { updates: number }) {
   const setPage = useAppStore((s) => s.setPage);
   const [collapsed, setCollapsed] = useState(false);
 
-  // An app's page and the add page belong to Apps.
-  const section = page.kind === 'app' || page.kind === 'add' ? 'apps' : page.kind;
+  // An app's page and the add page belong to Apps; an entry's editor to Desktop entries.
+  const section =
+    page.kind === 'app' || page.kind === 'add' ? 'apps' : page.kind === 'entry' ? 'entries' : page.kind;
 
-  const nav = (kind: 'apps' | 'activity' | 'settings', label: string, icon: React.ReactNode, badge?: number) => (
+  const nav = (kind: 'apps' | 'activity' | 'entries' | 'settings', label: string, icon: React.ReactNode, badge?: number) => (
     <button
       className={`nav-btn${section === kind ? ' active' : ''}`}
       onClick={() => setPage({ kind })}
@@ -48,6 +49,7 @@ export default function Sidebar({ updates }: { updates: number }) {
       <nav className="sidebar-nav">
         {nav('apps', 'Apps', <AppsIcon />, updates)}
         {nav('activity', 'Activity', <ActivityIcon />)}
+        {nav('entries', 'Desktop entries', <EntriesIcon />)}
       </nav>
       <nav className="sidebar-nav-bottom">{nav('settings', 'Settings', <SettingsIcon />)}</nav>
     </aside>

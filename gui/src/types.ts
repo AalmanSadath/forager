@@ -409,3 +409,46 @@ export interface DoctorCheck {
   detail: string;
   fix?: string;
 }
+
+// ── desktop entries ─────────────────────────────────────────────
+
+/** A menu entry in the user's applications folder. */
+export interface EntrySummary {
+  /** The file name without `.desktop`. */
+  id: string;
+  file: string;
+  name: string;
+  exec: string | null;
+  icon_url: string | null;
+  /** The tracked app this entry is Forager's own for; read-only on this page. */
+  owner: string | null;
+  hidden: boolean;
+  missing_program: boolean;
+  made_here: boolean;
+}
+
+export interface IconChoice {
+  path: string;
+  data_url: string;
+}
+
+/** What picking an app's location found. */
+export interface DetectedEntry {
+  program: string | null;
+  programs: string[];
+  name: string;
+  id: string;
+  icons: IconChoice[];
+}
+
+export interface NewEntry {
+  detected: DetectedEntry;
+  /** A new entry starting the program, when one was found. */
+  text: string | null;
+}
+
+/** `errors` stop the entry being saved; `notes` come from desktop-file-validate. */
+export interface EntryValidation {
+  errors: string[];
+  notes: string[];
+}

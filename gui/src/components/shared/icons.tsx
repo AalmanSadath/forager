@@ -40,6 +40,14 @@ export const ActivityIcon = () => (
   </Svg>
 );
 
+export const EntriesIcon = () => (
+  <Svg>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M3 8h18" />
+    <path d="M8 13h8M8 16h5" />
+  </Svg>
+);
+
 export const SettingsIcon = () => (
   <Svg>
     <circle cx="12" cy="12" r="3" />

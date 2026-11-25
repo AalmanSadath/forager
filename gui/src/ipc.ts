@@ -12,6 +12,9 @@ import type {
   BackgroundState,
   DownloadedView,
   FinishedView,
+  EntrySummary,
+  EntryValidation,
+  NewEntry,
   DataChoice,
   TransferResult,
   MenuEntryResult,
@@ -136,3 +139,19 @@ export const appLink = (id: string) => invoke<string>('app_link', { id });
 export const appBadge = (id: string) => invoke<string>('app_badge', { id });
 /** The request in a forager://add?… link or the badge page's address. */
 export const parseLink = (text: string) => invoke<AddRequest>('parse_link', { text });
+
+// ── desktop entries ─────────────────────────────────────────────
+export const listEntries = () => invoke<EntrySummary[]>('list_entries');
+export const readEntry = (id: string) => invoke<string>('read_entry', { id });
+/** Finds the program, name and icons for a program, or the folder an app is installed in. */
+export const detectEntry = (path: string) => invoke<NewEntry>('detect_entry', { path });
+/** The `Exec` value starting `program` (as the host sees it) with `args`. */
+export const execLine = (program: string, args: string) => invoke<string>('exec_line', { program, args });
+export const validateEntry = (text: string) => invoke<EntryValidation>('validate_entry', { text });
+/** Saves an entry; `iconFile` is copied into the icon theme as its icon. */
+export const saveEntry = (id: string, text: string, iconFile: string | null) =>
+  invoke<EntrySummary>('save_entry', { id, text, iconFile });
+export const removeEntry = (id: string) => invoke<void>('remove_entry', { id });
+export const launchEntry = (id: string) => invoke<void>('launch_entry', { id });
+export const iconPreview = (path: string) => invoke<string | null>('icon_preview', { path });
+export const entryId = (name: string) => invoke<string>('entry_id', { name });

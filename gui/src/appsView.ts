@@ -153,6 +153,10 @@ export function pageTitle(page: Page, apps: Pick<AppView, 'id' | 'name'>[]): str
       return 'Activity';
     case 'settings':
       return 'Settings';
+    case 'entries':
+      return 'Desktop entries';
+    case 'entry':
+      return page.id ? `${page.id}.desktop` : 'New desktop entry';
     case 'add':
       return page.adopt ? 'Add AppImage' : 'Add app';
     case 'app': {

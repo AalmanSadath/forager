@@ -12,6 +12,8 @@ import AppsPanel from './components/AppsPanel';
 import AppPage from './components/AppPage';
 import AddAppPage from './components/AddAppPage';
 import ActivityPanel from './components/ActivityPanel';
+import DesktopEntriesPanel from './components/DesktopEntriesPanel';
+import DesktopEntryPage from './components/DesktopEntryPage';
 import SettingsPanel from './components/SettingsPanel';
 import Toasts from './components/Toasts';
 import TopBar from './components/TopBar';
@@ -112,6 +114,10 @@ export default function App() {
             <ActivityPanel />
           ) : page.kind === 'settings' ? (
             <SettingsPanel />
+          ) : page.kind === 'entries' ? (
+            <DesktopEntriesPanel />
+          ) : page.kind === 'entry' ? (
+            <DesktopEntryPage key={page.id ?? 'new'} id={page.id} />
           ) : page.kind === 'app' ? (
             <AppPage id={page.id} />
           ) : page.kind === 'add' ? (
