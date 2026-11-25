@@ -193,13 +193,17 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
     }
   };
 
-  const tryIt = async () => {
+  const launch = async () => {
     try {
       await ipc.launchEntry(id!);
     } catch (e) {
       toast('error', String(e));
     }
   };
+
+  // The saved entry is what starts, so changes are saved first.
+  const launchable = !isNew && !dirty;
+  const launchTitle = dirty ? 'Save first to launch it' : 'Start it as the menu would';
 
   const idValid = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(entryId.trim());
   const canSave = !readOnly && !busy && dirty && idValid && checked.errors.length === 0;
@@ -214,17 +218,28 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
         <button className="icon-btn" onClick={back} title="Back to desktop entries (Esc)">
           <BackIcon />
         </button>
-        <div className="page-header-icon">
-          <EntryIcon url={iconUrl} name={fields.name || entryId || '?'} size={26} />
-        </div>
+        {launchable ? (
+          <button
+            className="page-header-icon page-header-launch"
+            onClick={launch}
+            title={launchTitle}
+            aria-label={`Launch ${fields.name || id}`}
+          >
+            <EntryIcon url={iconUrl} name={fields.name || entryId || '?'} size={26} />
+          </button>
+        ) : (
+          <div className="page-header-icon">
+            <EntryIcon url={iconUrl} name={fields.name || entryId || '?'} size={26} />
+          </div>
+        )}
         <div className="page-header-title">
           <h1>{fields.name || (isNew ? 'New desktop entry' : id)}</h1>
           <span className="page-header-sub mono">{entryId ? `${entryId}.desktop` : 'not saved yet'}</span>
         </div>
         <div className="page-header-actions">
-          {!isNew && !readOnly && (
-            <button className="btn-secondary" onClick={tryIt} disabled={dirty} title={dirty ? 'Save first' : 'Start it as the menu would'}>
-              Try it
+          {!isNew && (
+            <button className="btn-secondary" onClick={launch} disabled={!launchable} title={launchTitle}>
+              Launch
             </button>
           )}
           {!readOnly && (
