@@ -458,6 +458,9 @@ enum EntryAction {
         /// Leave it out of the menu (true or false).
         #[arg(long)]
         hidden: Option<bool>,
+        /// The folder the app starts in; empty for the home folder.
+        #[arg(long, value_name = "DIR")]
+        start_in: Option<String>,
         /// Edit the whole entry in $EDITOR; it is checked before it is saved.
         #[arg(long)]
         editor: bool,
@@ -1233,7 +1236,8 @@ fn desktop_entry(action: &EntryAction) -> Result<()> {
             let id = id.clone().unwrap_or_else(|| found.id.clone());
             let name = name.clone().unwrap_or_else(|| found.name.clone());
             let mut fields = entries::fields(&entries::template(&program, &name));
-            fields.exec = entries::exec_line(&program, args.as_deref().unwrap_or_default());
+            let args = args.clone().unwrap_or_else(|| found.args.clone());
+            fields.exec = entries::exec_line(&program, &args);
             fields.terminal = *terminal;
             let text = entries::with_fields(&entries::template(&program, &name), &fields);
             if entries::read(&id).is_ok() && !yes && !confirm(&format!("{id} exists. Replace it?"))? {
@@ -1269,6 +1273,7 @@ fn desktop_entry(action: &EntryAction) -> Result<()> {
             terminal,
             wm_class,
             hidden,
+            start_in,
             editor,
         } => {
             let current = entries::read(id)?;
@@ -1285,6 +1290,7 @@ fn desktop_entry(action: &EntryAction) -> Result<()> {
                 set(comment, &mut fields.comment);
                 set(categories, &mut fields.categories);
                 set(wm_class, &mut fields.wm_class);
+                set(start_in, &mut fields.path);
                 if let Some(program) = program {
                     fields.exec = entries::with_program(&fields.exec, &entries::host_path(program));
                 }

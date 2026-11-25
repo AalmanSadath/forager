@@ -438,6 +438,8 @@ export interface DetectedEntry {
   programs: string[];
   name: string;
   id: string;
+  /** Arguments the program is known to need to start from the menu, e.g. MATLAB's -desktop. */
+  args: string;
   icons: IconChoice[];
 }
 

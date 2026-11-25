@@ -102,7 +102,7 @@ forager add https://github.com/ImranR98/Obtainium --track-only
 forager seen obtainium                          # stop reporting the latest as new
 
 # Menu entries for apps installed some other way (MATLAB, vendor installers)
-forager desktop-entry new /usr/local/MATLAB/R2024b --args '-desktop %F'   # finds the program and icon
+forager desktop-entry new /usr/local/MATLAB/R2024b   # finds the program, icon and -desktop
 forager desktop-entry list
 forager desktop-entry edit matlab --name 'MATLAB R2024b' --icon ~/matlab.png
 forager desktop-entry edit matlab --editor        # the whole file in $EDITOR
@@ -305,7 +305,10 @@ built locally often have no menu entry. The Desktop entries page (and
   icons to choose from: the icon theme's of the same name, an AppImage's
   own, and images near the program named after it or like an icon or logo.
 - Edit the common fields (name, program and arguments, description,
-  category, terminal, hidden, window class), or the whole file as text.
+  category, terminal, hidden, window class, the folder it starts in), or
+  the whole file as text. Programs known to need an argument to open a
+  window from the menu get it filled in, such as MATLAB's `-desktop`, so
+  they need no terminal.
   The two stay in step, and the entry is checked with
   `desktop-file-validate` when it is installed.
 - A chosen icon is copied into your icon theme as `forager-entry-<id>`, so

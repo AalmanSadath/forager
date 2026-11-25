@@ -65,6 +65,8 @@ pub struct Fields {
     pub terminal: bool,
     pub wm_class: String,
     pub no_display: bool,
+    /// The folder the app starts in (`Path`); the home folder when empty.
+    pub path: String,
 }
 
 /// An icon to choose from: where it is, and how it looks.
@@ -84,6 +86,8 @@ pub struct Detected {
     pub name: String,
     /// An id for a new entry, from the program's name.
     pub id: String,
+    /// Arguments the program is known to need to start from the menu.
+    pub args: String,
     /// Icons near the program, best first.
     pub icons: Vec<IconChoice>,
 }
@@ -238,6 +242,7 @@ pub fn fields(text: &str) -> Fields {
         terminal: get("Terminal") == "true",
         wm_class: get("StartupWMClass"),
         no_display: get("NoDisplay") == "true",
+        path: get("Path"),
     }
 }
 
@@ -256,6 +261,7 @@ pub fn with_fields(text: &str, fields: &Fields) -> String {
             ("Terminal", Some(fields.terminal.to_string())),
             ("StartupWMClass", text_value(&fields.wm_class)),
             ("NoDisplay", fields.no_display.then(|| "true".to_string())),
+            ("Path", text_value(&fields.path)),
         ],
     )
 }
@@ -494,7 +500,7 @@ fn remove_icons(dirs: &Dirs, id: &str) {
 /// Starts entry `id`, as the menu would.
 pub fn launch(id: &str) -> Result<()> {
     let file = Dirs::user()?.file(id)?;
-    let mut child = host::command("gio")
+    let mut child = host::command_at_home("gio")
         .arg("launch")
         .arg(&file)
         .stdin(std::process::Stdio::null())
@@ -551,12 +557,26 @@ pub fn detect(path: &Path) -> Result<Detected> {
     icons.dedup_by(|a, b| a.path == b.path);
     icons.truncate(8);
     Ok(Detected {
+        args: known_args(&stem).to_string(),
         id: slug(&stem),
         program,
         programs,
         name,
         icons,
     })
+}
+
+/// Programs that start differently without a terminal unless told: MATLAB
+/// opens no window started from the menu without `-desktop`, as its own
+/// launchers pass.
+const KNOWN_ARGS: [(&str, &str); 1] = [("matlab", "-desktop")];
+
+/// The arguments the program called `stem` needs to start from the menu.
+fn known_args(stem: &str) -> &'static str {
+    KNOWN_ARGS
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(stem))
+        .map_or("", |(_, args)| args)
 }
 
 /// An id for a new entry from `name`.
@@ -884,6 +904,8 @@ mod tests {
         }
         assert!(check_id("org.example.Tool_2-x").is_ok());
         assert_eq!(slug("MATLAB R2024b"), "matlab-r2024b");
+        assert_eq!(known_args("matlab"), "-desktop");
+        assert_eq!(known_args("tool"), "");
     }
 
     #[test]

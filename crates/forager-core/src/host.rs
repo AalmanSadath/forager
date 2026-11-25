@@ -34,6 +34,26 @@ fn command_for(program: &str, flatpak: bool) -> Command {
     }
 }
 
+/// A command for `program` started in the user's home folder, as the menu
+/// starts apps, rather than in whatever folder Forager was started from.
+pub fn command_at_home(program: &str) -> Command {
+    let home = dirs::home_dir();
+    if in_flatpak() {
+        let mut command = Command::new("flatpak-spawn");
+        command.arg("--host");
+        if let Some(home) = &home {
+            command.arg(format!("--directory={}", home.display()));
+        }
+        command.arg(program);
+        return command;
+    }
+    let mut command = Command::new(program);
+    if let Some(home) = home {
+        command.current_dir(home);
+    }
+    command
+}
+
 /// A command for a program whose output is parsed: like `command`, but in
 /// the C locale, since `pacman -Si` and `zypper info` translate the field
 /// names Forager reads.
@@ -138,6 +158,13 @@ pub fn desktop_entry() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apps_start_in_the_home_folder() {
+        let out = command_at_home("pwd").output().unwrap();
+        let pwd = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(Some(PathBuf::from(pwd)), dirs::home_dir());
+    }
 
     #[test]
     fn spawns_on_the_host_only_inside_a_flatpak() {

@@ -12,6 +12,8 @@ export interface EntryFields {
   terminal: boolean;
   wmClass: string;
   noDisplay: boolean;
+  /** The folder the app starts in; the home folder when empty. */
+  path: string;
 }
 
 const MAIN = '[Desktop Entry]';
@@ -41,6 +43,7 @@ export function parseFields(text: string): EntryFields {
     terminal: get('Terminal') === 'true',
     wmClass: get('StartupWMClass'),
     noDisplay: get('NoDisplay') === 'true',
+    path: get('Path'),
   };
 }
 
@@ -99,6 +102,7 @@ export function withFields(text: string, fields: EntryFields): string {
     ['Terminal', String(fields.terminal)],
     ['StartupWMClass', value(fields.wmClass)],
     ['NoDisplay', fields.noDisplay ? 'true' : null],
+    ['Path', value(fields.path)],
   ]);
 }
 

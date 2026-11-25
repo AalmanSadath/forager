@@ -47,12 +47,12 @@ pub fn launch(app: &App) -> Result<()> {
         .ok_or_else(|| Error::NotLaunchable(app.display_name().to_string()))?;
     let mut command = match &launcher {
         Launcher::Entry(file) => {
-            let mut command = host::command("gio");
+            let mut command = host::command_at_home("gio");
             command.arg("launch").arg(file);
             command
         }
         Launcher::Flatpak(id) => {
-            let mut command = host::command("flatpak");
+            let mut command = host::command_at_home("flatpak");
             command.arg("run").arg(id);
             command
         }

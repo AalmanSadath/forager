@@ -122,7 +122,7 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
       }
       setPrograms(detected.programs);
       setIcons(detected.icons);
-      const exec = await ipc.execLine(detected.program, args);
+      const exec = await ipc.execLine(detected.program, args || detected.args);
       setText((t) => withFields(t, { ...parseFields(t), name: fields.name || detected.name, exec }));
       if (isNew && !entryId) setEntryId(detected.id);
       if (detected.icons[0]) await chooseIcon(detected.icons[0].path, detected.icons[0].data_url);
@@ -136,6 +136,11 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
   const browseProgram = async () => {
     const path = await open({ multiple: false, directory: false, title: 'Program to start' });
     if (typeof path === 'string') setFields({ exec: await ipc.execLine(path, args) });
+  };
+
+  const browseFolder = async () => {
+    const path = await open({ multiple: false, directory: true, title: 'Folder the app starts in' });
+    if (typeof path === 'string') setFields({ path });
   };
 
   const browseIcon = async () => {
@@ -351,6 +356,10 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
                   <input type="checkbox" checked={fields.terminal} onChange={(e) => setFields({ terminal: e.target.checked })} />
                   <span>Run in a terminal</span>
                 </label>
+                <p className="form-hint entry-check-hint">
+                  Only for programs that work in a terminal: the terminal stays open while they run. An app that opens no
+                  window without one usually needs an argument instead, such as MATLAB&rsquo;s <span className="mono">-desktop</span>.
+                </p>
                 <label className="checkbox-row">
                   <input type="checkbox" checked={fields.noDisplay} onChange={(e) => setFields({ noDisplay: e.target.checked })} />
                   <span>Hide from the menu</span>
@@ -363,6 +372,21 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
                     <p className="form-hint">
                       The class or app id the app&rsquo;s windows have. Set it when the running app shows a generic icon in the dock.
                     </p>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="entry-path">Start in folder</label>
+                    <div className="lookup-row">
+                      <input
+                        id="entry-path"
+                        className="mono"
+                        value={fields.path}
+                        placeholder="Your home folder"
+                        spellCheck={false}
+                        onChange={(e) => setFields({ path: e.target.value })}
+                      />
+                      <button className="btn-secondary" onClick={browseFolder}>Browse…</button>
+                    </div>
+                    <p className="form-hint">The folder the app starts in, such as where it keeps its files.</p>
                   </div>
                   <div className="form-group">
                     <label htmlFor="entry-icon-name">Icon name or path</label>

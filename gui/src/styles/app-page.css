@@ -288,3 +288,4 @@
   color: var(--accent);
   font-weight: 600;
 }
+.entry-check-hint { margin: -4px 0 10px 26px; }
