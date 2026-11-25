@@ -1372,7 +1372,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "forager-cli"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "forager-core"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "backhand",
  "base64 0.23.1",
@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "forager-gui"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "dirs",
  "forager-core",

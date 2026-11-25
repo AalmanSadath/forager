@@ -58,6 +58,14 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.4" date="2026-11-26">
+      <description>
+        <ul>
+          <li>A new Desktop entries page makes menu entries for apps installed outside any package, such as MATLAB: choose the program or its folder, and the program, name and icon are found. Entries can be edited field by field or as text, launched, and deleted, with the copied icon going too. The same is on the command line as forager desktop-entry.</li>
+          <li>Apps started from Forager start in the home folder, as the menu starts them.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-11-22">
       <description>
         <ul>
