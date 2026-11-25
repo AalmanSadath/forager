@@ -35,6 +35,16 @@ pub fn entry_field(entry: &str, key: &str) -> Option<String> {
     field(entry, key)
 }
 
+/// The `Name` of the AppImage at `path` and its icon's bytes, as its own
+/// menu entry gives them.
+pub(crate) fn appimage_name_and_icon(path: &Path) -> Result<(Option<String>, Option<Vec<u8>>)> {
+    let image = AppImage::open(path)?;
+    let entry = image.desktop_entry();
+    let name = entry.as_deref().and_then(|e| field(e, "Name"));
+    let icon_name = entry.as_deref().and_then(|e| field(e, "Icon"));
+    Ok((name, image.icon(icon_name.as_deref()).map(|i| i.data)))
+}
+
 /// The menu entry and icon of an AppImage at `appimage`.
 pub fn for_appimage(id: &str, appimage: &Path, extract: bool) -> Result<Vec<PathBuf>> {
     let image = AppImage::open(appimage)?;
@@ -113,37 +123,37 @@ pub fn remove(files: &[PathBuf]) {
     touch(&icons);
 }
 
-fn applications_dir() -> Option<PathBuf> {
+pub(crate) fn applications_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("applications"))
 }
 
-fn icons_dir() -> Option<PathBuf> {
+pub(crate) fn icons_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("icons/hicolor"))
 }
 
 /// Lets launchers see the change at once rather than on their next scan.
-fn refresh(apps: &Path) {
+pub(crate) fn refresh(apps: &Path) {
     host::command("update-desktop-database").arg(apps).output().ok();
 }
 
 /// Marks the icon theme at `dir` as changed. GTK and GNOME Shell only look
 /// again at a theme whose own folder changed, which an icon added to a size
 /// folder that already exists does not do, so the icon went unseen.
-fn touch(dir: &Path) {
+pub(crate) fn touch(dir: &Path) {
     if let Ok(theme) = fs::File::open(dir) {
         theme.set_modified(std::time::SystemTime::now()).ok();
     }
 }
 
 /// An icon's bytes and the hicolor size directory it belongs in.
-struct Icon {
-    data: Vec<u8>,
-    size: String,
-    svg: bool,
+pub(crate) struct Icon {
+    pub(crate) data: Vec<u8>,
+    pub(crate) size: String,
+    pub(crate) svg: bool,
 }
 
 impl Icon {
-    fn new(data: Vec<u8>) -> Option<Icon> {
+    pub(crate) fn new(data: Vec<u8>) -> Option<Icon> {
         if data.starts_with(b"\x89PNG\r\n\x1a\n") && data.len() >= 24 {
             let width = u32::from_be_bytes(data[16..20].try_into().ok()?);
             let height = u32::from_be_bytes(data[20..24].try_into().ok()?);
@@ -270,7 +280,7 @@ fn minimal(id: &str, exec: &str, icon: Option<&str>) -> String {
 
 /// `path` as one `Exec` argument: quoted, with the characters the
 /// specification reserves inside quotes escaped.
-fn quote(path: &Path) -> String {
+pub(crate) fn quote(path: &Path) -> String {
     let mut quoted = String::from('"');
     for c in path.to_string_lossy().chars() {
         if matches!(c, '"' | '`' | '$' | '\\') {
@@ -283,7 +293,7 @@ fn quote(path: &Path) -> String {
 }
 
 /// The value of `key` in the `[Desktop Entry]` group.
-fn field(entry: &str, key: &str) -> Option<String> {
+pub(crate) fn field(entry: &str, key: &str) -> Option<String> {
     let mut in_main = false;
     for line in entry.lines() {
         let line = line.trim();
@@ -300,7 +310,7 @@ fn field(entry: &str, key: &str) -> Option<String> {
 }
 
 /// The program in an `Exec` value, without quotes.
-fn first_word(exec: &str) -> Option<String> {
+pub(crate) fn first_word(exec: &str) -> Option<String> {
     let exec = exec.trim();
     match exec.strip_prefix('"') {
         Some(rest) => rest.split('"').next().map(str::to_string),
@@ -309,7 +319,7 @@ fn first_word(exec: &str) -> Option<String> {
 }
 
 /// Everything after the program in an `Exec` value, with its leading space.
-fn rest_after_first_word(exec: &str) -> &str {
+pub(crate) fn rest_after_first_word(exec: &str) -> &str {
     let exec = exec.trim();
     let end = match exec.strip_prefix('"') {
         Some(rest) => rest.find('"').map_or(exec.len(), |i| i + 2),

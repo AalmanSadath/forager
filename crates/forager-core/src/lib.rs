@@ -6,6 +6,7 @@ pub mod cleanup;
 pub mod conditions;
 pub mod desktop;
 pub mod doctor;
+pub mod entries;
 pub mod envfile;
 pub mod error;
 pub mod history;

@@ -89,6 +89,9 @@ pub enum Error {
     Cancelled,
     #[error("command failed: {0}")]
     CommandFailed(String),
+    /// A menu entry that cannot be read, saved or removed as asked.
+    #[error("{0}")]
+    Entry(String),
     #[error("invalid app id '{0}': use letters, digits, '.', '_' and '-'")]
     InvalidId(String),
     #[error("app not tracked: {0}")]

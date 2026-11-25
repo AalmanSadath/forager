@@ -15,7 +15,7 @@ use forager_core::signature::{self, SignatureInput};
 use forager_core::source::{Forge, Source};
 use forager_core::store::Store;
 use forager_core::update::{self, InstallState, Plan, State};
-use forager_core::{host, install, share, timer, transfer, version};
+use forager_core::{entries, host, install, share, timer, transfer, version};
 
 #[derive(Parser)]
 #[command(
@@ -309,6 +309,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Make, change and remove menu entries for apps installed outside any
+    /// package, e.g. by a vendor's installer: entries in
+    /// ~/.local/share/applications.
+    DesktopEntry {
+        #[command(subcommand)]
+        action: EntryAction,
+    },
     /// Print a shell completion script, e.g.
     /// `forager completions bash > ~/.local/share/bash-completion/completions/forager`.
     Completions { shell: clap_complete::Shell },
@@ -391,6 +398,80 @@ impl SignatureArgs {
 }
 
 #[derive(Subcommand)]
+enum EntryAction {
+    /// List the menu entries in ~/.local/share/applications.
+    List {
+        /// Print the list as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Make a menu entry for the program at PATH, or for the app installed
+    /// in the folder PATH. Its name and icon are found where possible.
+    New {
+        path: PathBuf,
+        /// The entry's file name, without `.desktop`; from the program by default.
+        #[arg(long)]
+        id: Option<String>,
+        /// The name shown in the menu.
+        #[arg(long)]
+        name: Option<String>,
+        /// A PNG or SVG to use as the icon, copied into the icon theme.
+        #[arg(long)]
+        icon: Option<PathBuf>,
+        /// Arguments to start the program with, e.g. `-desktop %F`.
+        #[arg(long, allow_hyphen_values = true)]
+        args: Option<String>,
+        /// Run the program in a terminal.
+        #[arg(long)]
+        terminal: bool,
+        /// Replace an entry of the same id without asking.
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Print a menu entry.
+    Show { id: String },
+    /// Change a menu entry's fields, or all of it in $EDITOR.
+    Edit {
+        id: String,
+        #[arg(long)]
+        name: Option<String>,
+        /// The program to start; its arguments stay.
+        #[arg(long)]
+        program: Option<PathBuf>,
+        /// Arguments to start the program with.
+        #[arg(long, allow_hyphen_values = true)]
+        args: Option<String>,
+        /// A PNG or SVG to use as the icon, copied into the icon theme.
+        #[arg(long)]
+        icon: Option<PathBuf>,
+        #[arg(long)]
+        comment: Option<String>,
+        /// Menu categories, e.g. `Development;Science;`.
+        #[arg(long)]
+        categories: Option<String>,
+        /// Run the program in a terminal (true or false).
+        #[arg(long)]
+        terminal: Option<bool>,
+        /// The window class the app's windows have, so its running windows show its icon.
+        #[arg(long)]
+        wm_class: Option<String>,
+        /// Leave it out of the menu (true or false).
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Edit the whole entry in $EDITOR; it is checked before it is saved.
+        #[arg(long)]
+        editor: bool,
+    },
+    /// Delete a menu entry and the icon copied for it.
+    Remove {
+        id: String,
+        /// Do not ask for confirmation.
+        #[arg(short, long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum TimerAction {
     /// Install and start the timer.
     Enable {
@@ -459,6 +540,7 @@ fn main() -> Result<()> {
             return Ok(());
         }
         Command::Man { dir } => return write_man_pages(dir),
+        Command::DesktopEntry { action } => return desktop_entry(action),
         Command::Doctor { json } => {
             let config = cli.config.clone().unwrap_or_else(Store::default_path);
             return doctor(&config, *json);
@@ -813,7 +895,7 @@ fn main() -> Result<()> {
             }
         }
         Command::Timer { action } => timer(action, explicit_config)?,
-        Command::Completions { .. } | Command::Man { .. } | Command::Doctor { .. } => {
+        Command::Completions { .. } | Command::Man { .. } | Command::Doctor { .. } | Command::DesktopEntry { .. } => {
             unreachable!("handled before the config is loaded")
         }
         Command::Adopt {
@@ -1100,6 +1182,177 @@ fn size(bytes: u64) -> String {
         b if b < 1 << 20 => format!("{:.0} KiB", b as f64 / 1024.0),
         b => format!("{:.1} MiB", b as f64 / 1048576.0),
     }
+}
+
+fn desktop_entry(action: &EntryAction) -> Result<()> {
+    match action {
+        EntryAction::List { json } => {
+            let list = entries::list()?;
+            if *json {
+                println!("{}", serde_json::to_string_pretty(&list)?);
+                return Ok(());
+            }
+            if list.is_empty() {
+                println!("No menu entries in your applications folder yet.");
+            }
+            for entry in list {
+                let mut marks = Vec::new();
+                if let Some(owner) = &entry.owner {
+                    marks.push(format!("Forager's, for {owner}"));
+                }
+                if entry.missing_program {
+                    marks.push("program missing".into());
+                }
+                if entry.hidden {
+                    marks.push("hidden".into());
+                }
+                let marks = match marks.is_empty() {
+                    true => String::new(),
+                    false => format!("  ({})", marks.join(", ")),
+                };
+                println!("{:<32} {}{marks}", entry.id, entry.name);
+                if let Some(exec) = &entry.exec {
+                    println!("{:<32} {exec}", "");
+                }
+            }
+        }
+        EntryAction::New {
+            path,
+            id,
+            name,
+            icon,
+            args,
+            terminal,
+            yes,
+        } => {
+            let found = entries::detect(path)?;
+            let program = found
+                .program
+                .clone()
+                .with_context(|| format!("found no program in {}", path.display()))?;
+            let id = id.clone().unwrap_or_else(|| found.id.clone());
+            let name = name.clone().unwrap_or_else(|| found.name.clone());
+            let mut fields = entries::fields(&entries::template(&program, &name));
+            fields.exec = entries::exec_line(&program, args.as_deref().unwrap_or_default());
+            fields.terminal = *terminal;
+            let text = entries::with_fields(&entries::template(&program, &name), &fields);
+            if entries::read(&id).is_ok() && !yes && !confirm(&format!("{id} exists. Replace it?"))? {
+                println!("Left as it was.");
+                return Ok(());
+            }
+            let icon = icon.clone().or_else(|| found.icons.first().map(|i| i.path.clone()));
+            let file = entries::save(&id, &text, icon.as_deref())?;
+            println!("Wrote {}", file.display());
+            println!("  name:    {name}");
+            println!("  program: {}", program.display());
+            match &icon {
+                Some(icon) => println!("  icon:    {} (copied as forager-entry-{id})", icon.display()),
+                None => println!("  icon:    none found; add one with `forager desktop-entry edit {id} --icon <file>`"),
+            }
+            if found.programs.len() > 1 {
+                println!("  note:    the folder has other programs too; `--program` on edit picks another:");
+                for other in found.programs.iter().skip(1).take(5) {
+                    println!("           {}", other.display());
+                }
+            }
+            print_notes(&entries::validate(&text));
+        }
+        EntryAction::Show { id } => print!("{}", entries::read(id)?),
+        EntryAction::Edit {
+            id,
+            name,
+            program,
+            args,
+            icon,
+            comment,
+            categories,
+            terminal,
+            wm_class,
+            hidden,
+            editor,
+        } => {
+            let current = entries::read(id)?;
+            let text = if *editor {
+                edit_in_editor(id, &current)?
+            } else {
+                let mut fields = entries::fields(&current);
+                let set = |value: &Option<String>, field: &mut String| {
+                    if let Some(value) = value {
+                        *field = value.clone();
+                    }
+                };
+                set(name, &mut fields.name);
+                set(comment, &mut fields.comment);
+                set(categories, &mut fields.categories);
+                set(wm_class, &mut fields.wm_class);
+                if let Some(program) = program {
+                    fields.exec = entries::with_program(&fields.exec, &entries::host_path(program));
+                }
+                if let Some(args) = args {
+                    fields.exec = entries::with_args(&fields.exec, args);
+                }
+                if let Some(terminal) = terminal {
+                    fields.terminal = *terminal;
+                }
+                if let Some(hidden) = hidden {
+                    fields.no_display = *hidden;
+                }
+                entries::with_fields(&current, &fields)
+            };
+            let checked = entries::validate(&text);
+            if let Some(error) = checked.errors.first() {
+                bail!("not saved: {error}");
+            }
+            if text == current && icon.is_none() {
+                println!("{id}: nothing changed");
+                return Ok(());
+            }
+            let file = entries::save(id, &text, icon.as_deref())?;
+            println!("Saved {}", file.display());
+            print_notes(&checked);
+        }
+        EntryAction::Remove { id, yes } => {
+            entries::read(id)?;
+            if !yes && !confirm(&format!("Delete the menu entry {id}?"))? {
+                println!("Left as it was.");
+                return Ok(());
+            }
+            entries::remove(id)?;
+            println!("Deleted {id}");
+        }
+    }
+    Ok(())
+}
+
+/// What `desktop-file-validate` said, if anything.
+fn print_notes(checked: &entries::Validation) {
+    for note in &checked.notes {
+        println!("  check:   {note}");
+    }
+}
+
+/// `text` as changed in $EDITOR (vi without one), from a copy.
+fn edit_in_editor(id: &str, text: &str) -> Result<String> {
+    let mut file = tempfile::Builder::new()
+        .prefix(&format!("{id}-"))
+        .suffix(".desktop")
+        .tempfile()?;
+    file.write_all(text.as_bytes())?;
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".into());
+    // An editor given with arguments, e.g. `code --wait`.
+    let mut words = editor.split_whitespace();
+    let program = words.next().unwrap_or("vi");
+    let status = std::process::Command::new(program)
+        .args(words)
+        .arg(file.path())
+        .status()
+        .with_context(|| format!("cannot start {editor}"))?;
+    if !status.success() {
+        bail!("{editor} exited with {status}; nothing saved");
+    }
+    Ok(std::fs::read_to_string(file.path())?)
 }
 
 /// Prints `doctor::run`'s checks; exits with 1 when one fails.

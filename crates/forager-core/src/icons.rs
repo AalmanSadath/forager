@@ -38,7 +38,7 @@ impl Icon {
         format!("data:{};base64,{data}", self.mime)
     }
 
-    fn new(data: Vec<u8>) -> Option<Icon> {
+    pub(crate) fn new(data: Vec<u8>) -> Option<Icon> {
         if data.len() > MAX_BYTES {
             return None;
         }
@@ -165,7 +165,7 @@ fn best_in_list<'a>(files: &[&'a str], name: &str) -> Option<&'a str> {
 
 /// Paths an icon called `name` may have under each data directory in
 /// `roots`, best first: hicolor by size, then pixmaps.
-fn theme_candidates(roots: &[&Path], name: &str) -> Vec<PathBuf> {
+pub(crate) fn theme_candidates(roots: &[&Path], name: &str) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for root in roots {
         for size in SIZES {
@@ -189,7 +189,7 @@ fn flatpak_candidates(flatpak_id: &str) -> Vec<PathBuf> {
 
 /// The first of `paths` that is a file. Inside Flatpak, system paths are
 /// the host's, so one shell on the host looks.
-fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
+pub(crate) fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
     if !host::in_flatpak() {
         return paths.iter().find(|p| p.is_file()).cloned();
     }
@@ -207,7 +207,7 @@ fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
 }
 
 /// Reads a file that may be the host's when Forager runs inside Flatpak.
-fn read(path: &Path) -> Option<Vec<u8>> {
+pub(crate) fn read(path: &Path) -> Option<Vec<u8>> {
     if let Ok(data) = fs::read(path) {
         return Some(data);
     }
