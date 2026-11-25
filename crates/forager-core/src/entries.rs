@@ -437,6 +437,9 @@ fn save_in(dirs: &Dirs, id: &str, text: &str, icon_file: Option<&Path>) -> Resul
     fs::create_dir_all(&dirs.apps)?;
     let mut temp = tempfile::NamedTempFile::new_in(&dirs.apps)?;
     temp.write_all(text.as_bytes())?;
+    // Readable as entries usually are: a temporary file starts as the owner's only.
+    use std::os::unix::fs::PermissionsExt;
+    temp.as_file().set_permissions(fs::Permissions::from_mode(0o644))?;
     temp.persist(&file).map_err(|e| e.error)?;
     desktop::refresh(&dirs.apps);
     Ok(file)
@@ -927,6 +930,8 @@ mod tests {
         .unwrap();
         let text = fs::read_to_string(&file).unwrap();
         assert!(text.contains("Icon=forager-entry-tool\n"));
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o644);
         let copied = dirs.icons.join("256x256/apps/forager-entry-tool.png");
         assert!(copied.exists());
 

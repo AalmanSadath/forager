@@ -7,6 +7,7 @@ import {
   BLANK_ENTRY,
   MAIN_CATEGORIES,
   argsOf,
+  entryField,
   execOf,
   parseFields,
   programOf,
@@ -259,6 +260,13 @@ export default function DesktopEntryPage({ id }: { id?: string }) {
         </p>
       )}
       {error && <p className="form-error">{error}</p>}
+      {fields.noDisplay && !readOnly && (
+        <p className="form-hint form-hint-warn entries-intro">
+          {entryField(text, 'MimeType')?.includes('x-scheme-handler')
+            ? 'This entry opens links for its app rather than being a menu entry, so it is hidden from the menu and search. For a menu entry, make a new one.'
+            : 'Hidden from the menu and search. Untick “Hide from the menu” to show it.'}
+        </p>
+      )}
 
       <div className="page-columns">
         <div className="page-column">
